@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
@@ -28,6 +29,8 @@ import { ProfileStackParamList } from '../../navigation/ProfileNavigator';
 type Props = NativeStackScreenProps<ProfileStackParamList, 'AddAppointment'>;
 
 export default function AddAppointmentScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const {
     linkedSite,
     hasLinkedSite,
@@ -201,7 +204,7 @@ export default function AddAppointmentScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   content: {
     flex: 1,
     paddingBottom: 16,
@@ -221,4 +224,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-});
+};

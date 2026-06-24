@@ -28,28 +28,32 @@ type OnboardingContextValue = {
   markAccountOnboardingSaved: (survey?: OnboardingState['survey']) => void;
   publishSite: (subdomain: string) => Promise<PublishSiteResult>;
   saveDraftSubdomain: (subdomain: string) => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
 };
 
 const OnboardingContext = createContext<OnboardingContextValue | undefined>(undefined);
 
 export function OnboardingProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isPlatformAdmin } = useAuth();
   const [state, setState] = useState<OnboardingState>(DEFAULT_ONBOARDING_STATE);
   const [sitePublish, setSitePublish] = useState<SitePublishConfig>(DEFAULT_SITE_PUBLISH);
   const [hasStoredState, setHasStoredState] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    if (!user?.id) {
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+
+    if (!user?.id || isPlatformAdmin) {
       setState(DEFAULT_ONBOARDING_STATE);
       setSitePublish(DEFAULT_SITE_PUBLISH);
-      setHasStoredState(false);
+      setHasStoredState(true);
       setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
+    if (!silent) {
+      setIsLoading(true);
+    }
 
     try {
       const [onboardingResult, publishConfig] = await Promise.all([
@@ -87,7 +91,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, isPlatformAdmin]);
 
   useEffect(() => {
     refresh();
@@ -163,8 +167,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   );
 
   const needsSetupValue = useMemo(
-    () => !isLoading && needsSiteSetup(state, hasStoredState),
-    [isLoading, state, hasStoredState],
+    () => !isPlatformAdmin && !isLoading && needsSiteSetup(state, hasStoredState),
+    [isPlatformAdmin, isLoading, state, hasStoredState],
   );
 
   const value = useMemo(

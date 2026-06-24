@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -25,6 +26,8 @@ function policyStringToItems(raw: string): string[] {
 }
 
 export default function HeroPolicyScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { content, updateContent } = useSiteContent();
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
@@ -124,7 +127,7 @@ export default function HeroPolicyScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -194,4 +197,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-});
+};

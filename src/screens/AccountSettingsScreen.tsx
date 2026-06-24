@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -49,6 +50,8 @@ function LineField({
   keyboardType?: 'default' | 'email-address';
   editable?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -72,6 +75,8 @@ function LineField({
 // ─── Avatar picker ────────────────────────────────────────────────────────────
 
 function LogoPicker({ url, busy, onPick }: { url: string | null; busy: boolean; onPick: (uri: string) => Promise<void> }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [picking, setPicking] = useState(false);
   const loading = busy || picking;
   const handle = async () => {
@@ -101,6 +106,8 @@ function LogoPicker({ url, busy, onPick }: { url: string | null; busy: boolean; 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function AccountSettingsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { profile, user, updateProfile } = useAuth();
   const { logoImageUrl, uploadLogoImage, isSaving: logoUploading } = useSiteTheme();
   const { content, updateContent } = useSiteContent();
@@ -244,7 +251,7 @@ export default function AccountSettingsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -303,4 +310,4 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
   toggleLabel: { color: colors.text, fontSize: 16, fontWeight: '500' },
   toggleHint: { color: colors.textMuted, fontSize: 13, marginTop: -6 },
-});
+};

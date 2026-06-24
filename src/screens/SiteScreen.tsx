@@ -1,16 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Linking,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -20,9 +21,12 @@ import SitePreviewWebView from '../components/site/SitePreviewWebView';
 import { useServiceCatalog } from '../context/ServiceCatalogContext';
 import { useSiteContent } from '../context/SiteContentContext';
 import { useSiteTheme } from '../context/SiteThemeContext';
-import { formatStylePrice } from '../data/siteStyles';
+import { formatStylePriceRange } from '../data/siteStyles';
 import { DEFAULT_STYLE_DURATION_MINUTES, formatStyleDuration } from '../data/siteStyles';
-import { SitePreviewTheme } from '../lib/sitePreviewHtml';
+import {
+  buildSitePreviewTheme,
+  SitePreviewTheme,
+} from '../lib/sitePreviewHtml';
 import { getSiteRootDomain, normalizeSubdomain } from '../data/sitePublish';
 import { useAppAccess } from '../context/AppAccessContext';
 import { useOnboarding } from '../context/OnboardingContext';
@@ -30,6 +34,7 @@ import { useSiteData } from '../context/SiteDataContext';
 import { fetchAnalyticsSummary, friendlyPath, type AnalyticsSummary } from '../lib/siteAnalytics';
 import { SiteStackParamList } from '../navigation/SiteNavigator';
 import { colors } from '../theme';
+import { LAYOUT_BASE, makeScaleFns } from '../theme/layout';
 
 function normalizeDisplaySlug(value: string): string {
   return normalizeSubdomain(value.replace(/\s+/g, '-')) || 'your-site';
@@ -47,12 +52,17 @@ function formatMoney(amount: number): string {
   return `$${Math.round(amount).toLocaleString()}`;
 }
 
-const WEBVIEW_HEIGHT = Math.round(Dimensions.get('window').height * 0.70);
-
 function SitePreviewPanel({ loading }: { loading: boolean }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { width, height } = useWindowDimensions();
+  const webviewHeight = useMemo(() => {
+    const { rh } = makeScaleFns(width, height);
+    return Math.round(rh(LAYOUT_BASE.height * 0.7));
+  }, [width, height]);
+
   const { content } = useSiteContent();
   const { sitePublish } = useOnboarding();
-  const { theme, heroImageUrl } = useSiteTheme();
+  const { theme, heroImageUrl, logoImageUrl, stackImageUrls } = useSiteTheme();
   const { catalogServices, getCoverUrl, getPrice, getStyleMeta } = useServiceCatalog();
 
   const liveUrl = sitePublish.published && sitePublish.publicUrl ? sitePublish.publicUrl : null;
@@ -69,19 +79,25 @@ function SitePreviewPanel({ loading }: { loading: boolean }) {
           id: service.id,
           title: meta?.title ?? service.name,
           description: meta?.description ?? service.description ?? '',
-          priceLabel: formatStylePrice(price),
+          priceLabel: formatStylePriceRange(price, meta?.addons),
           sizeLabel: service.variant !== 'STANDARD' ? service.variant : undefined,
           durationLabel: formatStyleDuration(
             meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
           ),
           imageUrl: getCoverUrl(service.id),
+          category: meta?.category ?? '',
         };
       }),
     [catalogServices, getCoverUrl, getPrice, getStyleMeta],
   );
   const previewTheme = useMemo<SitePreviewTheme>(
-    () => ({ heroLayout: theme.heroLayout, heroImageUrl }),
-    [heroImageUrl, theme.heroLayout],
+    () =>
+      buildSitePreviewTheme(theme, {
+        heroImageUrl,
+        logoImageUrl,
+        heroStackImageUrls: stackImageUrls,
+      }),
+    [heroImageUrl, logoImageUrl, stackImageUrls, theme],
   );
 
   const browserBar = (
@@ -108,7 +124,7 @@ function SitePreviewPanel({ loading }: { loading: boolean }) {
     return (
       <View style={styles.sitePanel}>
         {browserBar}
-        <View style={[styles.webviewWrap, { height: WEBVIEW_HEIGHT }]}>
+        <View style={[styles.webviewWrap, { height: webviewHeight }]}>
           <View style={styles.webviewLoading}>
             <ActivityIndicator color={colors.accentPink} />
           </View>
@@ -120,7 +136,7 @@ function SitePreviewPanel({ loading }: { loading: boolean }) {
   return (
     <View style={styles.sitePanel}>
       {browserBar}
-      <View style={[styles.webviewWrap, { height: WEBVIEW_HEIGHT }]}>
+      <View style={[styles.webviewWrap, { height: webviewHeight }]}>
         {liveUrl ? (
           <WebView
             source={{ uri: liveUrl }}
@@ -152,6 +168,8 @@ function SitePreviewPanel({ loading }: { loading: boolean }) {
 type AnalyticsPeriod = '7d' | '30d';
 
 export default function SiteScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { isLoading, hasLinkedSite, getMoneyStatsForLastDays } = useSiteData();
   const { isBuildSiteOnly } = useAppAccess();
   const { needsSetup, isLoading: onboardingLoading, sitePublish } = useOnboarding();
@@ -420,7 +438,7 @@ export default function SiteScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -890,4 +908,4 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
-});
+};

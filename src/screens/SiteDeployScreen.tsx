@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -33,6 +34,8 @@ type Props = NativeStackScreenProps<SiteStackParamList, 'SiteDeploy'>;
 type PublishStep = 'idle' | 'publishing' | 'success' | 'error';
 
 export default function SiteDeployScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { content, saveContentNow } = useSiteContent();
   const { saveThemeNow } = useSiteTheme();
   const { user } = useAuth();
@@ -325,7 +328,7 @@ export default function SiteDeployScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -551,4 +554,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-});
+};

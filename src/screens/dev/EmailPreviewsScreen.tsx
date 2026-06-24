@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -13,6 +14,8 @@ type Props = NativeStackScreenProps<ProfileStackParamList, 'EmailPreviews'>;
 const CATEGORIES = ['Booking', 'Reviews', 'Client outreach'] as const;
 
 export default function EmailPreviewsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const grouped = useMemo(() => {
     return CATEGORIES.map((category) => ({
       category,
@@ -67,7 +70,7 @@ export default function EmailPreviewsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
   header: {
@@ -128,4 +131,4 @@ const styles = StyleSheet.create({
   rowBody: { flex: 1 },
   rowTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
   rowDesc: { color: colors.textMuted, fontSize: 12, marginTop: 3, lineHeight: 17 },
-});
+};

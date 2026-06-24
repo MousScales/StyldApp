@@ -1,4 +1,4 @@
-import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, NavigationContainer, Theme } from '@react-navigation/native';
 import { navigationRef } from './src/lib/navigationRef';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -8,23 +8,33 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { PrivacyProvider } from './src/context/PrivacyContext';
 import { PurchasesProvider } from './src/context/PurchasesContext';
 import AuthenticatedApp from './src/navigation/AuthenticatedApp';
+import AdminNavigator from './src/navigation/AdminNavigator';
 import LoginScreen from './src/screens/LoginScreen';
 import { colors } from './src/theme';
 
-const theme = {
+const navigationTheme: Theme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
     background: colors.background,
-    card: colors.background,
+    card: colors.card,
     text: colors.text,
-    border: '#2a2a2a',
-    primary: colors.text,
+    border: colors.cardBorder,
+    primary: colors.accentPink,
   },
 };
 
+function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <NavigationContainer ref={navigationRef} theme={navigationTheme}>
+      {children}
+      <StatusBar style="light" />
+    </NavigationContainer>
+  );
+}
+
 function AppRoutes() {
-  const { session, isReady } = useAuth();
+  const { session, isReady, isPlatformAdmin } = useAuth();
 
   if (!isReady) {
     return (
@@ -38,6 +48,10 @@ function AppRoutes() {
     return <LoginScreen />;
   }
 
+  if (isPlatformAdmin) {
+    return <AdminNavigator />;
+  }
+
   return <AuthenticatedApp />;
 }
 
@@ -48,7 +62,6 @@ export default function App() {
     SpaceGrotesk_700Bold: require('./assets/fonts/SpaceGrotesk_700Bold.ttf'),
   });
 
-  // Render nothing until fonts are ready so there's no flash of unstyled text
   if (!fontsLoaded) {
     return (
       <View style={styles.loading}>
@@ -62,10 +75,9 @@ export default function App() {
       <AuthProvider>
         <PurchasesProvider>
           <PrivacyProvider>
-            <NavigationContainer ref={navigationRef} theme={theme}>
+            <AppShell>
               <AppRoutes />
-              <StatusBar style="light" />
-            </NavigationContainer>
+            </AppShell>
           </PrivacyProvider>
         </PurchasesProvider>
       </AuthProvider>

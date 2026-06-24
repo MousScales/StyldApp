@@ -1,4 +1,5 @@
 import { StyleSheet, View } from 'react-native';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { BookingHours } from '../../data/bookingHours';
 import { colors } from '../../theme';
 import {
@@ -26,6 +27,8 @@ export default function TimelineClosedLayers({
   timelineStartHour = 0,
   hourHeight = 56,
 }: TimelineClosedLayersProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const dateKey = toDateKey(selectedDate);
   const closedOverlays = buildScheduleClosedOverlays(selectedDate, bookingHours);
   const blockOverlays = blocks
@@ -55,7 +58,7 @@ export default function TimelineClosedLayers({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   layer: {
     position: 'absolute',
     left: 0,
@@ -73,4 +76,4 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(248, 113, 113, 0.35)',
   },
-});
+};

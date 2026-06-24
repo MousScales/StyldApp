@@ -5,6 +5,8 @@ import {
   isSubscriptionExpirationValid,
 } from './revenueCatEntitlement';
 import { fetchRevenueCatSubscriptionStatus } from './revenueCatSubscription';
+import { supabase } from './supabase';
+import { isPlatformAdminUser } from './platformAdmin';
 
 const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? '';
 const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? '';
@@ -22,6 +24,21 @@ export type SubscriptionGuardResult = {
 
 let cached: SubscriptionGuardResult | null = null;
 const listeners = new Set<(result: SubscriptionGuardResult) => void>();
+
+async function isPlatformAdminSession(): Promise<boolean> {
+  const { data } = await supabase.auth.getSession();
+  return isPlatformAdminUser(data.session?.user ?? null);
+}
+
+function adminEntitledResult(): SubscriptionGuardResult {
+  return {
+    entitled: true,
+    expiresDate: null,
+    apiEntitled: true,
+    checkedAt: Date.now(),
+    customerInfo: null,
+  };
+}
 
 export function isSubscriptionGuardConfigured(): boolean {
   return Boolean(Platform.OS === 'ios' ? IOS_KEY : ANDROID_KEY);
@@ -101,6 +118,12 @@ async function readCustomerInfo(force: boolean): Promise<CustomerInfo | null> {
 }
 
 async function runCheck(force: boolean): Promise<SubscriptionGuardResult> {
+  if (await isPlatformAdminSession()) {
+    const result = adminEntitledResult();
+    emit(result);
+    return result;
+  }
+
   if (!isSubscriptionGuardConfigured()) {
     const result: SubscriptionGuardResult = {
       entitled: false,
@@ -156,6 +179,8 @@ async function runCheck(force: boolean): Promise<SubscriptionGuardResult> {
 
 /** Cached check (1 min). Use for background polling. */
 export async function checkSubscriptionStatus(): Promise<boolean> {
+  if (await isPlatformAdminSession()) return true;
+
   if (cached && Date.now() - cached.checkedAt < SUBSCRIPTION_CACHE_MS) {
     if (isCachedResultStillValid(cached)) {
       return cached.entitled;
@@ -168,6 +193,11 @@ export async function checkSubscriptionStatus(): Promise<boolean> {
 
 /** Bypass cache — refresh from RevenueCat + server before paywall, publish, etc. */
 export async function forceCheckSubscriptionStatus(): Promise<boolean> {
+  if (await isPlatformAdminSession()) {
+    emit(adminEntitledResult());
+    return true;
+  }
+
   clearSubscriptionCache();
   const result = await runCheck(true);
   return result.entitled;

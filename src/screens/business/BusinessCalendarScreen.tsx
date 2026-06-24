@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import BusinessScreenLayout from '../../components/business/BusinessScreenLayout';
@@ -17,6 +18,8 @@ type Filter = 'all' | 'upcoming' | 'completed' | 'cancelled';
 const FILTERS: Filter[] = ['all', 'upcoming', 'completed', 'cancelled'];
 
 export default function BusinessCalendarScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { linkedSite, hasLinkedSite, appointments, refresh } = useSiteData();
   const { privacyMode } = usePrivacyMode();
   const [filter, setFilter] = useState<Filter>('all');
@@ -94,7 +97,7 @@ export default function BusinessCalendarScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   filterBtn: {
     paddingHorizontal: 12,
@@ -122,4 +125,4 @@ const styles = StyleSheet.create({
   service: { color: colors.text, fontSize: 15, fontWeight: '600' },
   meta: { color: colors.textMuted, fontSize: 13 },
   cancel: { color: '#f87171', fontSize: 13, fontWeight: '600' },
-});
+};

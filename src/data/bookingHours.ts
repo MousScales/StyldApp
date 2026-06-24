@@ -32,8 +32,15 @@ export const DEFAULT_BOOKING_HOURS: BookingHours = {
   sameDayLeadMinutes: 4320,
   saturdayLastStartHour: 14,
   saturdayLastStartMinute: 0,
-  concurrentAppointmentCapacity: 2,
+  concurrentAppointmentCapacity: 1,
 };
+
+/** Styld allows one appointment per time window (no double booking). */
+export const STYLD_BOOKING_CAPACITY = 1;
+
+export function normalizeConcurrentCapacity(_value?: unknown): number {
+  return STYLD_BOOKING_CAPACITY;
+}
 
 export const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 

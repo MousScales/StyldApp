@@ -102,8 +102,7 @@
       saturdayLastStartHour: hours.saturdayLastStartHour != null ? hours.saturdayLastStartHour : 14,
       saturdayLastStartMinute: hours.saturdayLastStartMinute != null ? hours.saturdayLastStartMinute : 0,
       sameDayLeadMinutes: hours.sameDayLeadMinutes != null ? hours.sameDayLeadMinutes : 30,
-      concurrentAppointmentCapacity:
-        hours.concurrentAppointmentCapacity != null ? hours.concurrentAppointmentCapacity : 2,
+      concurrentAppointmentCapacity: 1,
       closedWeekdays: Array.isArray(hours.closedWeekdays) ? hours.closedWeekdays : [],
     });
 

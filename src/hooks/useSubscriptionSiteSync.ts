@@ -12,7 +12,7 @@ const SITE_SYNC_POLL_MS = 30_000;
  * Runs on entitlement changes, app foreground, and on an interval.
  */
 export function useSubscriptionSiteSync() {
-  const { user } = useAuth();
+  const { user, isPlatformAdmin } = useAuth();
   const {
     isSubscriptionReady,
     isConfigured,
@@ -24,7 +24,7 @@ export function useSubscriptionSiteSync() {
   const lastSyncAtRef = useRef(0);
 
   useEffect(() => {
-    if (!user?.id || !isSubscriptionReady || !isConfigured) return;
+    if (isPlatformAdmin || !user?.id || !isSubscriptionReady || !isConfigured) return;
 
     const mightBeLive =
       sitePublish.published ||
@@ -42,7 +42,7 @@ export function useSubscriptionSiteSync() {
       lastSyncAtRef.current = now;
       try {
         await syncSubscriptionSiteAccess();
-        await refreshOnboarding();
+        await refreshOnboarding({ silent: true });
       } catch (err) {
         console.warn('[SubscriptionSite] sync failed:', err);
       } finally {
@@ -89,6 +89,7 @@ export function useSubscriptionSiteSync() {
       stopPoll();
     };
   }, [
+    isPlatformAdmin,
     user?.id,
     isSubscriptionReady,
     isConfigured,

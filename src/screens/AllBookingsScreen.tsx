@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
@@ -43,6 +44,8 @@ function bookingStatusColor(status: string, depositPaid: boolean): string {
 }
 
 export default function AllBookingsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { bookings } = useSiteData();
   const { privacyMode } = usePrivacyMode();
 
@@ -107,7 +110,7 @@ export default function AllBookingsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -165,4 +168,4 @@ const styles = StyleSheet.create({
   amount: { color: colors.text, fontSize: 14, fontWeight: '700' },
   status: { fontSize: 11, fontWeight: '600' },
   chevron: { flexShrink: 0 },
-});
+};

@@ -1,4 +1,4 @@
-export type SiteSection = 'menu' | 'about' | 'visit';
+export type SiteSection = 'menu' | 'about' | 'visit' | 'aboutMe' | 'policies';
 export type LocationPart = 'address' | 'map' | 'contact' | 'social';
 
 export type SiteContent = {
@@ -81,7 +81,7 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
   hiddenLocationParts: [],
 };
 
-const VALID_SECTIONS: SiteSection[] = ['menu', 'about', 'visit'];
+const VALID_SECTIONS: SiteSection[] = ['menu', 'about', 'visit', 'aboutMe', 'policies'];
 const VALID_LOCATION_PARTS: LocationPart[] = ['address', 'map', 'contact', 'social'];
 
 export function normalizeSiteContent(value: unknown): SiteContent {

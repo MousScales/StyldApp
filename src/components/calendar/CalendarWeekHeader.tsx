@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BookingHours, isWeekdayClosed as isWeekdayClosedByNumber } from '../../data/bookingHours';
 import { toDateKey } from '../../lib/siteData';
@@ -26,6 +27,8 @@ export default function CalendarWeekHeader({
   closedWeekdays = [],
   hint,
 }: CalendarWeekHeaderProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const weekStart = getWeekStart(selectedDate);
@@ -104,7 +107,7 @@ export default function CalendarWeekHeader({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   wrap: {
     marginBottom: 8,
   },
@@ -185,4 +188,4 @@ const styles = StyleSheet.create({
   todayDotSelected: {
     backgroundColor: colors.text,
   },
-});
+};

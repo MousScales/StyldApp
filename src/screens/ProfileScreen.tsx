@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Image, ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,6 +38,8 @@ const MANAGE_MENU: ManageItem[] = [
 ];
 
 function SectionLabel({ title }: { title: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return <Text style={styles.sectionLabel}>{title.toUpperCase()}</Text>;
 }
 
@@ -47,6 +50,8 @@ function ManageGrid({
   items: ManageItem[];
   onPress: (item: ManageItem) => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.manageGrid}>
       {items.map((item) => (
@@ -82,6 +87,8 @@ function timeSince(isoDate: string | null | undefined): string {
 }
 
 export default function ProfileScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { profile, user, signOut } = useAuth();
   const { privacyMode } = usePrivacyMode();
   const { hasActiveSubscription, isConfigured, customerInfo, refresh } = usePurchases();
@@ -287,7 +294,7 @@ export default function ProfileScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -494,4 +501,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-});
+};

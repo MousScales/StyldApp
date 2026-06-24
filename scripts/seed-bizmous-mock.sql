@@ -28,21 +28,35 @@ BEGIN
   INSERT INTO styld_site_records (user_id, record_type, record_key, data) VALUES
 
   (v_uid, 'site_setting', 'site_content', jsonb_build_object('value', jsonb_build_object(
-    'brandName',      'Luxe Hair Studio',
-    'tagline1',       'Braiding art, elevated.',
-    'tagline2',       'Book your next masterpiece.',
-    'heroTitle',      'Your crown, perfected.',
-    'heroSubtitle',   'Premium braiding & styling in Atlanta',
-    'aboutText',      'Luxe Hair Studio specializes in precision knotless braids, boho styles, and loc care. Every appointment is a personalized experience crafted just for you.',
-    'phone',          '(404) 555-0127',
-    'email',          'hello@luxehairstudio.co',
-    'address',        '2847 Cascade Rd SW',
-    'city',           'Atlanta',
-    'state',          'GA',
-    'zip',            '30311',
-    'timezone',       'America/New_York',
-    'instagramHandle','luxehairstudio',
-    'hiddenSections', '[]'::jsonb
+    'brandName',           'Luxe Hair Studio',
+    'taglineLeft',         'Book with',
+    'taglineRightLine1',   'Luxe',
+    'taglineRightLine2',   'Hair Studio',
+    'heroDescription',     'I''m Biz, founder of Luxe Hair Studio in Atlanta. With 8+ years behind the chair, I specialize in knotless braids, boho styles, passion twists, and healthy loc care. Every appointment is unhurried and detail-driven — whether you want soft everyday glam or a bold statement look, your crown leaves my chair feeling light, neat, and photo-ready.',
+    'bookingPolicy',       E'25% deposit required to secure your appointment\nArrive with hair washed, blown out, and free of heavy oils or product\nPlease be on time — arrivals 15+ minutes late may need to be rescheduled\nCancellations within 24 hours forfeit your deposit\nNo-show appointments forfeit the full deposit\nOne guest per chair unless approved in advance\nKids under 10 must be accompanied by a parent or guardian',
+    'metaDescription',     'Luxe Hair Studio — premium knotless braids, boho styles, and loc care in Atlanta. Book online.',
+    'reelsTitle',          'Our work',
+    'reelsBlurb',          'Follow @luxehairstudio on Instagram for fresh styles, client features, and booking updates.',
+    'menuTitle',           'Menu',
+    'menuBlurb',           'Browse our services and prices — tap any style to book online.',
+    'aboutTitle',          'About Me',
+    'aboutBody',           'Luxe Hair Studio is my love letter to protective styling done right. I trained under top Atlanta braiders before opening my own chair, and I still treat every head like my first — clean parts, even tension, and styles built to last. When you book with me, you get honest consults, realistic timing, and results you''ll want to show off for weeks.',
+    'visitTitle',          'Visit & connect',
+    'visitBody',           'Studio appointments in Southwest Atlanta. Message on Instagram with any questions before you book.',
+    'phoneDisplay',        '(404) 555-0127',
+    'phoneTel',            '+14045550127',
+    'email',               'hello@luxehairstudio.co',
+    'instagramHandle',     'luxehairstudio',
+    'addressLine1',        '2847 Cascade Rd SW',
+    'addressLine2',        '',
+    'city',                'Atlanta',
+    'state',               'GA',
+    'zip',                 '30311',
+    'mapEmbedUrl',         '',
+    'footerText',          'Book with Luxe Hair Studio',
+    'timezone',            'America/New_York',
+    'hiddenSections',      '[]'::jsonb,
+    'hiddenLocationParts', '[]'::jsonb
   ))),
 
   (v_uid, 'site_setting', 'site_theme', jsonb_build_object('value', jsonb_build_object(
@@ -78,6 +92,8 @@ BEGIN
   }}'::jsonb),
 
   (v_uid, 'site_setting', 'onboarding_state', '{"value":{"completed":true,"completedAt":"2026-01-15T10:00:00Z"}}'::jsonb),
+
+  (v_uid, 'site_setting', 'cancellation_policy', '{"value":{"preset":"24_hours","cancelNoticeHours":0,"fullRefundNoticeHours":24,"refundAppliesTo":"both","policySummary":"You may cancel online anytime before your appointment. Online deposits and full payments are fully refunded when you cancel at least 24 hours before your appointment. Cancellations after that deadline are non-refundable for online deposits and full payments."}}'::jsonb),
 
   (v_uid, 'site_setting', 'site_publish', jsonb_build_object('value', jsonb_build_object(
     'subdomain',   'luxehairstudio',

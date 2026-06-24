@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react';
-import { Animated, Dimensions, StyleSheet, View } from 'react-native';
-import { colors } from '../theme';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
+import { Animated, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useBrand } from '../context/BrandContext';
 
-const CONFETTI_COLORS = [colors.accentPink, '#ffffff', colors.accentPinkDeep, '#f5b942'];
 const PARTICLE_COUNT = 36;
 
 type Particle = {
@@ -17,13 +17,13 @@ type Particle = {
   anim: Animated.Value;
 };
 
-function buildParticles(screenWidth: number): Particle[] {
+function buildParticles(screenWidth: number, confettiColors: string[]): Particle[] {
   return Array.from({ length: PARTICLE_COUNT }, () => ({
     x: Math.random() * screenWidth,
     sway: (Math.random() - 0.5) * 90,
     delay: Math.random() * 500,
     duration: 2400 + Math.random() * 1600,
-    color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+    color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
     width: 5 + Math.random() * 7,
     height: 3 + Math.random() * 5,
     rotate: Math.random() * 360,
@@ -32,8 +32,14 @@ function buildParticles(screenWidth: number): Particle[] {
 }
 
 export default function OnboardingConfetti() {
-  const { width, height } = Dimensions.get('window');
-  const particles = useMemo(() => buildParticles(width), [width]);
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { width, height } = useWindowDimensions();
+  const { colors } = useBrand();
+  const confettiColors = useMemo(
+    () => [colors.accentPink, '#ffffff', colors.accentPinkDeep, '#f5b942'],
+    [colors.accentPink, colors.accentPinkDeep],
+  );
+  const particles = useMemo(() => buildParticles(width, confettiColors), [width, confettiColors]);
 
   useEffect(() => {
     const animations = particles.map((particle) =>
@@ -93,7 +99,7 @@ export default function OnboardingConfetti() {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   layer: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
@@ -104,4 +110,4 @@ const styles = StyleSheet.create({
     top: 0,
     borderRadius: 2,
   },
-});
+};

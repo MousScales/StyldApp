@@ -28,7 +28,7 @@
     sameDayLeadMinutes: 4320,
     saturdayLastStartHour: 14,
     saturdayLastStartMinute: 0,
-    concurrentAppointmentCapacity: 2,
+    concurrentAppointmentCapacity: 1,
   };
 
   function normalizeNumber(value, fallback) {
@@ -93,10 +93,7 @@
         source.saturdayLastStartMinute,
         DEFAULT_BOOKING_HOURS.saturdayLastStartMinute,
       ),
-      concurrentAppointmentCapacity: normalizeNumber(
-        source.concurrentAppointmentCapacity,
-        DEFAULT_BOOKING_HOURS.concurrentAppointmentCapacity,
-      ),
+      concurrentAppointmentCapacity: 1,
     };
     var weekdayHours = normalizeWeekdayHours(source.weekdayHours, base);
     if (weekdayHours) base.weekdayHours = weekdayHours;
@@ -141,6 +138,46 @@
     return hours + ' hrs ' + remainder + ' min';
   }
 
+  function normalizeAddons(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(function (entry, index) {
+        if (!entry || typeof entry !== 'object') return null;
+        var name = typeof entry.name === 'string' ? entry.name.trim() : '';
+        if (!name) return null;
+        var price = typeof entry.price === 'number' ? entry.price : Number(entry.price);
+        if (!Number.isFinite(price) || price < 0) price = 0;
+        var id =
+          typeof entry.id === 'string' && entry.id.trim()
+            ? entry.id.trim()
+            : 'addon-' + (index + 1);
+        return { id: id, name: name, price: price };
+      })
+      .filter(Boolean);
+  }
+
+  function formatPrice(amount) {
+    if (typeof amount !== 'number' || Number.isNaN(amount) || amount <= 0) return 'Price TBD';
+    return '$' + Math.round(amount);
+  }
+
+  function formatStylePriceRange(basePrice, addons) {
+    var base = typeof basePrice === 'number' && !Number.isNaN(basePrice) && basePrice > 0 ? basePrice : 0;
+    var list = normalizeAddons(addons);
+    var priced = list
+      .map(function (addon) {
+        return addon.price;
+      })
+      .filter(function (price) {
+        return price > 0;
+      });
+    if (!priced.length) return formatPrice(base);
+    var max = base + Math.max.apply(null, priced);
+    if (base <= 0) return 'Price TBD';
+    if (max === base) return formatPrice(base);
+    return '$' + Math.round(base) + '\u2013$' + Math.round(max);
+  }
+
   function buildBookingStyles(meta, prices) {
     var styleIds = {};
     Object.keys(meta || {}).forEach(function (id) {
@@ -156,11 +193,13 @@
         var name = styleBookingName(item, styleId);
         var base = prices[styleId];
         if (typeof base !== 'number' || Number.isNaN(base)) base = 0;
+        var itemAddons = normalizeAddons(item.addons);
         return {
           id: styleId,
           name: name,
           base: base,
           durationMinutes: normalizeDurationMinutes(item.durationMinutes),
+          addons: itemAddons,
         };
       })
       .sort(function (a, b) {
@@ -185,22 +224,19 @@
       return supabaseUrl.replace(/\/$/, '') + '/storage/v1/object/public/style-covers/' + String(path).replace(/^\/+/, '');
     }
 
-    function formatPrice(amount) {
-      if (typeof amount !== 'number' || Number.isNaN(amount) || amount <= 0) return 'Price TBD';
-      return '$' + Math.round(amount);
-    }
-
     return Object.keys(styleIds).map(function (styleId) {
       var item = meta[styleId] || {};
       var variant = item.sizeLabel || item.variant || sizeLabelFromStyleId(styleId);
+      var itemAddons = normalizeAddons(item.addons);
       return {
         id: styleId,
         title: item.title || styleId,
         sizeLabel: variant || '',
         durationLabel: formatStyleDuration(item.durationMinutes),
-        priceLabel: formatPrice(prices[styleId]),
+        priceLabel: formatStylePriceRange(prices[styleId], itemAddons),
         imageUrl: coverUrl(covers[styleId]),
         category: (item.category && String(item.category).trim()) || 'SERVICES',
+        addons: itemAddons,
       };
     });
   }
@@ -375,7 +411,7 @@
       logoEl.style.backgroundPosition = 'center';
     }
 
-    var bookBtn = document.querySelector('.profile-book-btn');
+    var bookBtn = document.querySelector('.profile-nav .profile-book-btn');
     if (bookBtn) bookBtn.hidden = theme.hideBookNowButton === true;
 
     applySiteFooter(content);

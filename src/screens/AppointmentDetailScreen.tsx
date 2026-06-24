@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import {
@@ -73,6 +74,8 @@ function InfoRow({
   tappable?: boolean;
   onPress?: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const content = (
     <View style={styles.infoRow}>
       <View style={styles.infoIconWrap}>
@@ -92,6 +95,8 @@ function InfoRow({
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
@@ -113,6 +118,8 @@ function PaymentBreakdown({
   bookingStatus: string;
   privacyMode: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const isFullyPaid =
     bookingStatus === 'completed' ||
     (depositPaid && depositAmount >= price);
@@ -181,6 +188,8 @@ function PaymentBreakdown({
 // ─── main screen ─────────────────────────────────────────────────────────────
 
 export default function AppointmentDetailScreen({ navigation, route }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { appointmentId } = route.params;
   const { privacyMode } = usePrivacyMode();
   const { getAppointmentById, bookings, refresh, linkedSite } = useSiteData();
@@ -470,7 +479,7 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
 
 // ─── styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -603,4 +612,4 @@ const styles = StyleSheet.create({
   },
   cancelBtnText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   cancelBtnDisabled: { opacity: 0.5 },
-});
+};

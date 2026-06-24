@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -44,6 +45,8 @@ const RETURN_URL = 'styldd.com/connect/return';
 const REFRESH_URL = 'styldd.com/connect/refresh';
 
 export default function ConnectedAccountsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [summary, setSummary] = useState<StripeConnectSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -320,7 +323,7 @@ export default function ConnectedAccountsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -469,4 +472,4 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
   modalDone: { color: colors.accentPink, fontSize: 16, fontWeight: '600' },
-});
+};

@@ -20,13 +20,28 @@ export type BookingPaymentSettings = {
 };
 
 export const DEFAULT_BOOKING_PAYMENT: BookingPaymentSettings = {
-  mode: 'deposit',
+  mode: 'in_person',
   depositKind: 'percent',
   depositValue: 10,
   depositIncludedInPrice: true,
   requireCurrentHairPhoto: true,
   requireReferencePhoto: false,
 };
+
+export function onlinePaymentsRequired(mode: BookingPaymentMode): boolean {
+  return mode === 'deposit' || mode === 'full';
+}
+
+/** When Styld Pay is not connected, online modes fall back to pay in person. */
+export function effectiveBookingPayment(
+  payment: BookingPaymentSettings,
+  onlinePaymentsReady: boolean,
+): BookingPaymentSettings {
+  if (onlinePaymentsReady || !onlinePaymentsRequired(payment.mode)) {
+    return payment;
+  }
+  return { ...payment, mode: 'in_person' };
+}
 
 export function computeDepositAmount(total: number, payment: BookingPaymentSettings): number {
   if (payment.mode !== 'deposit') return 0;

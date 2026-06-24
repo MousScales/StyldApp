@@ -61,12 +61,18 @@
     addressPart.innerHTML = html;
   }
 
-  function heroImageStyle(url) {
+  function heroImageStyle(url, theme) {
     if (!url) return '';
+    var position = 'center';
+    if (theme && typeof theme.heroImageFocusX === 'number' && typeof theme.heroImageFocusY === 'number') {
+      position = theme.heroImageFocusX + '% ' + theme.heroImageFocusY + '%';
+    }
     return (
       " style=\"background-image:url('" +
       String(url).replace(/'/g, '%27') +
-      "');background-size:cover;background-position:center;\""
+      "');background-size:cover;background-position:" +
+      position +
+      ';\"'
     );
   }
 
@@ -86,7 +92,7 @@
     var r2 = escapeHtml(content.taglineRightLine2 || 'here');
     var heroUrl = theme && theme.heroImageUrl ? theme.heroImageUrl : null;
     var photoClass = heroUrl ? ' hero-scale-visual--photo' : '';
-    var photoStyle = heroImageStyle(heroUrl);
+    var photoStyle = heroImageStyle(heroUrl, theme);
     var ctas = buildHeroCtasHtml();
     var placeholderImg =
       '<img class="hero-scale-visual__img" src="/assets/placeholders/hero.svg" alt="" width="560" height="840" decoding="async" />';

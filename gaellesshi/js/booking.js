@@ -28,7 +28,7 @@
       saturdayLastStartHour: 14,
       saturdayLastStartMinute: 0,
       sameDayLeadMinutes: 30,
-      concurrentAppointmentCapacity: 2,
+      concurrentAppointmentCapacity: 1,
       closedWeekdays: [],
       blackoutRanges: [],
       googleMapsApiKey: null,

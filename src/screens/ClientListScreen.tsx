@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import {
   FlatList,
   Pressable,
@@ -58,6 +59,8 @@ function ClientRow({
   onToggleSelect: () => void;
   onLongPressSelect: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const bg = avatarColor(client.name);
   const canEmail = hasValidEmail(client);
 
@@ -101,10 +104,14 @@ function ClientRow({
 }
 
 function Divider() {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return <View style={styles.divider} />;
 }
 
 export default function ClientListScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { privacyMode } = usePrivacyMode();
   const { clients, hasLinkedSite, isLoading, businessLabel } = useSiteData();
   const { sitePublish } = useOnboarding();
@@ -303,7 +310,7 @@ export default function ClientListScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -496,4 +503,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-});
+};

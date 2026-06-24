@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
@@ -58,6 +59,8 @@ export async function hasSeenSiteEditorIntro(): Promise<boolean> {
 }
 
 export default function SiteEditorIntroScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
@@ -147,7 +150,7 @@ export default function SiteEditorIntroScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   loading: {
     flex: 1,
     alignItems: 'center',
@@ -303,4 +306,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.2,
   },
-});
+};

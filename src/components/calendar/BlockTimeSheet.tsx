@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import {
   Modal,
   Pressable,
@@ -27,6 +28,8 @@ export default function BlockTimeSheet({
   onConfirm,
   onBlockFullDay,
 }: BlockTimeSheetProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [note, setNote] = useState('');
 
   const handleClose = () => {
@@ -80,7 +83,7 @@ export default function BlockTimeSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -160,4 +163,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-});
+};

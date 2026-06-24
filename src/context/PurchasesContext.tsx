@@ -77,7 +77,7 @@ function applyGuardResult(
 }
 
 export function PurchasesProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isPlatformAdmin } = useAuth();
   const [isReady, setIsReady] = useState(false);
   const [isSubscriptionReady, setIsSubscriptionReady] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
@@ -151,6 +151,12 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    if (isPlatformAdmin) {
+      setGuardEntitled(true);
+      setIsSubscriptionReady(true);
+      return;
+    }
+
     if (!user?.id) {
       setIsSubscriptionReady(true);
       clearSubscriptionCache();
@@ -182,10 +188,10 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, isConfigured]);
+  }, [user?.id, isConfigured, isPlatformAdmin]);
 
   const refresh = useCallback(async (force = false) => {
-    if (!isConfigured) return;
+    if (!isConfigured || isPlatformAdmin) return;
     try {
       const offerings = await Purchases.getOfferings();
       setCurrentOffering(resolveActiveOffering(offerings));
@@ -197,10 +203,10 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn('[Purchases] Refresh error:', err);
     }
-  }, [isConfigured]);
+  }, [isConfigured, isPlatformAdmin]);
 
   useEffect(() => {
-    if (!isConfigured || !user?.id) return;
+    if (!isConfigured || !user?.id || isPlatformAdmin) return;
 
     let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -238,19 +244,20 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
       subscription.remove();
       stopPoll();
     };
-  }, [isConfigured, user?.id]);
+  }, [isConfigured, user?.id, isPlatformAdmin]);
 
   const hasEntitlement = useCallback(
     (id = REVENUECAT_ENTITLEMENT_ID) => {
+      if (isPlatformAdmin) return true;
       if (id === REVENUECAT_ENTITLEMENT_ID && isConfigured) {
         return guardEntitled;
       }
       return hasActiveEntitlement(customerInfo, id);
     },
-    [customerInfo, guardEntitled, isConfigured],
+    [customerInfo, guardEntitled, isConfigured, isPlatformAdmin],
   );
 
-  const hasActiveSubscription = isConfigured && guardEntitled;
+  const hasActiveSubscription = isPlatformAdmin || (isConfigured && guardEntitled);
 
   useEffect(() => {
     if (!isConfigured || !customerInfo) return;
@@ -271,7 +278,7 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
 
   const waitForEntitlement = useCallback(
     async (maxAttempts = 6, seedInfo?: CustomerInfo | null): Promise<boolean> => {
-      if (!isConfigured) return true;
+      if (isPlatformAdmin || !isConfigured) return true;
 
       if (hasActiveEntitlement(seedInfo)) {
         if (seedInfo) setCustomerInfo(seedInfo);
@@ -302,7 +309,7 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
 
       return await forceCheckSubscriptionStatus();
     },
-    [isConfigured, readLatestCustomerInfo],
+    [isConfigured, isPlatformAdmin, readLatestCustomerInfo],
   );
 
   const restorePurchases = useCallback(

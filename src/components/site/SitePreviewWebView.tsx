@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { WebView, type ShouldStartLoadRequest } from 'react-native-webview';
 import { SiteContent } from '../../data/siteContent';
 import {
   buildSitePreviewHtml,
   buildSitePreviewInjection,
   DEFAULT_PREVIEW_THEME,
   getSitePreviewPageUrl,
+  STYLD_PREVIEW_INTERACTIONS_SCRIPT,
   SitePreviewStyle,
   SitePreviewTheme,
 } from '../../lib/sitePreviewHtml';
@@ -21,24 +22,12 @@ type SitePreviewWebViewProps = {
 const APPLY_PREVIEW_SCRIPT =
   'if(window.applyStyldPreviewContent){window.applyStyldPreviewContent();}true;';
 
-// Injected after load — intercepts all clicks on links/buttons so nothing navigates away
-const BLOCK_INTERACTIONS_SCRIPT = `
-(function(){
-  document.addEventListener('click', function(e){
-    var el = e.target;
-    while(el && el !== document.body){
-      if(el.tagName === 'A' || el.tagName === 'BUTTON' || el.tagName === 'FORM'){
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-      }
-      el = el.parentElement;
-    }
-  }, true);
-  document.addEventListener('submit', function(e){ e.preventDefault(); }, true);
-})();
-true;
-`;
+const PREVIEW_INTERACTIONS_INJECT = `${STYLD_PREVIEW_INTERACTIONS_SCRIPT}true;`;
+
+function shouldAllowPreviewNavigation(req: ShouldStartLoadRequest): boolean {
+  if (req.navigationType === 'click') return false;
+  return req.navigationType === 'other' || req.url === req.mainDocumentURL;
+}
 
 export default function SitePreviewWebView({
   content,
@@ -48,37 +37,54 @@ export default function SitePreviewWebView({
 }: SitePreviewWebViewProps) {
   const webRef = useRef<WebView>(null);
   const hostedUrl = getSitePreviewPageUrl();
+  const useHostedPreview = Boolean(hostedUrl) && theme.heroLayout !== 'cover';
+  const resolvedTheme = useMemo(
+    () => ({ ...theme, embeddedPreview: compact === true }),
+    [theme, compact],
+  );
   const html = useMemo(
-    () => buildSitePreviewHtml(content, previewStyles, theme),
-    [content, previewStyles, theme],
+    () => buildSitePreviewHtml(content, previewStyles, resolvedTheme),
+    [content, previewStyles, resolvedTheme],
   );
   const injection = useMemo(
-    () => `${buildSitePreviewInjection(content, previewStyles, theme)}${APPLY_PREVIEW_SCRIPT}`,
-    [content, previewStyles, theme],
+    () => `${buildSitePreviewInjection(content, previewStyles, resolvedTheme)}${APPLY_PREVIEW_SCRIPT}`,
+    [content, previewStyles, resolvedTheme],
   );
 
+  const blockPreviewLinkNavigation = useCallback((req: ShouldStartLoadRequest) => {
+    return shouldAllowPreviewNavigation(req);
+  }, []);
+
+  const handleLoadEnd = useCallback(() => {
+    if (resolvedTheme.heroLayout !== 'cover') return;
+    webRef.current?.injectJavaScript(
+      'if(window.fitCoverPreview){window.fitCoverPreview();}true;',
+    );
+  }, [resolvedTheme.heroLayout]);
+
   useEffect(() => {
-    if (!hostedUrl) return;
+    if (!useHostedPreview) return;
     webRef.current?.injectJavaScript(injection);
-  }, [hostedUrl, injection]);
+  }, [useHostedPreview, injection]);
 
   return (
     <View style={[sheetStyles.wrap, compact && sheetStyles.wrapCompact]}>
       <WebView
         ref={webRef}
-        source={hostedUrl ? { uri: hostedUrl } : { html }}
-        injectedJavaScriptBeforeContentLoaded={hostedUrl ? injection : undefined}
-        injectedJavaScript={BLOCK_INTERACTIONS_SCRIPT}
+        source={useHostedPreview ? { uri: hostedUrl! } : { html }}
+        injectedJavaScriptBeforeContentLoaded={useHostedPreview ? injection : undefined}
+        injectedJavaScript={PREVIEW_INTERACTIONS_INJECT}
         style={sheetStyles.webview}
         scrollEnabled
         showsVerticalScrollIndicator={!compact}
         originWhitelist={['*']}
         setSupportMultipleWindows={false}
         startInLoadingState
-        onShouldStartLoadWithRequest={(req) => {
-          // Only allow the initial page load — block all navigations triggered by taps
-          return req.navigationType === 'other' || req.url === req.mainDocumentURL;
-        }}
+        onShouldStartLoadWithRequest={blockPreviewLinkNavigation}
+        onLoadEnd={handleLoadEnd}
+        {...(Platform.OS === 'android'
+          ? { onShouldOverrideUrlLoading: blockPreviewLinkNavigation }
+          : {})}
         renderLoading={() => (
           <View style={sheetStyles.loading}>
             <ActivityIndicator color="#db2777" />

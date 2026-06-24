@@ -64,6 +64,41 @@
     return '$' + Math.round(amount);
   }
 
+  function normalizeAddons(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(function (entry, index) {
+        if (!entry || typeof entry !== 'object') return null;
+        var name = typeof entry.name === 'string' ? entry.name.trim() : '';
+        if (!name) return null;
+        var price = typeof entry.price === 'number' ? entry.price : Number(entry.price);
+        if (!Number.isFinite(price) || price < 0) price = 0;
+        var id =
+          typeof entry.id === 'string' && entry.id.trim()
+            ? entry.id.trim()
+            : 'addon-' + (index + 1);
+        return { id: id, name: name, price: price };
+      })
+      .filter(Boolean);
+  }
+
+  function formatStylePriceRange(basePrice, addons) {
+    var base = typeof basePrice === 'number' && !Number.isNaN(basePrice) && basePrice > 0 ? basePrice : 0;
+    var list = normalizeAddons(addons);
+    var priced = list
+      .map(function (addon) {
+        return addon.price;
+      })
+      .filter(function (price) {
+        return price > 0;
+      });
+    if (!priced.length) return formatPrice(base);
+    var max = base + Math.max.apply(null, priced);
+    if (base <= 0) return 'Price TBD';
+    if (max === base) return formatPrice(base);
+    return '$' + Math.round(base) + '\u2013$' + Math.round(max);
+  }
+
   function normalizeDurationMinutes(value) {
     var parsed = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return 120;
@@ -160,6 +195,10 @@
       window.__STYLD_SITE_THEME__ = {
         heroLayout: theme.heroLayout || 'split',
         heroImagePosition: theme.heroImagePosition || 'center top',
+        heroImageFocusX: typeof theme.heroImageFocusX === 'number' ? theme.heroImageFocusX : 50,
+        heroImageFocusY: typeof theme.heroImageFocusY === 'number' ? theme.heroImageFocusY : 22,
+        heroStackImageFocus: Array.isArray(theme.heroStackImageFocus) ? theme.heroStackImageFocus : [],
+        heroStackImageFormat: theme.heroStackImageFormat === 'tall' ? 'tall' : 'wide',
         heroImageUrl: coverUrl(theme.heroImagePath),
         logoImageUrl: coverUrl(theme.logoImagePath),
         heroStackImageUrls: heroStackImagePaths.map(function(p) { return coverUrl(p); }).filter(Boolean),
@@ -171,6 +210,7 @@
         backgroundColor: theme.backgroundColor || null,
         fontFamily: theme.fontFamily || 'cormorant',
         hideBookNowButton: theme.hideBookNowButton === true,
+        heroCoverBlur: theme.heroCoverBlur === true,
         templateId: templateId,
       };
 
@@ -261,9 +301,68 @@
           root.style.setProperty('--card-outline', cardOutline);
         }
 
+        var cssVarMap = {
+          heading: '--text-heading',
+          body: '--text-body',
+          muted: '--text-muted',
+          serviceName: '--text-service-name',
+          price: '--text-price',
+          accent: '--text-accent',
+          link: '--text-link',
+          nav: '--text-nav',
+          navButton: '--text-nav-button',
+          navButtonBg: '--text-nav-button-bg',
+          splashBrand: '--text-splash-brand',
+          splashButton: '--text-splash-button',
+          splashButtonBg: '--text-splash-button-bg',
+        };
+
+        function resolvePaletteColor(source) {
+          if (source === 'accent') return primary;
+          if (source === 'text') return secondary;
+          if (source === 'background') return bg || '#fafafa';
+          if (source === 'navbar') return navBg || '#ffffff';
+          return null;
+        }
+
+        function defaultTextColor(key) {
+          if (key === 'splashBrand') return '#ffffff';
+          if (key === 'splashButtonBg') return '#ffffff';
+          if (key === 'accent' || key === 'link' || key === 'navButton') return primary;
+          if (key === 'navButtonBg') return secondary;
+          if (key === 'splashButton') return secondary;
+          return secondary;
+        }
+
+        function resolveTextColorKey(key) {
+          var sources = theme.textColorSources && typeof theme.textColorSources === 'object' ? theme.textColorSources : {};
+          var colors = theme.textColors && typeof theme.textColors === 'object' ? theme.textColors : {};
+          var linked = sources[key];
+          if (linked && linked !== 'custom') {
+            var base = resolvePaletteColor(linked);
+            if (base && /^#[0-9a-fA-F]{6}$/.test(base)) return base;
+          }
+          var custom = colors[key];
+          if (typeof custom === 'string' && /^#[0-9a-fA-F]{6}$/.test(custom.trim())) return custom.trim();
+          return defaultTextColor(key);
+        }
+
+        Object.keys(cssVarMap).forEach(function (key) {
+          var val = resolveTextColorKey(key);
+          if (!val || !/^#[0-9a-fA-F]{6}$/.test(val)) return;
+          var cssVar = cssVarMap[key];
+          if (cssVar) root.style.setProperty(cssVar, val);
+          if (key === 'nav') root.style.setProperty('--nav-text', val);
+        });
+
         var validPositions = ['center top', 'center center', 'center bottom'];
         var heroPos = (theme.heroImagePosition || '').trim();
-        if (validPositions.indexOf(heroPos) !== -1) {
+        if (typeof theme.heroImageFocusX === 'number' && typeof theme.heroImageFocusY === 'number') {
+          root.style.setProperty(
+            '--hero-img-position',
+            theme.heroImageFocusX + '% ' + theme.heroImageFocusY + '%',
+          );
+        } else if (validPositions.indexOf(heroPos) !== -1) {
           root.style.setProperty('--hero-img-position', heroPos);
         }
 
@@ -309,15 +408,17 @@
         .map(function (styleId) {
           var item = meta[styleId] || {};
           var sizeLabel = item.sizeLabel || item.variant || sizeLabelFromStyleId(styleId);
+          var itemAddons = normalizeAddons(item.addons);
           return {
             id: styleId,
             title: item.title || styleId,
             description: item.description || '',
-            priceLabel: formatPrice(prices[styleId]),
+            priceLabel: formatStylePriceRange(prices[styleId], itemAddons),
             sizeLabel: sizeLabel || undefined,
             durationLabel: formatStyleDuration(item.durationMinutes),
             imageUrl: coverUrl(covers[styleId]) || logoFallbackUrl,
             category: item.category || '',
+            addons: itemAddons,
           };
         });
 
@@ -325,10 +426,11 @@
       window.__STYLD_REVIEWS_SETTINGS__ = reviewsSettings;
       window.__STYLD_SITE_REVIEWS__ = reviews;
 
-      // Hide "Book Now" button if the owner opted out
+      // Hide nav "Book Now" only — cover splash keeps its centered CTA
       if (theme.hideBookNowButton) {
-        var bookBtns = document.querySelectorAll('.profile-book-btn');
-        bookBtns.forEach(function(btn) { btn.style.display = 'none'; });
+        document.querySelectorAll('.profile-nav .profile-book-btn').forEach(function (btn) {
+          btn.style.display = 'none';
+        });
       }
 
       if (statusEl) statusEl.hidden = true;

@@ -87,7 +87,7 @@
 
     function normalizeBookingPayment(raw) {
       var defaults = {
-        mode: 'deposit',
+        mode: 'in_person',
         depositKind: 'percent',
         depositValue: 10,
         depositIncludedInPrice: true,
@@ -153,7 +153,7 @@
       saturdayLastStartHour: hours.saturdayLastStartHour,
       saturdayLastStartMinute: hours.saturdayLastStartMinute,
       sameDayLeadMinutes: hours.sameDayLeadMinutes,
-      concurrentAppointmentCapacity: hours.concurrentAppointmentCapacity,
+      concurrentAppointmentCapacity: 1,
       closedWeekdays: hours.closedWeekdays,
       weekdayHours: hours.weekdayHours,
       strictNoOverlap: true,
@@ -182,7 +182,7 @@
         availScript.src = '/js/booking-availability.js?v=3';
         availScript.onload = function () {
           var script = document.createElement('script');
-          script.src = '/js/booking.js?v=57';
+          script.src = '/js/booking.js?v=58';
           script.defer = true;
           document.body.appendChild(script);
         };

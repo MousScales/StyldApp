@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
 import {
@@ -15,8 +16,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import HeroImagePicker from '../../components/site/HeroImagePicker';
+import { legacyPositionFromFocus } from '../../lib/heroImageFocus';
 import HeroLayoutPicker from '../../components/site/HeroLayoutPicker';
 import SitePreviewWebView from '../../components/site/SitePreviewWebView';
+import { buildSitePreviewTheme } from '../../lib/sitePreviewHtml';
 import { useAuth } from '../../context/AuthContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 import { useSiteContent } from '../../context/SiteContentContext';
@@ -49,6 +52,8 @@ function StepQuestion({
   question: string;
   hint?: string;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.questionBlock}>
       <Text style={styles.question}>{question}</Text>
@@ -72,6 +77,8 @@ function CenteredField({
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   autoFocus?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <TextInput
       style={[styles.input, multiline && styles.inputMultiline]}
@@ -89,12 +96,15 @@ function CenteredField({
 }
 
 export default function SiteSetupScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { profile, updateProfile, user } = useAuth();
   const { completeSetup } = useOnboarding();
   const { saveContentNow } = useSiteContent();
   const {
     theme,
     setHeroLayout,
+    updateTheme,
     uploadHeroImage,
     uploadLogoImage,
     removeHeroImage,
@@ -124,6 +134,19 @@ export default function SiteSetupScreen({ navigation }: Props) {
   const [taglineLeft, setTaglineLeft] = useState('Book with');
   const [taglineRightLine1, setTaglineRightLine1] = useState('');
   const [taglineRightLine2, setTaglineRightLine2] = useState('');
+
+  const previewTheme = useMemo(
+    () =>
+      buildSitePreviewTheme(
+        { ...theme, heroLayout },
+        {
+          heroImageUrl: localHeroUri ?? heroImageUrl,
+          logoImageUrl: localLogoUri ?? logoImageUrl,
+        },
+        { embeddedPreview: true },
+      ),
+    [heroImageUrl, heroLayout, localHeroUri, localLogoUri, logoImageUrl, theme],
+  );
 
   const answers = useMemo<OnboardingAnswers>(
     () => ({
@@ -242,7 +265,7 @@ export default function SiteSetupScreen({ navigation }: Props) {
         <View style={styles.previewWrap}>
           <SitePreviewWebView
             content={previewContent}
-            theme={{ heroLayout, heroImageUrl: localHeroUri ?? heroImageUrl }}
+            theme={previewTheme}
             compact
           />
         </View>
@@ -339,6 +362,16 @@ export default function SiteSetupScreen({ navigation }: Props) {
                       removeHeroImage();
                     }}
                     large
+                    repositionable
+                    aspectRatio={4 / 5}
+                    focus={{ x: theme.heroImageFocusX, y: theme.heroImageFocusY }}
+                    onFocusChange={(focus) =>
+                      updateTheme({
+                        heroImageFocusX: focus.x,
+                        heroImageFocusY: focus.y,
+                        heroImagePosition: legacyPositionFromFocus(focus),
+                      })
+                    }
                   />
                 </View>
               </>
@@ -488,7 +521,7 @@ export default function SiteSetupScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   header: {
@@ -611,4 +644,4 @@ const styles = StyleSheet.create({
   },
   primaryBtnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-});
+};

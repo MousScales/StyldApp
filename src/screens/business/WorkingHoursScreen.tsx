@@ -1,4 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
@@ -89,6 +90,8 @@ function NumberField({
   onChange: (value: number) => void;
   suffix?: string;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.numberField}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -109,6 +112,8 @@ function NumberField({
 }
 
 export default function WorkingHoursScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { linkedSite, hasLinkedSite } = useSiteData();
   const [hours, setHours] = useState<BookingHours>(DEFAULT_BOOKING_HOURS);
   const [isLoading, setIsLoading] = useState(false);
@@ -274,13 +279,10 @@ export default function WorkingHoursScreen({ navigation }: Props) {
           suffix="min"
           onChange={(sameDayLeadMinutes) => updateHours({ ...hours, sameDayLeadMinutes })}
         />
-        <NumberField
-          label="Concurrent appointments"
-          value={hours.concurrentAppointmentCapacity}
-          onChange={(concurrentAppointmentCapacity) =>
-            updateHours({ ...hours, concurrentAppointmentCapacity })
-          }
-        />
+        <View style={styles.infoRow}>
+          <Text style={styles.fieldLabel}>Appointments per time slot</Text>
+          <Text style={styles.infoValue}>One at a time</Text>
+        </View>
       </BusinessSection>
 
       <Pressable style={styles.primaryBtn} onPress={save} disabled={saving}>
@@ -305,7 +307,7 @@ export default function WorkingHoursScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   hint: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginBottom: 12 },
   field: {
     paddingVertical: 12,
@@ -313,6 +315,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.cardBorder,
   },
   fieldLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 4 },
+  infoRow: { marginTop: 4 },
+  infoValue: { color: colors.text, fontSize: 15, fontWeight: '600' as const },
   fieldValue: { color: colors.text, fontSize: 15 },
   dayRow: {
     flexDirection: 'row',
@@ -359,4 +363,4 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: colors.background, fontSize: 15, fontWeight: '700' },
   saved: { color: colors.accentPink, fontSize: 13, fontWeight: '600' },
-});
+};

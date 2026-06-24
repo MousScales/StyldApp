@@ -28,7 +28,7 @@
       saturdayLastStartHour: 14,
       saturdayLastStartMinute: 0,
       sameDayLeadMinutes: 4320,
-      concurrentAppointmentCapacity: 2,
+      concurrentAppointmentCapacity: 1,
       closedWeekdays: [],
       blackoutRanges: [],
       googleMapsApiKey: null,
@@ -57,7 +57,7 @@
 
   const PAYMENT = Object.assign(
     {
-      mode: "deposit",
+      mode: "in_person",
       depositKind: "percent",
       depositValue: 10,
       depositIncludedInPrice: true,
@@ -66,6 +66,14 @@
     },
     CFG.payment || {},
   );
+
+  function paymentMode() {
+    const configured = PAYMENT.mode || "in_person";
+    if ((configured === "deposit" || configured === "full") && !window.__STYLD_STRIPE_READY__) {
+      return "in_person";
+    }
+    return configured;
+  }
 
   function depositIncludedInPrice() {
     return PAYMENT.depositIncludedInPrice !== false;
@@ -227,8 +235,12 @@
   const els = {
     form: document.getElementById("booking-form"),
     styleSelect: document.getElementById("style-select"),
+    styleAddonWrap: document.getElementById("style-addon-field-wrap"),
+    styleAddonList: document.getElementById("style-addon-list"),
     hairLength: document.getElementById("hair-length-select"),
     subtotalOut: document.getElementById("line-subtotal"),
+    styleAddonOut: document.getElementById("line-style-addon"),
+    styleAddonRow: document.getElementById("line-style-addon-row"),
     lengthAddonOut: document.getElementById("line-length-addon"),
     totalOut: document.getElementById("line-total"),
     depositBaseOut: document.getElementById("line-deposit-base"),
@@ -241,6 +253,8 @@
     inPersonDueRow: document.getElementById("line-in-person-due-row"),
     depositDetailOut: document.getElementById("line-deposit-detail"),
     sideSubtotal: document.getElementById("side-subtotal"),
+    sideStyleAddon: document.getElementById("side-style-addon"),
+    sideStyleAddonRow: document.getElementById("side-style-addon-row"),
     sideLengthAddon: document.getElementById("side-length-addon"),
     sideTotal: document.getElementById("side-total"),
     sideTotalLabel: document.getElementById("side-total-label"),
@@ -464,7 +478,72 @@
     if (!opt || !opt.value) return null;
     const def = catalogStyles().find((s) => s.id === opt.value);
     const base = def && Number.isFinite(def.base) ? def.base : 0;
-    return { id: opt.value, name: opt.textContent, base };
+    return {
+      id: opt.value,
+      name: opt.textContent,
+      base,
+      durationMinutes: def && typeof def.durationMinutes === "number" ? def.durationMinutes : undefined,
+      addons: def && Array.isArray(def.addons) ? def.addons : [],
+    };
+  }
+
+  function getStyleAddonsForStyle(style) {
+    if (!style || !Array.isArray(style.addons)) return [];
+    return style.addons.filter(function (addon) {
+      if (!addon || typeof addon !== "object") return false;
+      var name = typeof addon.name === "string" ? addon.name.trim() : "";
+      var price = typeof addon.price === "number" ? addon.price : Number(addon.price);
+      return name.length > 0 && Number.isFinite(price) && price > 0;
+    });
+  }
+
+  function renderStyleAddonField(style) {
+    if (!els.styleAddonWrap || !els.styleAddonList) return;
+    els.styleAddonList.innerHTML = "";
+    var addons = getStyleAddonsForStyle(style);
+    var show = !!TENANT_BOOKING && addons.length > 0;
+    els.styleAddonWrap.hidden = !show;
+    if (!show) return;
+
+    function addOption(id, label, checked) {
+      var labelEl = document.createElement("label");
+      labelEl.className = "style-addon-option";
+      var input = document.createElement("input");
+      input.type = "radio";
+      input.name = "style-addon";
+      input.value = id;
+      input.checked = checked;
+      input.addEventListener("change", function () {
+        renderPricing();
+        renderSlots();
+        void refreshUnavailableForSelection();
+      });
+      labelEl.appendChild(input);
+      labelEl.appendChild(document.createTextNode(label));
+      els.styleAddonList.appendChild(labelEl);
+    }
+
+    addOption("", " No add-on", true);
+    addons.forEach(function (addon) {
+      addOption(addon.id, " " + addon.name + " (+" + money(addon.price) + ")", false);
+    });
+  }
+
+  function getSelectedStyleAddon() {
+    if (!TENANT_BOOKING) return null;
+    var style = getSelectedStyle();
+    var addons = getStyleAddonsForStyle(style);
+    if (!addons.length || !els.styleAddonList) return null;
+    var input = els.styleAddonList.querySelector('input[name="style-addon"]:checked');
+    if (!input || !input.value) return null;
+    return addons.find(function (addon) {
+      return addon.id === input.value;
+    }) || null;
+  }
+
+  function styleAddonUsd() {
+    var addon = getSelectedStyleAddon();
+    return addon ? addon.price : 0;
   }
 
   function getHairLengthKey() {
@@ -478,6 +557,8 @@
   function syncBookingDependentFields() {
     const style = getSelectedStyle();
     const sid = style?.id || "";
+
+    renderStyleAddonField(style);
 
     const showLen = styleSupportsExtraHairLength(sid);
     if (els.hairLengthWrap) els.hairLengthWrap.hidden = !showLen;
@@ -846,7 +927,7 @@
   }
 
   function onlineChargeForTotal(total, style) {
-    const mode = PAYMENT.mode || "deposit";
+    const mode = paymentMode();
     if (mode === "in_person") return 0;
     if (mode === "full") return round2(total);
 
@@ -868,10 +949,6 @@
     return round2(Math.max(0, amount));
   }
 
-  function paymentMode() {
-    return PAYMENT.mode || "deposit";
-  }
-
   function wantsOnlinePayment() {
     const { deposit, mode } = computeTotals();
     if (mode === "in_person") return false;
@@ -891,8 +968,9 @@
     const style = getSelectedStyle();
     const base = style ? style.base : 0;
     const lengthUsd = hairLengthAddonUsd();
+    const addonUsd = styleAddonUsd();
 
-    const total = Math.max(0, round2(base + lengthUsd));
+    const total = Math.max(0, round2(base + lengthUsd + addonUsd));
     const pctDeposit = round2(total * 0.1);
     const houseFee = style && isHouseStyleId(style.id) ? 15 : 0;
     const deposit = onlineChargeForTotal(total, style);
@@ -902,6 +980,7 @@
     return {
       base,
       lengthUsd,
+      addonUsd,
       subtotal: base,
       total,
       deposit,
@@ -914,7 +993,7 @@
   }
 
   function renderPricing() {
-    const { base, lengthUsd, total, deposit, balanceDue, pctDeposit, houseFee, style, mode } = computeTotals();
+    const { base, lengthUsd, addonUsd, total, deposit, balanceDue, pctDeposit, houseFee, style, mode } = computeTotals();
     const dur = totalDurationMinutes();
     const online = needsOnlinePayment();
     const hasPricedStyle = !!(style && style.id !== "other");
@@ -930,6 +1009,8 @@
 
     if (els.subtotalOut) els.subtotalOut.textContent = money(base);
     if (els.lengthAddonOut) els.lengthAddonOut.textContent = lengthUsd > 0 ? money(lengthUsd) : "—";
+    if (els.styleAddonOut) els.styleAddonOut.textContent = addonUsd > 0 ? money(addonUsd) : "—";
+    if (els.styleAddonRow) els.styleAddonRow.hidden = !(addonUsd > 0);
 
     const serviceFee = mode !== "in_person" ? computeServiceFee(deposit) : 0;
     const chargeTotal = mode !== "in_person" ? totalChargeWithFee(deposit) : 0;
@@ -1007,6 +1088,8 @@
 
     if (els.sideSubtotal) els.sideSubtotal.textContent = money(base);
     if (els.sideLengthAddon) els.sideLengthAddon.textContent = lengthUsd > 0 ? money(lengthUsd) : "—";
+    if (els.sideStyleAddon) els.sideStyleAddon.textContent = addonUsd > 0 ? money(addonUsd) : "—";
+    if (els.sideStyleAddonRow) els.sideStyleAddonRow.hidden = !(addonUsd > 0);
     if (els.sideTotal) els.sideTotal.textContent = money(displayTotalAmount);
     if (els.sideTotalLabel) els.sideTotalLabel.textContent = displayTotalLabel;
     if (els.sideDepositExcludedNote) {
@@ -1461,6 +1544,7 @@
     options = options || {};
     const style = getSelectedStyle();
     const notes = document.getElementById("notes")?.value?.trim() || null;
+    const addon = getSelectedStyleAddon();
     const { total, deposit, mode } = computeTotals();
     const payInPerson = mode === "in_person";
     const paidOnline = options.paidOnline === true;
@@ -1468,13 +1552,18 @@
     const service_address =
       style && isHouseStyleId(style.id) && isHouseAddressComplete() ? formatServiceAddressForStorage() : null;
 
+    const styleName = addon ? style.name + " + " + addon.name : style.name;
+
     return {
       id: bookingId,
       full_name: document.getElementById("full-name")?.value?.trim(),
       phone: document.getElementById("phone")?.value?.trim(),
       email: document.getElementById("email")?.value?.trim(),
       style_id: style.id,
-      style_name: style.name,
+      style_name: styleName,
+      selected_addon_id: addon ? addon.id : null,
+      selected_addon_name: addon ? addon.name : null,
+      selected_addon_price: addon ? addon.price : 0,
       service_address,
       hair_option: "catalog",
       prewash: "None",

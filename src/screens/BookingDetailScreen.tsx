@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,6 +33,8 @@ function bookingStatusColor(status: string, depositPaid: boolean): string {
 }
 
 function Row({ icon, label, value }: { icon: string; label: string; value: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   if (!value) return null;
   return (
     <View style={styles.row}>
@@ -45,6 +48,8 @@ function Row({ icon, label, value }: { icon: string; label: string; value: strin
 }
 
 export default function BookingDetailScreen({ navigation, route }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { bookingId } = route.params;
   const { bookings } = useSiteData();
   const { privacyMode } = usePrivacyMode();
@@ -190,7 +195,7 @@ export default function BookingDetailScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -295,4 +300,4 @@ const styles = StyleSheet.create({
   notesText: { color: colors.text, fontSize: 14, lineHeight: 20, paddingBottom: 8 },
 
   footer: { color: colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 8 },
-});
+};

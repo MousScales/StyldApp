@@ -46,6 +46,7 @@ function bumpAssetVersion(filePath) {
 
 bumpAssetVersion(path.join(root, "tenant", "index.html"));
 bumpAssetVersion(path.join(root, "tenant", "profile.html"));
+bumpAssetVersion(path.join(root, "tenant", "book.html"));
 bumpAssetVersion(path.join(root, "preview.html"));
 
 const supabasePath = path.join(root, "js", "supabase-config.local.js");

@@ -3,6 +3,7 @@ import { STYLE_COVER_BUCKET } from '../data/serviceCatalog';
 import {
   BookingHours,
   DEFAULT_BOOKING_HOURS,
+  normalizeConcurrentCapacity,
   normalizeWeekdayHours,
 } from '../data/bookingHours';
 import {
@@ -325,10 +326,7 @@ export function normalizeBookingHours(value: unknown): BookingHours {
       source.saturdayLastStartMinute,
       DEFAULT_BOOKING_HOURS.saturdayLastStartMinute,
     ),
-    concurrentAppointmentCapacity: normalizeNumber(
-      source.concurrentAppointmentCapacity,
-      DEFAULT_BOOKING_HOURS.concurrentAppointmentCapacity,
-    ),
+    concurrentAppointmentCapacity: normalizeConcurrentCapacity(source.concurrentAppointmentCapacity),
     weekdayHours: normalizeWeekdayHours(source.weekdayHours, DEFAULT_BOOKING_HOURS),
   };
 }
@@ -389,7 +387,7 @@ export async function saveBookingHours(
   }
 
   const payload = {
-    data: { value: hours },
+    data: { value: { ...hours, concurrentAppointmentCapacity: normalizeConcurrentCapacity() } },
     updated_at: new Date().toISOString(),
   };
 

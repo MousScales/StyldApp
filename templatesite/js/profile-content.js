@@ -428,8 +428,6 @@
     var brandNameEl = document.getElementById('profile-brand-name');
     if (brandNameEl) brandNameEl.textContent = content.brandName || '';
 
-    document.title = (content.brandName || 'Your Brand') + ' | Book online';
-
     // Logo
     if (theme.logoImageUrl) {
       var logoPlaceholder = document.getElementById('profile-logo-placeholder');
@@ -450,32 +448,63 @@
     var heroPhoto = document.getElementById('profile-hero-photo');
     var isCover = theme.heroLayout === 'cover';
     var isStack = theme.heroLayout === 'stack';
+    var isSplashPage = document.body.classList.contains('page-splash');
+    var isBookPage = document.body.classList.contains('page-book');
+    var isCoverSplash = isCover && isSplashPage;
 
-    if (isCover && heroSection) {
+    if (isCoverSplash && heroSection) {
       heroSection.classList.add('profile-hero--cover');
+      document.body.classList.add('hero-layout-cover', 'page-cover-splash');
 
-      // Inject overlay with brand name + Book Now inside the photo div
-      if (heroPhoto) {
+      if (heroPhoto && !heroPhoto.querySelector('.profile-cover-overlay')) {
         heroPhoto.style.position = 'relative';
         var overlay = document.createElement('div');
         overlay.className = 'profile-cover-overlay';
         var brandSpan = document.createElement('span');
-        brandSpan.className = 'profile-brand';
+        brandSpan.className = 'profile-cover-brand';
         brandSpan.textContent = content.brandName || '';
         var bookBtn = document.createElement('a');
-        bookBtn.className = 'profile-book-btn';
-        bookBtn.href = '/booking';
+        bookBtn.className = 'profile-book-btn profile-book-btn--cover-splash';
+        bookBtn.href = '/book';
         bookBtn.textContent = 'Book Now';
         overlay.appendChild(brandSpan);
         overlay.appendChild(bookBtn);
         heroPhoto.appendChild(overlay);
       }
 
-      // Hide the nav brand name (shown in overlay instead)
-      var navBrand = document.querySelector('.profile-brand');
-      if (navBrand && navBrand !== heroPhoto) {
-        navBrand.style.visibility = 'hidden';
+      document.querySelectorAll('.profile-below-hero').forEach(function (el) {
+        el.hidden = true;
+      });
+
+      var navEl = document.getElementById('profile-nav') || document.querySelector('.profile-nav');
+      if (navEl) {
+        navEl.hidden = false;
+        navEl.classList.add('profile-nav--cover-splash');
       }
+    } else {
+      document.body.classList.remove('hero-layout-cover', 'page-cover-splash');
+      var navElReset = document.getElementById('profile-nav') || document.querySelector('.profile-nav');
+      if (navElReset) {
+        navElReset.hidden = false;
+        navElReset.classList.remove('profile-nav--cover-splash');
+      }
+    }
+
+    var navBookBtn = document.querySelector('.profile-nav .profile-book-btn');
+    if (navBookBtn) {
+      navBookBtn.href = isCoverSplash ? '/book' : '/booking';
+    }
+
+    if (isCoverSplash && theme.hideBookNowButton && navBookBtn) {
+      navBookBtn.style.display = 'none';
+    } else if (navBookBtn) {
+      navBookBtn.style.display = '';
+    }
+
+    if (isCoverSplash) {
+      document.title = content.brandName || 'Your Brand';
+    } else {
+      document.title = (content.brandName || 'Your Brand') + ' | Book online';
     }
 
     if (isStack && heroSection) {
@@ -484,13 +513,19 @@
       if (stackUrls.length > 0) {
         // Build the stack gallery and insert before .profile-hero__grid
         var stackEl = document.createElement('div');
-        stackEl.className = 'profile-hero-stack';
-        stackUrls.forEach(function(url) {
+        var stackFormat = theme.heroStackImageFormat === 'tall' ? 'tall' : 'wide';
+        stackEl.className = 'profile-hero-stack profile-hero-stack--' + stackFormat;
+        stackUrls.forEach(function(url, index) {
           var img = document.createElement('img');
           img.src = url;
           img.className = 'profile-hero-stack__img';
           img.alt = '';
           img.loading = 'lazy';
+          var focusList = Array.isArray(theme.heroStackImageFocus) ? theme.heroStackImageFocus : [];
+          var focus = focusList[index];
+          if (focus && typeof focus.x === 'number' && typeof focus.y === 'number') {
+            img.style.objectPosition = focus.x + '% ' + focus.y + '%';
+          }
           stackEl.appendChild(img);
         });
         var heroGrid = heroSection.querySelector('.profile-hero__grid');
@@ -505,14 +540,34 @@
     }
 
     if (!isStack && heroPhoto && theme.heroImageUrl) {
-      heroPhoto.style.backgroundImage =
-        "url('" + String(theme.heroImageUrl).replace(/'/g, '%27') + "')";
+      var imageUrl = String(theme.heroImageUrl).replace(/'/g, '%27');
+      var imagePosition =
+        typeof theme.heroImageFocusX === 'number' && typeof theme.heroImageFocusY === 'number'
+          ? theme.heroImageFocusX + '% ' + theme.heroImageFocusY + '%'
+          : 'center center';
+      var useCoverBlur = isCover && theme.heroCoverBlur === true;
+
+      if (useCoverBlur) {
+        heroPhoto.classList.add('profile-photo__bg--blurred');
+        heroPhoto.style.backgroundImage = 'none';
+        heroPhoto.style.setProperty('--hero-cover-bg', "url('" + imageUrl + "')");
+        heroPhoto.style.setProperty('--hero-cover-position', imagePosition);
+      } else {
+        heroPhoto.classList.remove('profile-photo__bg--blurred');
+        heroPhoto.style.removeProperty('--hero-cover-bg');
+        heroPhoto.style.removeProperty('--hero-cover-position');
+        heroPhoto.style.backgroundImage = "url('" + imageUrl + "')";
+        heroPhoto.style.backgroundPosition = imagePosition;
+      }
     }
 
-    // About & policy sections — only visible for the "split" hero layout
+    // About & policy — split: beside photo; cover: on /book page only
     var isSplit = theme.heroLayout === 'split';
     var profileInfo = document.querySelector('.profile-info');
-    if (profileInfo) profileInfo.style.display = isSplit ? '' : 'none';
+    var aboutBlock = document.getElementById('profile-about-block');
+    var policyBlock = document.getElementById('profile-policy-block');
+    var aboutHidden = isSectionHidden(content, 'aboutMe');
+    var policiesHidden = isSectionHidden(content, 'policies');
 
     // About title — always "About Me"
     var aboutTitleEl = document.getElementById('profile-about-title');
@@ -523,10 +578,12 @@
     if (aboutEl) {
       aboutEl.textContent = content.heroDescription || '';
     }
+    if (aboutBlock) {
+      aboutBlock.hidden = aboutHidden;
+    }
 
     // Policy bullets — bookingPolicy is newline-separated; render as <ul><li> list
     var policyEl = document.getElementById('profile-policy-body');
-    var policyBlock = document.getElementById('profile-policy-block');
     if (policyEl) {
       var policyText = (content.bookingPolicy || '').trim();
       var bullets = policyText
@@ -539,8 +596,29 @@
         policyEl.appendChild(li);
       });
       if (policyBlock) {
-        policyBlock.hidden = !isSplit || bullets.length === 0;
+        policyBlock.hidden = policiesHidden || bullets.length === 0;
       }
+    }
+
+    var aboutVisible = !aboutHidden;
+    var policyVisible = !policiesHidden && policyBlock && !policyBlock.hidden;
+    var showAboutPolicyArea = aboutVisible || policyVisible;
+
+    if (profileInfo) {
+      if (isBookPage) {
+        profileInfo.style.display = showAboutPolicyArea ? '' : 'none';
+      } else if (isCoverSplash) {
+        profileInfo.style.display = 'none';
+      } else if (isSplit || isCover) {
+        profileInfo.style.display = showAboutPolicyArea ? '' : 'none';
+      } else {
+        profileInfo.style.display = 'none';
+      }
+    }
+
+    var bookIntro = document.querySelector('.profile-book-intro');
+    if (bookIntro) {
+      bookIntro.hidden = !showAboutPolicyArea;
     }
 
     // Menu title & blurb
@@ -591,10 +669,17 @@
 
     populateReviews(content, theme);
 
-    // Section visibility
+    // Section visibility (menu, visit, etc. — not aboutMe/policies, handled above)
     document.querySelectorAll('[data-site-section]').forEach(function (el) {
       var sectionId = el.getAttribute('data-site-section');
-      if (sectionId && sectionId !== 'reviews') el.hidden = isSectionHidden(content, sectionId);
+      if (
+        sectionId &&
+        sectionId !== 'reviews' &&
+        sectionId !== 'aboutMe' &&
+        sectionId !== 'policies'
+      ) {
+        el.hidden = isSectionHidden(content, sectionId);
+      }
     });
 
     // Footer

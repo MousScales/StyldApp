@@ -1,8 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useRef, useState } from 'react';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ColorPicker as WheelPicker, useColor } from 'react-native-color-picker-palette';
 import * as ImagePicker from 'expo-image-picker';
 import { WebView } from 'react-native-webview';
@@ -277,48 +282,140 @@ type CustomMode = 'hex' | 'wheel' | 'image';
 
 // ─── Real-time wheel section ──────────────────────────────────────────────────
 
-function WheelSection({ value, onLiveChange }: { value: string; onLiveChange: (hex: string) => void }) {
+function WheelSection({
+  value,
+  draft,
+  onDraftChange,
+  onLiveChange,
+  hexFocused,
+  onHexFocus,
+  onHexBlur,
+}: {
+  value: string;
+  draft: string;
+  onDraftChange: (hex: string) => void;
+  onLiveChange: (hex: string) => void;
+  hexFocused: boolean;
+  onHexFocus: () => void;
+  onHexBlur: () => void;
+}) {
   const [wheelColor, setWheelColor] = useColor(value);
+  const pickerWidth = Dimensions.get('window').width - 40;
 
   const handleChange = useCallback(
     (c: typeof wheelColor) => {
       setWheelColor(c);
       const hex = normalizeHex(c.hex);
-      if (hex) onLiveChange(hex);
+      if (hex) {
+        onDraftChange(hex);
+        onLiveChange(hex);
+      }
     },
-    [setWheelColor, onLiveChange],
+    [setWheelColor, onDraftChange, onLiveChange],
   );
 
   return (
     <View style={wheelStyles.wrap}>
-      <WheelPicker
-        color={wheelColor}
-        onColorChange={handleChange}
-        hideControls
-        style={wheelStyles.picker}
-      />
-      <View style={[wheelStyles.livePreview, { backgroundColor: wheelColor.hex }]}>
-        <Text style={[wheelStyles.liveHex, { color: getContrastColor(wheelColor.hex) }]}>
-          {(normalizeHex(wheelColor.hex) ?? '').toUpperCase()}
-        </Text>
+      {!hexFocused ? (
+        <>
+          <Text style={wheelStyles.hint}>
+            Drag in the square for brightness and saturation. Use the rainbow bar for hue.
+          </Text>
+          <WheelPicker
+            color={wheelColor}
+            onChange={handleChange}
+            onChangeComplete={handleChange}
+            variant="rectangle"
+            width={pickerWidth}
+            thumbSize={16}
+            barHeight={14}
+            hidePreview
+            hideInput
+            hideAlpha
+          />
+        </>
+      ) : (
+        <Text style={wheelStyles.typingHint}>Enter an exact hex code below</Text>
+      )}
+      <View style={wheelStyles.hexRow}>
+        <View style={[wheelStyles.hexPreview, { backgroundColor: draft }]} />
+        <TextInput
+          style={wheelStyles.hexInput}
+          value={draft}
+          onChangeText={(t) => {
+            onDraftChange(t);
+            const hex = normalizeHex(t);
+            if (hex) onLiveChange(hex);
+          }}
+          onFocus={onHexFocus}
+          onBlur={onHexBlur}
+          placeholder="#a855f7"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={7}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
+        />
+        <Text style={wheelStyles.hexHint}>Exact hex</Text>
       </View>
     </View>
   );
 }
 
 const wheelStyles = StyleSheet.create({
-  wrap: { marginBottom: 8 },
-  picker: { height: 280 },
-  livePreview: {
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 10,
+  wrap: {
+    marginBottom: 8,
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
-  liveHex: {
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 1,
+  hint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 8,
+  },
+  typingHint: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  hexRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    marginTop: 14,
+  },
+  hexPreview: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  hexInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    color: colors.text,
+    fontSize: 15,
+    backgroundColor: colors.card,
+    letterSpacing: 0.5,
+  },
+  hexHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    width: 52,
+    textAlign: 'right',
   },
 });
 
@@ -467,9 +564,39 @@ const imgStyles = StyleSheet.create({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ColorPicker({ label, value, presets, onChange }: ColorPickerProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const insets = useSafeAreaInsets();
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
   const [customMode, setCustomMode] = useState<CustomMode>('hex');
+  const [hexInputFocused, setHexInputFocused] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setHexInputFocused(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const closeSheet = useCallback(() => {
+    Keyboard.dismiss();
+    setOpen(false);
+    setCustomMode('hex');
+    setHexInputFocused(false);
+  }, []);
 
   const groups =
     presets === 'primary' ? PRIMARY_GROUPS :
@@ -484,8 +611,7 @@ export default function ColorPicker({ label, value, presets, onChange }: ColorPi
     if (!clean) return;
     setDraft(clean);
     onChange(clean);
-    setOpen(false);
-    setCustomMode('hex');
+    closeSheet();
   };
 
   const handleLiveChange = useCallback(
@@ -500,14 +626,18 @@ export default function ColorPicker({ label, value, presets, onChange }: ColorPi
     const clean = normalizeHex(draft);
     if (clean) {
       onChange(clean);
-      setOpen(false);
-      setCustomMode('hex');
+      closeSheet();
     }
   };
 
+  const keyboardPad =
+    Platform.OS === 'android' && keyboardHeight > 0
+      ? Math.max(0, keyboardHeight - insets.bottom)
+      : 0;
+
   const MODE_BUTTONS: { id: CustomMode; icon: string; label: string }[] = [
     { id: 'hex', icon: 'code-outline', label: 'Hex' },
-    { id: 'wheel', icon: 'color-filter-outline', label: 'Wheel' },
+    { id: 'wheel', icon: 'color-filter-outline', label: 'Drag' },
     { id: 'image', icon: 'image-outline', label: 'Photo' },
   ];
 
@@ -533,105 +663,83 @@ export default function ColorPicker({ label, value, presets, onChange }: ColorPi
         visible={open}
         animationType="slide"
         transparent
-        onRequestClose={() => { setOpen(false); setCustomMode('hex'); }}
+        onRequestClose={closeSheet}
       >
-        <SafeAreaView style={styles.modalBg} edges={['bottom']}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
+        <KeyboardAvoidingView
+          style={styles.modalBg}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <SafeAreaView style={styles.modalBgInner} edges={['bottom']}>
+            <View style={[styles.sheet, keyboardPad > 0 && { paddingBottom: keyboardPad }]}>
+              <View style={styles.handle} />
 
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{label}</Text>
-              <Pressable
-                onPress={() => { setOpen(false); setCustomMode('hex'); }}
-                hitSlop={10}
-                style={styles.closeBtn}
-              >
-                <Ionicons name="close" size={20} color={colors.text} />
-              </Pressable>
-            </View>
-
-            {/* Current color preview */}
-            <View style={[styles.preview, { backgroundColor: value }]}>
-              <Text style={[styles.previewName, { color: contrastColor }]}>
-                {colorName ?? 'Custom'}
-              </Text>
-              <Text style={[styles.previewHex, { color: contrastColor + 'cc' }]}>
-                {value.toUpperCase()}
-              </Text>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
-              {/* Palette swatches */}
-              {groups.map((group) => (
-                <View key={group.label} style={styles.group}>
-                  <Text style={styles.groupLabel}>{group.label}</Text>
-                  <View style={styles.swatchRow}>
-                    {group.swatches.map((swatch) => {
-                      const active = value.toLowerCase() === swatch.hex.toLowerCase();
-                      return (
-                        <Pressable
-                          key={swatch.hex}
-                          style={styles.swatchWrap}
-                          onPress={() => handleSelect(swatch.hex)}
-                        >
-                          <View
-                            style={[
-                              styles.swatch,
-                              { backgroundColor: swatch.hex },
-                              active && styles.swatchActive,
-                            ]}
-                          >
-                            {active && (
-                              <Ionicons name="checkmark" size={18} color={getContrastColor(swatch.hex)} />
-                            )}
-                          </View>
-                          <Text
-                            style={[styles.swatchName, active && styles.swatchNameActive]}
-                            numberOfLines={2}
-                          >
-                            {swatch.name}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              ))}
-
-              {/* Custom section */}
-              <View style={styles.customHeader}>
-                <Text style={styles.groupLabel}>Custom</Text>
-                <View style={styles.modeBar}>
-                  {MODE_BUTTONS.map((btn) => (
-                    <Pressable
-                      key={btn.id}
-                      style={[styles.modeBtn, customMode === btn.id && styles.modeBtnActive]}
-                      onPress={() => setCustomMode(btn.id)}
-                    >
-                      <Ionicons
-                        name={btn.icon as any}
-                        size={14}
-                        color={customMode === btn.id ? colors.accentPink : colors.textMuted}
-                      />
-                      <Text style={[styles.modeBtnText, customMode === btn.id && styles.modeBtnTextActive]}>
-                        {btn.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>{label}</Text>
+                <Pressable onPress={closeSheet} hitSlop={10} style={styles.closeBtn}>
+                  <Ionicons name="close" size={20} color={colors.text} />
+                </Pressable>
               </View>
 
-              {customMode === 'wheel' && (
-                <WheelSection value={value} onLiveChange={handleLiveChange} />
-              )}
+              <View
+                style={[
+                  styles.preview,
+                  hexInputFocused && styles.previewCompact,
+                  { backgroundColor: draft },
+                ]}
+              >
+                <Text style={[styles.previewName, { color: getContrastColor(draft) }]}>
+                  {findColorName(draft, groups) ?? 'Custom'}
+                </Text>
+                <Text style={[styles.previewHex, { color: getContrastColor(draft) + 'cc' }]}>
+                  {(normalizeHex(draft) ?? draft).toUpperCase()}
+                </Text>
+              </View>
 
-              {customMode === 'image' && (
-                <ImageSection onPick={handleLiveChange} />
-              )}
+              {!hexInputFocused ? (
+                <View style={styles.customHeader}>
+                  <Text style={styles.groupLabel}>Custom</Text>
+                  <View style={styles.modeBar}>
+                    {MODE_BUTTONS.map((btn) => (
+                      <Pressable
+                        key={btn.id}
+                        style={[styles.modeBtn, customMode === btn.id && styles.modeBtnActive]}
+                        onPress={() => setCustomMode(btn.id)}
+                      >
+                        <Ionicons
+                          name={btn.icon as any}
+                          size={14}
+                          color={customMode === btn.id ? colors.accentPink : colors.textMuted}
+                        />
+                        <Text style={[styles.modeBtnText, customMode === btn.id && styles.modeBtnTextActive]}>
+                          {btn.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
 
-              {customMode === 'hex' && (
-                <View style={styles.hexRow}>
+              {customMode === 'wheel' ? (
+                <WheelSection
+                  key={`wheel-${value}`}
+                  value={value}
+                  draft={draft}
+                  onDraftChange={setDraft}
+                  onLiveChange={handleLiveChange}
+                  hexFocused={hexInputFocused}
+                  onHexFocus={() => setHexInputFocused(true)}
+                  onHexBlur={() => setHexInputFocused(false)}
+                />
+              ) : null}
+
+              {customMode === 'image' && !hexInputFocused ? (
+                <View style={styles.customPanelPad}>
+                  <ImageSection onPick={handleLiveChange} />
+                </View>
+              ) : null}
+
+              {customMode === 'hex' ? (
+                <View style={[styles.hexRow, styles.customPanelPad]}>
                   <View style={[styles.hexPreview, { backgroundColor: draft }]} />
                   <TextInput
                     style={styles.hexInput}
@@ -641,6 +749,8 @@ export default function ColorPicker({ label, value, presets, onChange }: ColorPi
                       const h = normalizeHex(t);
                       if (h) onChange(h);
                     }}
+                    onFocus={() => setHexInputFocused(true)}
+                    onBlur={() => setHexInputFocused(false)}
                     placeholder="#a855f7"
                     placeholderTextColor={colors.textMuted}
                     autoCapitalize="none"
@@ -653,11 +763,55 @@ export default function ColorPicker({ label, value, presets, onChange }: ColorPi
                     <Text style={styles.hexApplyText}>Apply</Text>
                   </Pressable>
                 </View>
-              )}
+              ) : null}
 
-            </ScrollView>
-          </View>
-        </SafeAreaView>
+              {!hexInputFocused ? (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.scrollContent}
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {groups.map((group) => (
+                    <View key={group.label} style={styles.group}>
+                      <Text style={styles.groupLabel}>{group.label}</Text>
+                      <View style={styles.swatchRow}>
+                        {group.swatches.map((swatch) => {
+                          const active = value.toLowerCase() === swatch.hex.toLowerCase();
+                          return (
+                            <Pressable
+                              key={swatch.hex}
+                              style={styles.swatchWrap}
+                              onPress={() => handleSelect(swatch.hex)}
+                            >
+                              <View
+                                style={[
+                                  styles.swatch,
+                                  { backgroundColor: swatch.hex },
+                                  active && styles.swatchActive,
+                                ]}
+                              >
+                                {active && (
+                                  <Ionicons name="checkmark" size={18} color={getContrastColor(swatch.hex)} />
+                                )}
+                              </View>
+                              <Text
+                                style={[styles.swatchName, active && styles.swatchNameActive]}
+                                numberOfLines={2}
+                              >
+                                {swatch.name}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : null}
+            </View>
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -665,7 +819,7 @@ export default function ColorPicker({ label, value, presets, onChange }: ColorPi
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -694,6 +848,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  modalBgInner: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   sheet: {
     backgroundColor: colors.background,
@@ -736,10 +894,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  previewCompact: {
+    padding: 14,
+    marginBottom: 14,
+  },
   previewName: { fontSize: 16, fontWeight: '800' },
   previewHex: { fontSize: 13, fontWeight: '600', letterSpacing: 0.5 },
 
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 32, paddingTop: 8 },
+  customPanelPad: { paddingHorizontal: 20, marginBottom: 8 },
 
   group: { marginBottom: 20 },
   groupLabel: {
@@ -776,6 +939,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
+    paddingHorizontal: 20,
   },
   modeBar: {
     flexDirection: 'row',
@@ -830,4 +994,4 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
   },
   hexApplyText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-});
+};

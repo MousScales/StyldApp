@@ -1634,7 +1634,7 @@ a:hover {
 .section-popular-styles .catalog-service-card__price {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--pink-dark);
+  color: var(--ink);
   white-space: nowrap;
 }
 
@@ -1734,7 +1734,7 @@ a:hover {
 .style-pill__price {
   font-weight: 800;
   font-size: 0.95rem;
-  color: var(--pink);
+  color: var(--ink);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -3362,7 +3362,7 @@ button.hero-btn {
 .page-catalog .catalog-service-card__price {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--pink-dark);
+  color: var(--ink);
   white-space: nowrap;
 }
 
@@ -4816,6 +4816,42 @@ ul.price-menu__policy-list {
 .price-line.fee {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.style-addon-field .field-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.style-addon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.style-addon-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  background: var(--white, #fff);
+  cursor: pointer;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.style-addon-option:has(input:checked) {
+  border-color: var(--pink, #db2777);
+  background: rgba(219, 39, 119, 0.06);
+}
+
+.style-addon-option input {
+  flex-shrink: 0;
+  accent-color: var(--pink, #db2777);
 }
 
 .price-line.charge-total {
@@ -6396,7 +6432,9 @@ ul.price-menu__policy-list {
 .profile-hero--cover .profile-photo {
   width: 100%;
   aspect-ratio: unset;
-  height: clamp(420px, 72vh, 760px);
+  height: 100dvh;
+  min-height: 480px;
+  max-height: none;
   border-radius: 0;
   box-shadow: none;
 }
@@ -6410,27 +6448,113 @@ ul.price-menu__policy-list {
 .profile-cover-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.52) 100%);
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.12) 0%,
+    rgba(0, 0, 0, 0.35) 45%,
+    rgba(0, 0, 0, 0.62) 100%
+  );
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding: 2rem 2rem 1.75rem;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 2rem 1.5rem;
+  gap: 1.1rem;
 }
-.profile-cover-overlay .profile-brand {
-  font-size: 1.6rem;
+.profile-cover-overlay .profile-cover-brand {
+  font-size: clamp(1.85rem, 6vw, 3rem);
   font-weight: 700;
   color: #fff;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.35);
-  text-decoration: none;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
   font-family: var(--font-display);
-  display: block;
-  margin-bottom: 0.85rem;
+  line-height: 1.15;
+  max-width: 18ch;
 }
 .profile-cover-overlay .profile-book-btn {
-  align-self: flex-start;
+  align-self: center;
+  padding: 0.75rem 1.75rem;
+  font-size: 1rem;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.28);
+}
+.profile-cover-overlay .profile-book-btn:hover {
+  opacity: 0.92;
+}
+.profile-photo__bg--blurred {
+  background-image: none !important;
+  overflow: hidden;
+}
+.profile-photo__bg--blurred::before {
+  content: '';
+  position: absolute;
+  inset: -28px;
+  background-image: var(--hero-cover-bg);
+  background-size: cover;
+  background-position: var(--hero-cover-position, center center);
+  filter: blur(14px);
+  transform: scale(1.06);
+  z-index: 0;
+}
+.profile-photo__bg--blurred .profile-cover-overlay {
+  z-index: 1;
 }
 .profile-hero--cover .profile-info {
-  padding: 1.75rem 0 0.5rem;
+  padding: 2rem 0 0.5rem;
+  scroll-margin-top: 4.5rem;
+}
+#site-main-content {
+  scroll-margin-top: 4.5rem;
+}
+body.hero-layout-cover .profile-nav:not(.profile-nav--cover-splash) .profile-brand {
+  visibility: hidden;
+}
+body.page-cover-splash .profile-nav--cover-splash {
+  display: block !important;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: transparent !important;
+  border: none;
+  box-shadow: none;
+  padding: 0.875rem 0;
+  pointer-events: none;
+}
+body.page-cover-splash .profile-nav--cover-splash .profile-nav__inner {
+  pointer-events: auto;
+}
+body.page-cover-splash .profile-nav--cover-splash .profile-brand {
+  visibility: visible !important;
+  color: var(--text-splash-brand, #fff);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+}
+body.page-cover-splash .profile-nav--cover-splash .profile-book-btn {
+  display: none !important;
+}
+body.page-cover-splash .profile-nav:not(.profile-nav--cover-splash) {
+  display: none !important;
+}
+body.page-cover-splash {
+  overflow: hidden;
+  height: 100dvh;
+}
+body.page-cover-splash .profile-below-hero {
+  display: none !important;
+}
+
+/* Book page (cover layout — about, menu, location) */
+.profile-book-intro {
+  padding: 1rem 0 0.25rem;
+}
+body.page-book .profile-nav .profile-brand {
+  visibility: visible;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 /* Stack hero layout */
@@ -6448,6 +6572,17 @@ ul.price-menu__policy-list {
   aspect-ratio: 3 / 1;
   object-fit: cover;
   object-position: center;
+}
+.profile-hero-stack--tall {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.profile-hero-stack--tall .profile-hero-stack__img {
+  aspect-ratio: 4 / 9;
+  width: min(92vw, 400px);
+  max-width: 400px;
 }
 .profile-hero--stack .profile-hero__grid {
   grid-template-columns: 1fr;
@@ -6570,7 +6705,7 @@ ul.price-menu__policy-list {
 .profile-service-card__price {
   font-size: 0.84rem;
   font-weight: 700;
-  color: var(--pink);
+  color: var(--ink);
   margin-top: 0.15rem;
 }
 .profile-service-card__duration {
@@ -6590,12 +6725,17 @@ ul.price-menu__policy-list {
   border-top: 1px solid rgba(0, 0, 0, 0.07);
   cursor: pointer;
   font-family: var(--font-body);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.76rem;
+  font-weight: 400;
   color: var(--muted);
   text-align: left;
   gap: 0.5rem;
   transition: color 0.15s;
+}
+.profile-service-card__expand-label {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
 }
 .profile-service-card__expand-btn:hover {
   color: var(--pink);
@@ -6917,4 +7057,66 @@ ul.price-menu__policy-list {
   font-size: 0.95rem;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+/* Optional per-element text colors (theme.textColors → CSS variables) */
+.profile-about-head,
+.profile-policy-head,
+.profile-menu-head h2,
+.profile-location-head h2,
+.profile-reviews-head h2 {
+  color: var(--text-heading, var(--ink));
+  border-bottom-color: var(--text-accent, var(--pink));
+}
+.profile-about-body,
+.profile-policy-body {
+  color: var(--text-body, var(--muted));
+}
+.profile-menu-blurb,
+.profile-service-card__duration,
+.profile-service-card__expand-btn,
+.profile-service-card__desc,
+.profile-location-col h3,
+.profile-review-modal__message {
+  color: var(--text-muted, var(--muted));
+}
+.profile-service-card__name {
+  color: var(--text-service-name, var(--ink));
+}
+.profile-service-card__price {
+  color: var(--text-price, var(--ink));
+}
+.profile-menu-filter:hover {
+  border-color: var(--text-accent, var(--pink));
+  color: var(--text-accent, var(--pink));
+}
+.profile-menu-filter--active {
+  background: var(--text-accent, var(--pink));
+  border-color: var(--text-accent, var(--pink));
+}
+.profile-service-card__expand-btn:hover {
+  color: var(--text-accent, var(--pink));
+}
+.profile-location-col p,
+.profile-location-col a,
+.profile-ig-link a {
+  color: var(--text-link, var(--pink));
+}
+.profile-location-head h2,
+.profile-reviews-head h2 {
+  border-bottom-color: var(--text-accent, var(--pink));
+}
+.profile-brand {
+  color: var(--text-nav, var(--nav-text, #fff));
+}
+.profile-book-btn:not(.profile-book-btn--cover-splash) {
+  color: var(--text-nav-button, var(--pink));
+  background: var(--text-nav-button-bg, var(--ink));
+}
+.profile-cover-overlay .profile-cover-brand {
+  color: var(--text-splash-brand, #fff);
+}
+.profile-cover-overlay .profile-book-btn {
+  color: var(--text-splash-button, var(--ink));
+  background: var(--text-splash-button-bg, #fff);
 }

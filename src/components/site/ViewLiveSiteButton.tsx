@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SitePublishConfig } from '../../data/sitePublish';
 import { openLiveSiteUrl, resolveLiveSiteUrl } from '../../lib/openLiveSite';
@@ -15,6 +16,8 @@ export default function ViewLiveSiteButton({
   onPublish,
   compact,
 }: ViewLiveSiteButtonProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const url = resolveLiveSiteUrl(sitePublish);
   const isLive = sitePublish.published && Boolean(url);
 
@@ -43,7 +46,7 @@ export default function ViewLiveSiteButton({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   button: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -84,4 +87,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-});
+};

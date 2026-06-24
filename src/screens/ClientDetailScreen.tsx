@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -58,6 +59,8 @@ function StatCard({
   label: string;
   value: string;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.statCard}>
       <Ionicons name={icon as any} size={18} color={colors.accentPink} style={{ marginBottom: 6 }} />
@@ -80,6 +83,8 @@ function ContactButton({
   onPress?: () => void;
   disabled?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <Pressable
       style={[styles.contactBtn, disabled && styles.contactBtnDisabled]}
@@ -101,6 +106,8 @@ function ContactButton({
 }
 
 function SectionHeader({ title }: { title: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return <Text style={styles.sectionTitle}>{title}</Text>;
 }
 
@@ -120,6 +127,8 @@ function HistoryFilterBar({
   active: HistoryFilter;
   onChange: (f: HistoryFilter) => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.filterBar}>
       {HISTORY_FILTERS.map((f) => (
@@ -140,6 +149,8 @@ function HistoryFilterBar({
 // ─── main screen ─────────────────────────────────────────────────────────────
 
 export default function ClientDetailScreen({ navigation, route }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { getClientById } = useSiteData();
   const client = getClientById(route.params.clientId);
   const { privacyMode } = usePrivacyMode();
@@ -381,7 +392,7 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
 
 // ─── styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -727,4 +738,4 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 15,
   },
-});
+};

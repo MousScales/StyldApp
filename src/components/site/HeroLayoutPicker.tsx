@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { HERO_LAYOUT_OPTIONS, HeroLayout } from '../../data/siteTheme';
 import { colors } from '../../theme';
@@ -15,6 +16,15 @@ function LayoutPreview({ layout }: { layout: HeroLayout }) {
         <View style={[previewStyles.block, previewStyles.textBlock]} />
         <View style={[previewStyles.block, previewStyles.imageBlock]} />
         <View style={[previewStyles.block, previewStyles.textBlock]} />
+      </View>
+    );
+  }
+
+  if (layout === 'cover') {
+    return (
+      <View style={previewStyles.coverWrap}>
+        <View style={[previewStyles.block, previewStyles.coverBlock]} />
+        <View style={[previewStyles.block, previewStyles.textLineShort]} />
       </View>
     );
   }
@@ -38,6 +48,8 @@ function LayoutPreview({ layout }: { layout: HeroLayout }) {
 }
 
 export default function HeroLayoutPicker({ value, onChange }: HeroLayoutPickerProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.list}>
       {HERO_LAYOUT_OPTIONS.map((option) => {
@@ -104,9 +116,22 @@ const previewStyles = StyleSheet.create({
     width: 32,
     height: 6,
   },
+  coverWrap: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 4,
+    width: '100%',
+  },
+  coverBlock: {
+    width: '100%',
+    height: 32,
+    backgroundColor: colors.accentPinkSoft,
+    borderRadius: 4,
+  },
 });
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   list: {
     gap: 10,
   },
@@ -148,4 +173,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-});
+};

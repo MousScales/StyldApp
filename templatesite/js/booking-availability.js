@@ -13,7 +13,7 @@
     sameDayLeadMinutes: 4320,
     saturdayLastStartHour: 14,
     saturdayLastStartMinute: 0,
-    concurrentAppointmentCapacity: 2,
+    concurrentAppointmentCapacity: 1,
   };
 
   function minutesOfDay(hour, minute) {
@@ -60,7 +60,9 @@
       return global.StyldTenant.normalizeBookingHours(raw);
     }
     var source = raw && typeof raw === 'object' ? raw : {};
-    return Object.assign({}, DEFAULT_HOURS, source);
+    var merged = Object.assign({}, DEFAULT_HOURS, source);
+    merged.concurrentAppointmentCapacity = 1;
+    return merged;
   }
 
   function hoursFromCfg(cfg) {

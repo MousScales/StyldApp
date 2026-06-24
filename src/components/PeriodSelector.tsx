@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { PERIOD_OPTIONS, Period } from '../data/periods';
@@ -11,6 +12,8 @@ type Props = {
 };
 
 export default function PeriodSelector({ selectedPeriod, onPeriodChange, centered = true }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const chevronRot = useRef(new Animated.Value(0)).current;
   const pillAnims = useRef(PERIOD_OPTIONS.map(() => new Animated.Value(0))).current;
@@ -115,7 +118,7 @@ export default function PeriodSelector({ selectedPeriod, onPeriodChange, centere
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   periodRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -152,4 +155,4 @@ const styles = StyleSheet.create({
     color: colors.chartBlue,
     fontWeight: '700',
   },
-});
+};

@@ -17,6 +17,8 @@ import {
   DEFAULT_STYLE_CATEGORY,
   DEFAULT_STYLE_DURATION_MINUTES,
   normalizeStyleDurationMinutes,
+  normalizeStyleAddons,
+  StyleAddon,
   StyleCatalogMeta,
   StyleMetaEntry,
 } from '../data/siteStyles';
@@ -39,6 +41,7 @@ export type StyleUpsertInput = {
   durationMinutes?: number;
   category?: string;
   venue?: ServiceVenue;
+  addons?: StyleAddon[];
 };
 
 type ServiceCatalogContextValue = {
@@ -211,6 +214,10 @@ export function ServiceCatalogProvider({ children }: { children: React.ReactNode
       }
 
       const id = input.id ?? createStyleId(title, input.venue ?? 'studio');
+      const addons =
+        input.addons !== undefined
+          ? normalizeStyleAddons(input.addons)
+          : normalizeStyleAddons(styleMetaRef.current[id]?.addons);
       const entry: StyleMetaEntry = {
         title,
         description: input.description.trim(),
@@ -220,6 +227,7 @@ export function ServiceCatalogProvider({ children }: { children: React.ReactNode
             styleMetaRef.current[id]?.durationMinutes ??
             DEFAULT_STYLE_DURATION_MINUTES,
         ),
+        ...(addons.length ? { addons } : {}),
       };
 
       const nextMeta = { ...styleMetaRef.current, [id]: entry };

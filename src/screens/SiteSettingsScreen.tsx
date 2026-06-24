@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useRef, useState } from 'react';
 import {
@@ -19,6 +20,8 @@ import { colors } from '../theme';
 type Props = NativeStackScreenProps<SiteStackParamList, 'SiteSettings'>;
 
 function SectionTitle({ title }: { title: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return <Text style={styles.sectionTitle}>{title}</Text>;
 }
 
@@ -37,6 +40,8 @@ function SettingToggle({
   onValueChange: (value: boolean) => void;
   isLast?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={[styles.settingRow, isLast && styles.settingRowLast]}>
       <View style={styles.settingIconWrap}>
@@ -71,6 +76,8 @@ function SettingField({
   placeholder: string;
   multiline?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.fieldGroup}>
       <View style={styles.fieldLabelRow}>
@@ -90,6 +97,8 @@ function SettingField({
 }
 
 export default function SiteSettingsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [businessName, setBusinessName] = useState('');
   const [tagline, setTagline] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
@@ -253,7 +262,7 @@ export default function SiteSettingsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -380,4 +389,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-});
+};

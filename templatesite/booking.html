@@ -86,6 +86,11 @@
               </select>
             </div>
 
+            <div class="field style-addon-field" id="style-addon-field-wrap" hidden>
+              <span class="field-label">Optional add-on</span>
+              <div id="style-addon-list" class="style-addon-list" role="radiogroup" aria-label="Optional add-on"></div>
+            </div>
+
             <div class="field house-address-block" id="house-address-field-wrap" hidden>
               <fieldset class="house-address-fields">
                 <legend class="house-address-legend">House-call service address <span aria-hidden="true">*</span></legend>
@@ -243,6 +248,9 @@
             <p>
               <strong>Service price:</strong> <span id="line-subtotal">$0.00</span>
             </p>
+            <p id="line-style-addon-row" hidden>
+              <strong>Add-on:</strong> <span id="line-style-addon">—</span>
+            </p>
             <p>
               <strong id="line-total-label">Estimated total:</strong> <span id="line-total">$0.00</span>
             </p>
@@ -309,6 +317,10 @@
           <div class="price-line">
             <span>Service price</span>
             <span id="side-subtotal">$0.00</span>
+          </div>
+          <div class="price-line" id="side-style-addon-row" hidden>
+            <span>Add-on</span>
+            <span id="side-style-addon">—</span>
           </div>
           <div class="price-line total">
             <span id="side-total-label">Estimated total</span>

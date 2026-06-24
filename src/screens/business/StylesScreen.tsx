@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -23,12 +25,16 @@ import {
   DEFAULT_STYLE_CATEGORY,
   DEFAULT_STYLE_DURATION_MINUTES,
   formatStyleDuration,
-  formatStylePrice,
+  formatStylePriceRange,
+  getIncompleteStyleAddons,
+  normalizeStyleAddons,
   STYLE_DURATION_PRESETS,
+  StyleAddon,
 } from '../../data/siteStyles';
 import { pickSiteImageFromLibrary } from '../../lib/pickSiteImage';
 import { ProfileStackParamList } from '../../navigation/ProfileNavigator';
 import { colors } from '../../theme';
+import StyleAddonsEditor from '../../components/site/StyleAddonsEditor';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Styles'>;
 
@@ -72,7 +78,7 @@ function StyleCard({
       </View>
 
       {/* price */}
-      <Text style={cardStyles.price}>{formatStylePrice(price)}</Text>
+      <Text style={cardStyles.price}>{formatStylePriceRange(price, meta?.addons)}</Text>
     </Pressable>
   );
 }
@@ -297,6 +303,7 @@ function EditModal({
   const [durationMinutes, setDurationMinutes] = useState(
     meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
   );
+  const [addons, setAddons] = useState<StyleAddon[]>(meta?.addons ?? []);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [imageMimeType, setImageMimeType] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -314,13 +321,33 @@ function EditModal({
   };
 
   const handleSave = async () => {
-    if (!title.trim()) { Alert.alert('Enter a title for this style.'); return; }
+    Keyboard.dismiss();
+    if (!title.trim()) {
+      Alert.alert('Enter a title for this style.');
+      return;
+    }
+    const incompleteAddons = getIncompleteStyleAddons(addons);
+    if (incompleteAddons.length > 0) {
+      Alert.alert(
+        'Add-on name required',
+        'Enter a name for each add-on, or tap × to remove empty rows.',
+      );
+      return;
+    }
+    const normalizedAddons = normalizeStyleAddons(addons);
     setSaving(true);
     try {
       const cat = folder.trim() || DEFAULT_STYLE_CATEGORY;
       if (isNew) {
         await upsertStyle(
-          { title: title.trim(), description: description.trim(), price: parsedPrice, durationMinutes, category: cat },
+          {
+            title: title.trim(),
+            description: description.trim(),
+            price: parsedPrice,
+            durationMinutes,
+            category: cat,
+            addons: normalizedAddons,
+          },
           localImageUri,
           imageMimeType,
         );
@@ -333,6 +360,7 @@ function EditModal({
           durationMinutes,
           category: cat,
           venue: service.venue,
+          addons: normalizedAddons,
         });
         if (localImageUri) {
           await uploadStyleImage(service.id, localImageUri, imageMimeType ?? undefined);
@@ -427,6 +455,8 @@ function EditModal({
           })}
         </ScrollView>
 
+        <StyleAddonsEditor addons={addons} onChange={setAddons} disabled={saving} />
+
         {/* Save */}
         <Pressable
           style={[modalStyles.saveBtn, saving && { opacity: 0.6 }]}
@@ -494,7 +524,7 @@ const modalStyles = StyleSheet.create({
   headerBtn: { width: 36 },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: colors.text },
   headerRight: { width: 36, alignItems: 'flex-end' },
-  content: { padding: 20, paddingBottom: 48, gap: 4 },
+  content: { padding: 20, paddingBottom: 80, gap: 4 },
   photoArea: {
     width: '100%',
     aspectRatio: 16 / 9,
@@ -560,6 +590,8 @@ const modalStyles = StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function StylesScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { hasLinkedSite } = useSiteData();
   const { catalogServices, isLoading, error, isSaving, refresh } = useServiceCatalog();
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -650,6 +682,7 @@ export default function StylesScreen({ navigation }: Props) {
       >
         {editState !== null && (
           <EditModal
+            key={editState.service?.id ?? 'new'}
             state={editState}
             onClose={() => setEditState(null)}
           />
@@ -659,7 +692,7 @@ export default function StylesScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -739,4 +772,4 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   addFirstBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-});
+};

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import {
   ActivityIndicator,
   Alert,
@@ -42,6 +43,8 @@ export default function ClientContactSheet({
   onClose,
   onSent,
 }: ClientContactSheetProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [templateId, setTemplateId] = useState<ClientEmailTemplateId>('book_again');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
@@ -241,7 +244,7 @@ export default function ClientContactSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -429,4 +432,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-});
+};

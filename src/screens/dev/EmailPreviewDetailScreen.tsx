@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -60,6 +61,8 @@ function buildContextFromSite(
 }
 
 export default function EmailPreviewDetailScreen({ navigation, route }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { previewId } = route.params;
   const { profile } = useAuth();
   const { content } = useSiteContent();
@@ -110,7 +113,7 @@ export default function EmailPreviewDetailScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
   header: {
@@ -151,4 +154,4 @@ const styles = StyleSheet.create({
   },
   footerNote: { color: colors.textMuted, fontSize: 11, lineHeight: 16, textAlign: 'center' },
   footerCode: { fontFamily: 'Courier', color: colors.text },
-});
+};

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { resolveBankDomain } from '../lib/institutionDomains';
@@ -36,6 +37,8 @@ const RETURN_URL = 'styldd.com/connect/return';
 const REFRESH_URL = 'styldd.com/connect/refresh';
 
 export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActive }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { hasLinkedSite } = useSiteData();
   const { privacyMode } = usePrivacyMode();
   const [summary, setSummary] = useState<StripeConnectSummary | null>(null);
@@ -271,7 +274,7 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   wrap: {
     alignItems: 'center',
     paddingVertical: 20,
@@ -344,4 +347,4 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.cardBorder },
   modalTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
   modalDone: { color: colors.accentPink, fontSize: 16, fontWeight: '600' },
-});
+};

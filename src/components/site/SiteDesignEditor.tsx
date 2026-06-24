@@ -1,13 +1,26 @@
-import HeroImagePicker from './HeroImagePicker';
-import ColorPicker from './ColorPicker';
+import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSiteContent } from '../../context/SiteContentContext';
 import { useSiteTheme } from '../../context/SiteThemeContext';
-import { FontFamily, FONT_FAMILY_OPTIONS, HeroLayout } from '../../data/siteTheme';
-import { colors } from '../../theme';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { FontFamily, FONT_FAMILY_OPTIONS, getHeroStackAspectRatio, HERO_STACK_IMAGE_FORMAT_OPTIONS, HeroLayout, HeroStackImageFormat, SITE_TEXT_COLOR_FIELDS, SITE_TEXT_COLOR_GROUPS } from '../../data/siteTheme';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
+import { legacyPositionFromFocus } from '../../lib/heroImageFocus';
 import { pickSiteImageFromLibrary } from '../../lib/pickSiteImage';
-import { useState } from 'react';
+import { colors } from '../../theme';
+import ColorPicker from './ColorPicker';
+import HeroImagePicker from './HeroImagePicker';
+import SiteImageCropFrame from './SiteImageCropFrame';
+import TextColorFieldRow from './TextColorFieldRow';
 
 
 function Field({
@@ -21,6 +34,8 @@ function Field({
   onChangeText: (value: string) => void;
   placeholder?: string;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -37,10 +52,13 @@ function Field({
 
 
 export default function SiteDesignEditor({ section }: { section?: 'style' | 'photos' }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { content, updateContent } = useSiteContent();
   const { theme, updateTheme, uploadHeroImage, uploadLogoImage, removeHeroImage, heroImageUrl, logoImageUrl, isSaving, uploadStackImage, removeStackImage, stackImageUrls } =
     useSiteTheme();
   const [pickingStack, setPickingStack] = useState(false);
+  const isCoverLayout = (theme.heroLayout || 'split') === 'cover';
 
   // ── Photos section ──
   if (section === 'photos') {
@@ -52,6 +70,7 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
           {([
             { id: 'split', label: 'Split', desc: 'Photo + bio' },
             { id: 'stack', label: 'Stack', desc: 'Photo collage' },
+            { id: 'cover', label: 'Full screen', desc: 'Splash + /book page' },
           ] as { id: HeroLayout; label: string; desc: string }[]).map(({ id, label, desc }) => {
             const active = (theme.heroLayout || 'split') === id;
             return (
@@ -69,6 +88,14 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
                           <View key={i} style={[styles.layoutThumbBar, { width: `${w}%` as any }]} />
                         ))}
                       </View>
+                    </View>
+                  </View>
+                ) : id === 'cover' ? (
+                  <View style={styles.layoutThumb}>
+                    <View style={styles.layoutThumbCover}>
+                      <View style={styles.layoutThumbCoverImg} />
+                      <View style={styles.layoutThumbCoverLine} />
+                      <View style={[styles.layoutThumbCoverLine, { width: '40%' as const }]} />
                     </View>
                   </View>
                 ) : (
@@ -91,18 +118,74 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
         {(theme.heroLayout || 'split') === 'stack' ? (
           <>
             <Text style={styles.groupTitle}>Header images</Text>
+            <Text style={styles.helper}>Choose a frame shape, then add photos that match.</Text>
+            <View style={styles.stackFormatRow}>
+              {HERO_STACK_IMAGE_FORMAT_OPTIONS.map(({ id, label, desc, sizeHint }) => {
+                const active = (theme.heroStackImageFormat ?? 'wide') === id;
+                return (
+                  <Pressable
+                    key={id}
+                    style={[styles.stackFormatCard, active && styles.layoutCardActive]}
+                    onPress={() => updateTheme({ heroStackImageFormat: id })}
+                  >
+                    <View style={styles.layoutThumb}>
+                      {id === 'wide' ? (
+                        <View style={styles.stackFormatThumbWide} />
+                      ) : (
+                        <View style={styles.stackFormatThumbTall} />
+                      )}
+                    </View>
+                    <Text style={[styles.layoutCardLabel, active && styles.layoutCardLabelActive]}>{label}</Text>
+                    <Text style={styles.layoutCardDesc}>{desc}</Text>
+                    <Text style={styles.stackFormatSize}>{sizeHint}</Text>
+                    {active ? (
+                      <View style={styles.layoutCardCheck}>
+                        <Ionicons name="checkmark-circle" size={16} color={colors.accentPink} />
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+            {(() => {
+              const stackFormat: HeroStackImageFormat = theme.heroStackImageFormat ?? 'wide';
+              const formatMeta = HERO_STACK_IMAGE_FORMAT_OPTIONS.find((o) => o.id === stackFormat)
+                ?? HERO_STACK_IMAGE_FORMAT_OPTIONS[0];
+              const stackAspect = getHeroStackAspectRatio(stackFormat);
+              return (
+                <>
             <View style={styles.stackSizeNote}>
               <Ionicons name="information-circle-outline" size={15} color={colors.accentPink} />
               <Text style={styles.stackSizeNoteText}>
-                Best with wide images at <Text style={{ fontWeight: '700' }}>1200 × 400 px</Text> (3:1 ratio). Keep subjects centered.
+                Best with {stackFormat === 'wide' ? 'wide' : 'tall'} images at{' '}
+                <Text style={{ fontWeight: '700' }}>{formatMeta.sizeHint}</Text>
+                {stackFormat === 'wide' ? ' (3:1 ratio)' : ' (4:9 ratio)'}.
+                {stackFormat === 'wide' ? ' Keep subjects centered.' : ' Great for phone portraits and story-style shots.'}
               </Text>
             </View>
             {stackImageUrls.length > 0 ? (
               <View style={styles.stackPreview}>
-                <Text style={styles.stackPreviewLabel}>Preview</Text>
+                <Text style={styles.stackPreviewLabel}>Preview — drag each image to reposition</Text>
                 {stackImageUrls.map((url, i) => (
-                  <View key={i} style={styles.stackPreviewItem}>
-                    <Image source={{ uri: url }} style={styles.stackPreviewImg} />
+                  <View
+                    key={i}
+                    style={[
+                      styles.stackPreviewItem,
+                      stackFormat === 'tall' && styles.stackPreviewItemTall,
+                    ]}
+                  >
+                    <SiteImageCropFrame
+                      imageUri={url}
+                      aspectRatio={stackAspect}
+                      borderRadius={10}
+                      focus={theme.heroStackImageFocus[i] ?? { x: 50, y: 50 }}
+                      onFocusChange={(focus) => {
+                        const nextFocus = [...(theme.heroStackImageFocus ?? [])];
+                        nextFocus[i] = focus;
+                        updateTheme({ heroStackImageFocus: nextFocus });
+                      }}
+                      label=""
+                    />
                     <Pressable style={styles.stackRemoveBtn} onPress={() => removeStackImage(i)}>
                       <Ionicons name="close-circle" size={20} color="#fff" />
                     </Pressable>
@@ -124,40 +207,67 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
                 <Text style={styles.stackEmptyText}>No images yet — add some below</Text>
               </View>
             )}
-            {stackImageUrls.length < 6 ? (
-              <Pressable
-                style={[styles.stackAddBtn, (isSaving || pickingStack) && { opacity: 0.6 }]}
-                disabled={isSaving || pickingStack}
-                onPress={async () => {
-                  const picked = await pickSiteImageFromLibrary('Allow photo access to upload header images.');
-                  if (!picked) return;
-                  setPickingStack(true);
-                  try {
-                    await uploadStackImage(picked.uri);
-                  } catch (err) {
-                    Alert.alert('Upload failed', err instanceof Error ? err.message : 'Could not upload image.');
-                  } finally {
-                    setPickingStack(false);
-                  }
-                }}
-              >
-                {pickingStack ? (
-                  <ActivityIndicator size="small" color={colors.accentPink} />
-                ) : (
-                  <Ionicons name="add" size={22} color={colors.accentPink} />
-                )}
-              </Pressable>
-            ) : (
-              <View style={styles.stackMaxNote}>
-                <Text style={styles.stackSizeNoteText}>Maximum 6 images reached.</Text>
-              </View>
-            )}
+                </>
+              );
+            })()}
+            <Pressable
+              style={[styles.stackAddBtn, (isSaving || pickingStack) && { opacity: 0.6 }]}
+              disabled={isSaving || pickingStack}
+              onPress={async () => {
+                const picked = await pickSiteImageFromLibrary('Allow photo access to upload header images.');
+                if (!picked) return;
+                setPickingStack(true);
+                try {
+                  await uploadStackImage(picked.uri);
+                } catch (err) {
+                  Alert.alert('Upload failed', err instanceof Error ? err.message : 'Could not upload image.');
+                } finally {
+                  setPickingStack(false);
+                }
+              }}
+            >
+              {pickingStack ? (
+                <ActivityIndicator size="small" color={colors.accentPink} />
+              ) : (
+                <Ionicons name="add" size={22} color={colors.accentPink} />
+              )}
+            </Pressable>
           </>
         ) : (
           <>
             <Text style={styles.groupTitle}>Hero photo</Text>
-            <Text style={styles.helper}>Your photo appears on the left side of the header.</Text>
-            <HeroImagePicker imageUrl={heroImageUrl} busy={isSaving} onPick={uploadHeroImage} onRemove={removeHeroImage} large />
+            <Text style={styles.helper}>Drag to choose exactly what shows in your site header.</Text>
+            <HeroImagePicker
+              imageUrl={heroImageUrl}
+              busy={isSaving}
+              onPick={uploadHeroImage}
+              onRemove={removeHeroImage}
+              large
+              repositionable
+              aspectRatio={4 / 5}
+              focus={{ x: theme.heroImageFocusX, y: theme.heroImageFocusY }}
+              onFocusChange={(focus) =>
+                updateTheme({
+                  heroImageFocusX: focus.x,
+                  heroImageFocusY: focus.y,
+                  heroImagePosition: legacyPositionFromFocus(focus),
+                })
+              }
+            />
+            {(theme.heroLayout || 'split') === 'cover' ? (
+              <Pressable
+                style={styles.toggleRow}
+                onPress={() => updateTheme({ heroCoverBlur: !theme.heroCoverBlur })}
+              >
+                <View style={styles.toggleRowBody}>
+                  <Text style={styles.toggleRowLabel}>Blur splash background</Text>
+                  <Text style={styles.toggleRowSub}>Soft blur behind your name on the full-screen splash</Text>
+                </View>
+                <View style={[styles.toggleBox, theme.heroCoverBlur && styles.toggleBoxOn]}>
+                  {theme.heroCoverBlur ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+                </View>
+              </Pressable>
+            ) : null}
           </>
         )}
 
@@ -199,35 +309,67 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
         })}
       </View>
 
-      {/* ── Colors ── */}
-      <Text style={styles.groupTitle}>Colors</Text>
+      {/* ── Brand palette ── */}
+      <Text style={styles.groupTitle}>Brand palette</Text>
       <Text style={styles.helper}>
-        Set your accent, text, and background colors.
+        Your core colors. Link other site colors to these so everything stays in sync when you update your palette.
       </Text>
       <ColorPicker
-        label="Accent color"
+        label="Brand accent"
         value={theme.primaryColor}
         presets="primary"
         onChange={(primaryColor) => updateTheme({ primaryColor })}
       />
       <ColorPicker
-        label="Text color"
+        label="Main text"
         value={theme.secondaryColor}
         presets="secondary"
         onChange={(secondaryColor) => updateTheme({ secondaryColor })}
       />
       <ColorPicker
-        label="Background color"
+        label="Page background"
         value={theme.backgroundColor ?? '#fafafa'}
         presets="background"
         onChange={(backgroundColor) => updateTheme({ backgroundColor })}
       />
       <ColorPicker
-        label="Navbar color"
+        label="Top bar background"
         value={theme.navbarColor ?? '#ffffff'}
         presets="background"
         onChange={(navbarColor) => updateTheme({ navbarColor })}
       />
+
+      {SITE_TEXT_COLOR_GROUPS.map((group) => {
+        if (group.coverOnly && !isCoverLayout) return null;
+        const fields = SITE_TEXT_COLOR_FIELDS.filter((f) => {
+          if (f.group !== group.id) return false;
+          if (f.coverOnly && !isCoverLayout) return false;
+          return true;
+        });
+        if (fields.length === 0) return null;
+
+        const subGroups = [...new Set(fields.map((f) => f.subGroup).filter(Boolean))] as string[];
+
+        return (
+          <View key={group.id}>
+            <Text style={styles.groupTitle}>{group.title}</Text>
+            <Text style={styles.helper}>{group.description}</Text>
+            {subGroups.length > 0
+              ? subGroups.map((subGroup) => (
+                  <View key={subGroup} style={styles.textColorGroup}>
+                    <Text style={styles.textColorSubGroupTitle}>{subGroup}</Text>
+                    {fields
+                      .filter((f) => f.subGroup === subGroup)
+                      .map((field) => (
+                        <TextColorFieldRow key={field.key} field={field} />
+                      ))}
+                  </View>
+                ))
+              : fields.map((field) => <TextColorFieldRow key={field.key} field={field} />)}
+          </View>
+        );
+      })}
+
       <Text style={styles.groupTitle}>Menu cards</Text>
       <Pressable
         style={styles.toggleRow}
@@ -254,7 +396,7 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   layoutRow: {
     flexDirection: 'row',
     gap: 10,
@@ -304,7 +446,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textMuted,
     opacity: 0.25,
     justifyContent: 'flex-end',
+    alignItems: 'center',
     padding: 4,
+    gap: 3,
+  },
+  layoutThumbCoverImg: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 5,
+    backgroundColor: colors.textMuted,
+    opacity: 0.35,
+  },
+  layoutThumbCoverLine: {
+    height: 4,
+    width: '55%',
+    borderRadius: 2,
+    backgroundColor: colors.background,
+    opacity: 0.85,
+    zIndex: 1,
   },
   layoutThumbCoverOverlay: {
     position: 'absolute',
@@ -576,6 +734,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentPink,
     borderColor: colors.accentPink,
   },
+  textColorGroup: {
+    marginBottom: 8,
+  },
+  textColorSubGroupTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
+    marginTop: 2,
+    paddingHorizontal: 2,
+  },
   stackSizeNote: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -587,6 +756,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 14,
+  },
+  stackFormatRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  stackFormatCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+    overflow: 'hidden',
+    padding: 10,
+    position: 'relative' as const,
+  },
+  stackFormatThumbWide: {
+    width: '100%',
+    height: 22,
+    borderRadius: 4,
+    backgroundColor: colors.accentPinkMuted,
+    borderWidth: 1,
+    borderColor: colors.accentPinkBorder,
+  },
+  stackFormatThumbTall: {
+    width: 28,
+    height: 52,
+    alignSelf: 'center',
+    borderRadius: 4,
+    backgroundColor: colors.accentPinkMuted,
+    borderWidth: 1,
+    borderColor: colors.accentPinkBorder,
+  },
+  stackFormatSize: {
+    color: colors.textMuted,
+    fontSize: 10,
+    marginTop: 2,
   },
   stackSizeNoteText: {
     flex: 1,
@@ -612,6 +818,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
     marginBottom: 6,
+    width: '100%',
+  },
+  stackPreviewItemTall: {
+    alignSelf: 'center',
+    maxWidth: 220,
     width: '100%',
   },
   stackPreviewImg: {
@@ -674,11 +885,4 @@ const styles = StyleSheet.create({
     padding: 8,
     marginBottom: 10,
   },
-  stackMaxNote: {
-    backgroundColor: colors.card,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-});
+};

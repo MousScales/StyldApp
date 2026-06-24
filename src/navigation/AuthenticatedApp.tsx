@@ -1,5 +1,7 @@
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { PushNotificationsProvider } from '../context/PushNotificationsContext';
+import { BrandProvider } from '../context/BrandContext';
 import { ServiceCatalogProvider } from '../context/ServiceCatalogContext';
 import { AppAccessProvider, useAppAccess } from '../context/AppAccessContext';
 import { OnboardingProvider, useOnboarding } from '../context/OnboardingContext';
@@ -9,6 +11,7 @@ import { SiteThemeProvider } from '../context/SiteThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import TabNavigator from './TabNavigator';
 import SiteNavigator from './SiteNavigator';
+import AdminNavigator from './AdminNavigator';
 import { useAuth } from '../context/AuthContext';
 import { useSubscriptionSiteSync } from '../hooks/useSubscriptionSiteSync';
 import AccountOnboardingFlow from '../screens/onboarding/AccountOnboardingFlow';
@@ -16,6 +19,8 @@ import PaywallScreen from '../screens/PaywallScreen';
 import { colors } from '../theme';
 
 function AccessLoading() {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.loading}>
       <ActivityIndicator color={colors.accentPink} />
@@ -24,12 +29,16 @@ function AccessLoading() {
 }
 
 function AppGate() {
-  const { clearNewSignUp } = useAuth();
+  const { clearNewSignUp, isPlatformAdmin } = useAuth();
   const { phase } = useAppAccess();
   const { sitePublish, refresh: refreshOnboarding, publishSite } = useOnboarding();
   const { refresh: refreshPurchases, waitForEntitlement } = usePurchases();
 
   useSubscriptionSiteSync();
+
+  if (isPlatformAdmin) {
+    return <AdminNavigator />;
+  }
 
   if (phase === 'loading') {
     return <AccessLoading />;
@@ -81,11 +90,13 @@ export default function AuthenticatedApp() {
         <SiteContentProvider>
           <SiteThemeProvider>
             <OnboardingProvider>
-              <AppAccessProvider>
-                <ServiceCatalogProvider>
-                  <AppGate />
-                </ServiceCatalogProvider>
-              </AppAccessProvider>
+              <BrandProvider>
+                <AppAccessProvider>
+                  <ServiceCatalogProvider>
+                    <AppGate />
+                  </ServiceCatalogProvider>
+                </AppAccessProvider>
+              </BrandProvider>
             </OnboardingProvider>
           </SiteThemeProvider>
         </SiteContentProvider>
@@ -94,11 +105,11 @@ export default function AuthenticatedApp() {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   loading: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
   },
-});
+};

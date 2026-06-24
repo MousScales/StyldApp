@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useMemo, useState } from 'react';
@@ -22,6 +23,8 @@ type Props = NativeStackScreenProps<ProfileStackParamList, 'BusinessStats'>;
 // ─── sub-components ──────────────────────────────────────────────────────────
 
 function StatRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={[styles.row, !last && styles.rowBorder]}>
       <Text style={styles.rowLabel}>{label}</Text>
@@ -36,6 +39,8 @@ function BigStatPair({
   left: { label: string; value: string };
   right: { label: string; value: string };
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.bigStatRow}>
       <View style={[styles.bigStat, { marginRight: 8 }]}>
@@ -51,6 +56,8 @@ function BigStatPair({
 }
 
 function SparkBar({ value, max }: { value: number; max: number }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const pct = max > 0 ? Math.max(0.04, value / max) : 0.04;
   return (
     <View style={styles.sparkTrack}>
@@ -61,6 +68,8 @@ function SparkBar({ value, max }: { value: number; max: number }) {
 }
 
 function DeviceBar({ mobile, tablet, desktop }: { mobile: number; tablet: number; desktop: number }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const other = Math.max(0, 100 - mobile - tablet - desktop);
   return (
     <View>
@@ -80,6 +89,8 @@ function DeviceBar({ mobile, tablet, desktop }: { mobile: number; tablet: number
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.legendItem}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
@@ -91,6 +102,8 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 // ─── main screen ─────────────────────────────────────────────────────────────
 
 export default function BusinessStatsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { hasLinkedSite, clients, appointments, getRevenueForPeriod } = useSiteData();
   const { privacyMode } = usePrivacyMode();
   const [period, setPeriod]             = useState<Period>('week');
@@ -274,7 +287,7 @@ export default function BusinessStatsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   /* Stat rows */
   row: {
     flexDirection: 'row',
@@ -390,4 +403,4 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot:  { width: 8, height: 8, borderRadius: 4 },
   legendText: { color: colors.textMuted, fontSize: 12 },
-});
+};

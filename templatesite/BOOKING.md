@@ -28,17 +28,31 @@ On **today’s** date, slots starting sooner than **30 minutes** from now are di
 - Base duration is inferred from the selected catalog style (`inferBaseDurationMinutes` in `js/booking.js`).
 - Hair length and pre-wash options adjust minutes per the same file.
 
-### Slot colors (Available / Limited / Fully booked)
+### Slot colors (Available / Fully booked)
 
 Busy intervals come from Supabase RPC `get_unavailable_times_for_day(date)`, which returns existing bookings’ `[start, end)` intervals (excluding `booking_status = cancelled`).
 
 For each candidate slot, we count how many busy intervals **overlap** the new appointment window `[slotStart, slotEnd)` (standard interval overlap).
 
-- **Fully booked (red):** overlap count ≥ `concurrentAppointmentCapacity` (default **2** in `booking-config.js`).
-- **Limited (yellow):** overlap count equals **capacity − 1** (only when capacity &gt; 1 — with capacity **1**, you only see green vs red).
+Styld **tenant sites** set `strictNoOverlap: true` and **capacity 1** — a slot is either **available (green)** or **fully booked (red)**. There is no yellow “one seat left” state.
+
+Legacy demo booking pages without `strictNoOverlap` use the same capacity default (**1**); yellow “limited” slots only appear if capacity were raised above 1.
+
+- **Fully booked (red):** overlap count ≥ `concurrentAppointmentCapacity` (default **1**).
 - **Available (green):** overlap count **0**.
 
 Overlap definition: `slotStart < busyEnd && busyStart < slotEnd` (half-open intervals are treated consistently with the SQL `tstzrange` overlap).
+
+### Double-booking prevention
+
+| Path | Guard |
+|------|--------|
+| Client on live Styld tenant site | `strictNoOverlap: true` + `styld_tenant_insert_booking` RPC |
+| Two clients racing for same slot | DB conflict check in RPC |
+| Stylist manual appointment (app) | `BEFORE INSERT/UPDATE` trigger on `styld_site_records` bookings |
+| Saved booking hours | `concurrentAppointmentCapacity` normalized to **1** on load/save |
+
+Manual inserts that overlap an existing booking or blocked time fail with: *“That time slot is no longer available…”*
 
 ### Unavailability API contract
 

@@ -1,4 +1,5 @@
 import { Image, ImageStyle, StyleSheet, View, ViewStyle } from 'react-native';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { useServiceCatalog } from '../context/ServiceCatalogContext';
 import { useSiteTheme } from '../context/SiteThemeContext';
 import { colors } from '../theme';
@@ -24,6 +25,8 @@ export default function ServiceImage({
   style,
   imageStyle,
 }: ServiceImageProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { getCoverUrl, resolveStyleId } = useServiceCatalog();
   const { logoImageUrl } = useSiteTheme();
   const resolvedStyleId = resolveStyleId(styleId, serviceName);
@@ -59,7 +62,7 @@ export default function ServiceImage({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   frame: {
     overflow: 'hidden',
     backgroundColor: colors.card,
@@ -73,4 +76,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+};

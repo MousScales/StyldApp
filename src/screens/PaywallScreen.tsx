@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -19,13 +20,22 @@ import { BlurView } from 'expo-blur';
 import { Image as ExpoImage } from 'expo-image';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PAYWALL_CONTENT } from '../data/paywallContent';
+import { getPaywallNotifs } from '../data/brandCopy';
+import { getPaywallContent } from '../data/paywallContent';
 import { getPlanPricing, type Plan } from '../lib/paywallPackages';
+import {
+  ENTITLEMENT_CONFIRM_TIMEOUT_MS,
+  PaywallTimeoutError,
+  PURCHASE_FLOW_TIMEOUT_MS,
+  withTimeout,
+} from '../lib/paywallFlow';
 import type { CustomerInfo } from 'react-native-purchases';
 import { useAuth } from '../context/AuthContext';
+import { useBrand } from '../context/BrandContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { ProfileStackParamList } from '../navigation/ProfileNavigator';
 import { colors, fonts } from '../theme';
+import { makeScaleFns } from '../theme/layout';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Paywall'> & {
   mandatory?: boolean;
@@ -35,21 +45,14 @@ type Props = NativeStackScreenProps<ProfileStackParamList, 'Paywall'> & {
 const HERO_IMAGE = require('../../assets/paywall-top.png');
 const BRAND_ICON = require('../../assets/icon.png');
 
-const FAKE_NOTIFS = [
-  { title: 'New booking', msg: 'Sarah M. booked Knotless braids · Sat 2:00 PM', time: 'now' },
-  { title: 'Deposit paid', msg: '$75 deposit from Jada W. · Silk press', time: 'now' },
-  { title: 'Booking confirmed', msg: 'Mia T. · Box braids · Fri 11:00 AM', time: '1m ago' },
-  { title: 'Payment received', msg: '$120 from Keisha R. · Kids braids', time: 'now' },
-  { title: 'New inquiry', msg: 'Alexis P. asked about loc retwist availability', time: '2m ago' },
-  { title: 'Appointment tomorrow', msg: 'Reminder: Brianna L. · Sew-in · 9:30 AM', time: 'now' },
-  { title: 'New booking', msg: 'Taylor J. booked Butterfly locs · Sun 1:00 PM', time: 'now' },
-  { title: 'Deposit paid', msg: '$50 deposit from Nina C. · Trim & style', time: '3m ago' },
-] as const;
-
 const NOTIF_VISIBLE_MS = 2800;
 const NOTIF_ANIM_MS = 300;
 
 function CyclingAppleNotifications() {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { businessType } = useBrand();
+  const fakeNotifs = getPaywallNotifs(businessType);
+
   const [index, setIndex] = useState(0);
   const opacity = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -82,7 +85,7 @@ function CyclingAppleNotifications() {
         }),
       ]).start(() => {
         if (!mounted) return;
-        const next = (indexRef.current + 1) % FAKE_NOTIFS.length;
+        const next = (indexRef.current + 1) % fakeNotifs.length;
         indexRef.current = next;
         setIndex(next);
         translateY.setValue(14);
@@ -118,9 +121,9 @@ function CyclingAppleNotifications() {
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [opacity, scale, translateY]);
+  }, [opacity, scale, translateY, fakeNotifs.length]);
 
-  const notif = FAKE_NOTIFS[index];
+  const notif = fakeNotifs[index];
 
   return (
     <View style={styles.notifWrap}>
@@ -177,23 +180,81 @@ function PaywallBackground() {
 }
 
 export default function PaywallScreen({ navigation, mandatory = false, onSubscribed }: Props) {
-  const { height } = useWindowDimensions();
+  const styles = useResponsiveStyles(BASE_STYLES);
+
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const heroHeight = Math.round(Math.min(height * 0.28, 220)) + insets.top;
+  const { businessType } = useBrand();
+  const layout = useMemo(() => makeScaleFns(width, height), [width, height]);
+  const heroHeight = Math.round(Math.min(height * 0.28, layout.rh(220))) + insets.top;
   const {
     currentOffering,
     purchasePackage,
     restorePurchases,
     isReady,
+    isSubscriptionReady,
     refresh,
     isConfigured,
     waitForEntitlement,
     forceCheckSubscriptionStatus,
   } = usePurchases();
-  const content = PAYWALL_CONTENT;
+  const content = useMemo(() => getPaywallContent(businessType), [businessType]);
   const [selectedPlan, setSelectedPlan] = useState<Plan>('yearly');
   const [busy, setBusy] = useState(false);
+
+  const pricing = useMemo(
+    () => getPlanPricing(currentOffering?.availablePackages ?? []),
+    [currentOffering],
+  );
+
+  const packagesReady = isReady && isSubscriptionReady;
+  const selectedPkg = selectedPlan === 'monthly' ? pricing.monthlyPkg : pricing.yearlyPkg;
+  const canPurchase = packagesReady && isConfigured && Boolean(selectedPkg) && !busy;
+  const showPackagesUnavailable = packagesReady && isConfigured && !pricing.hasLivePackages;
+
+  function showFlowError(title: string, err: unknown) {
+    const message =
+      err instanceof PaywallTimeoutError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : 'Something went wrong. Please try again.';
+    Alert.alert(title, message);
+  }
+
+  async function confirmEntitlement(seedInfo?: CustomerInfo | null): Promise<boolean> {
+    try {
+      return await withTimeout(
+        waitForEntitlement(6, seedInfo),
+        ENTITLEMENT_CONFIRM_TIMEOUT_MS,
+        'We could not confirm your subscription in time. If you were charged, wait a moment and tap Restore.',
+      );
+    } catch (err) {
+      showFlowError('Subscription pending', err);
+      return false;
+    }
+  }
+
+  async function finishSubscriptionFlow(seedInfo?: CustomerInfo | null) {
+    const entitled = await confirmEntitlement(seedInfo);
+    if (!entitled) return;
+
+    if (mandatory && onSubscribed) {
+      try {
+        await onSubscribed();
+      } catch (err) {
+        console.warn('[Paywall] onSubscribed failed:', err);
+        Alert.alert(
+          'Subscription active',
+          'Your subscription is active, but setup could not finish. Reopen the app or tap Restore.',
+        );
+      }
+      return;
+    }
+
+    navigation.goBack();
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -214,42 +275,23 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
     }, [forceCheckSubscriptionStatus, onSubscribed, mandatory, navigation, refresh]),
   );
 
-  const pricing = useMemo(
-    () => getPlanPricing(currentOffering?.availablePackages ?? []),
-    [currentOffering],
-  );
-
-  async function completeAfterSubscription(seedInfo?: CustomerInfo | null) {
-    const entitled = await waitForEntitlement(6, seedInfo);
-    if (!entitled) {
-      Alert.alert(
-        'Almost there',
-        'Your payment went through, but we are still confirming your subscription. Wait a few seconds and tap Restore, or restart the app.',
-      );
-      return;
-    }
-
-    if (mandatory && onSubscribed) {
-      await onSubscribed();
-      return;
-    }
-    navigation.goBack();
-  }
-
   async function handlePurchase() {
-    const pkg = selectedPlan === 'monthly' ? pricing.monthlyPkg : pricing.yearlyPkg;
+    const pkg = selectedPkg;
     if (!pkg) {
-      Alert.alert(
-        'Packages unavailable',
-        isConfigured
-          ? 'Could not load styld_monthly / styld_yearly from RevenueCat. Check your offering in the dashboard.'
-          : 'RevenueCat is not configured on this build.',
-      );
+      Alert.alert('Packages unavailable', content.packagesUnavailable);
       return;
     }
+
+    let shouldContinue = false;
+    let customerInfo: CustomerInfo | null = null;
+
     setBusy(true);
     try {
-      const result = await purchasePackage(pkg, user?.id);
+      const result = await withTimeout(
+        purchasePackage(pkg, user?.id),
+        PURCHASE_FLOW_TIMEOUT_MS,
+        'Purchase timed out. Check your connection and try again, or tap Restore if you were charged.',
+      );
       if (result.error) {
         Alert.alert('Purchase failed', result.error);
         return;
@@ -257,34 +299,68 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
       if (!result.entitled && !result.customerInfo) {
         return;
       }
-      await completeAfterSubscription(result.customerInfo);
+      shouldContinue = true;
+      customerInfo = result.customerInfo;
+    } catch (err) {
+      showFlowError('Purchase failed', err);
     } finally {
       setBusy(false);
+    }
+
+    if (shouldContinue) {
+      await finishSubscriptionFlow(customerInfo);
     }
   }
 
   async function handleRestore() {
+    let shouldContinue = false;
+    let customerInfo: CustomerInfo | null = null;
+
     setBusy(true);
     try {
-      const result = await restorePurchases(user?.id);
+      const result = await withTimeout(
+        restorePurchases(user?.id),
+        PURCHASE_FLOW_TIMEOUT_MS,
+        'Restore timed out. Check your connection and try again.',
+      );
       if (result.error) {
         Alert.alert('Restore failed', result.error);
         return;
       }
-      const entitled = result.entitled || (await waitForEntitlement(20, result.customerInfo));
+
+      const entitled =
+        result.entitled ||
+        (await withTimeout(
+          waitForEntitlement(20, result.customerInfo),
+          ENTITLEMENT_CONFIRM_TIMEOUT_MS,
+          'We could not confirm your subscription in time. Try again in a moment.',
+        ));
+
       if (!entitled) {
-        Alert.alert('No subscription found', 'We could not find an active Styld subscription on this account.');
+        Alert.alert(
+          'No subscription found',
+          'We could not find an active Styld subscription on this account.',
+        );
         return;
       }
-      if (mandatory) {
-        await completeAfterSubscription(result.customerInfo);
-        return;
-      }
-      Alert.alert('Restored', 'Your purchases have been restored.');
-      navigation.goBack();
+
+      shouldContinue = true;
+      customerInfo = result.customerInfo;
+    } catch (err) {
+      showFlowError('Restore failed', err);
     } finally {
       setBusy(false);
     }
+
+    if (!shouldContinue) return;
+
+    if (mandatory) {
+      await finishSubscriptionFlow(customerInfo);
+      return;
+    }
+
+    Alert.alert('Restored', 'Your purchases have been restored.');
+    navigation.goBack();
   }
 
   const featurePairs = [
@@ -400,27 +476,31 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
               </View>
             </View>
 
+            {showPackagesUnavailable ? (
+              <Text style={styles.packagesWarning}>{content.packagesUnavailable}</Text>
+            ) : null}
+
             <Pressable
-              style={[styles.ctaBtn, busy && { opacity: 0.7 }]}
+              style={[styles.ctaBtn, (!canPurchase || busy) && styles.ctaBtnDisabled]}
               onPress={() => void handlePurchase()}
-              disabled={busy || !isReady}
+              disabled={!canPurchase}
             >
-              {busy ? (
+              {busy || !packagesReady ? (
                 <ActivityIndicator color="#0a0a0a" />
               ) : (
                 <Text style={styles.ctaText}>{content.ctaText}</Text>
               )}
             </Pressable>
 
-            <Text style={styles.footer} numberOfLines={1}>
+            <Text style={styles.footer}>
               {content.footerText}
             </Text>
 
             <View style={styles.legalRow}>
-              <Pressable onPress={() => void Linking.openURL('https://styldd.com/terms')}>
-                <Text style={styles.legalLink}>Terms</Text>
+              <Pressable onPress={() => void Linking.openURL(content.termsOfUseUrl)}>
+                <Text style={styles.legalLink}>Terms of Use</Text>
               </Pressable>
-              <Pressable onPress={() => void Linking.openURL('https://styldd.com/privacy')}>
+              <Pressable onPress={() => void Linking.openURL(content.privacyPolicyUrl)}>
                 <Text style={styles.legalLink}>Privacy</Text>
               </Pressable>
               <Pressable onPress={() => void handleRestore()} disabled={busy}>
@@ -434,7 +514,7 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   root: {
     flex: 1,
     backgroundColor: colors.background,
@@ -723,6 +803,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
+  ctaBtnDisabled: {
+    opacity: 0.55,
+  },
   ctaText: {
     color: '#0a0a0a',
     fontSize: 15,
@@ -735,6 +818,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginBottom: 6,
   },
+  packagesWarning: {
+    color: '#f5a623',
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
   legalRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -745,4 +835,4 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
-});
+};

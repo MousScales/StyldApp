@@ -24,10 +24,10 @@ window.__SALON_SITE_BOOKING = {
   /** Earliest bookable wall time on *today* if booking same calendar day (minutes from now). */
   sameDayLeadMinutes: 30,
   /**
-   * Concurrent appointments allowed before a start time is "fully booked".
-   * 1 = only green/red; 2 = green/yellow/red (yellow = one overlap).
+   * Styld tenant sites allow one appointment per time window (strictNoOverlap).
+   * Legacy demo sites may use capacity counting; keep at 1 for solo stylists.
    */
-  concurrentAppointmentCapacity: 2,
+  concurrentAppointmentCapacity: 1,
   /** Optional ISO date ranges [start,end] inclusive calendar blackout (YYYY-MM-DD), salon-local interpretation */
   blackoutRanges: [],
   /**

@@ -2,6 +2,7 @@ import {
   BookingHours,
   getDayWindowMinutes,
   isWeekdayClosed as isWeekdayClosedByNumber,
+  STYLD_BOOKING_CAPACITY,
 } from '../data/bookingHours';
 
 export type BusyInterval = {
@@ -135,7 +136,7 @@ export function classifySlot(
     return { kind: 'full', reason: leadAdvanceLabel(hours) };
   }
 
-  const capacity = Math.max(1, hours.concurrentAppointmentCapacity);
+  const capacity = STYLD_BOOKING_CAPACITY;
   const overlapsFound = overlapCount(startMs, endMs, busy, capacity);
   if (overlapsFound >= capacity) return { kind: 'full', reason: 'Fully booked.' };
   if (overlapsFound === capacity - 1 && capacity > 1) {

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import {
   BottomTabBarProps,
   createBottomTabNavigator,
@@ -86,6 +87,8 @@ function TabButton({
   focused: boolean;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const cfg = TAB_CONFIG[routeName];
 
   const expand = useRef(new Animated.Value(focused ? 1 : 0)).current;
@@ -147,6 +150,8 @@ function TabButton({
 }
 
 function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const insets = useSafeAreaInsets();
 
   if (shouldHideTabBar(state)) return null;
@@ -191,7 +196,7 @@ export default function TabNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   wrapper: {
     position: 'absolute',
     left: 20,
@@ -240,4 +245,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-});
+};

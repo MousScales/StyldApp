@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import {
   PanResponder,
   ScrollView,
@@ -46,6 +47,8 @@ export default function DraggableDayTimeline({
   draftVariant = 'block',
   onSelectionComplete,
 }: DraggableDayTimelineProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const scrollRef = useRef<ScrollView>(null);
   const [dragging, setDragging] = useState(false);
   const [draftStart, setDraftStart] = useState<number | null>(null);
@@ -264,7 +267,7 @@ export default function DraggableDayTimeline({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
   },
@@ -401,4 +404,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '500',
   },
-});
+};

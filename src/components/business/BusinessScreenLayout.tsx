@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -28,6 +29,8 @@ type BusinessScreenLayoutProps = {
 };
 
 export function BusinessLinkRequired({ message }: { message?: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.emptyState}>
       <BrandLogo width={140} height={48} />
@@ -52,6 +55,8 @@ export default function BusinessScreenLayout({
   scroll = true,
   contentStyle,
 }: BusinessScreenLayoutProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const body = !hasLinkedSite ? (
     <BusinessLinkRequired message={linkMessage} />
   ) : isLoading ? (
@@ -96,6 +101,8 @@ export default function BusinessScreenLayout({
 }
 
 export function BusinessSection({ title, children }: { title: string; children: ReactNode }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -104,7 +111,7 @@ export function BusinessSection({ title, children }: { title: string; children: 
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -187,4 +194,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-});
+};

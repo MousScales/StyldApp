@@ -1,4 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -130,6 +131,8 @@ const tabStyles = StyleSheet.create({
 type ActionChoice = 'book' | 'block' | null;
 
 function ScheduleTab() {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { linkedSite, clients, refresh, getCalendarEventsForDateKey } = useSiteData();
   const { catalogServices, getPrice, refresh: refreshCatalog } = useServiceCatalog();
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -803,6 +806,8 @@ const hStyles = StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ScheduleManageScreen({ navigation, route }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { hasLinkedSite } = useSiteData();
   const rawTab = route.params?.tab;
   // map legacy 'book'/'block' params to 'schedule'
@@ -833,7 +838,7 @@ export default function ScheduleManageScreen({ navigation, route }: Props) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   layoutContent: {
     flex: 1,
   },
@@ -965,4 +970,4 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-});
+};

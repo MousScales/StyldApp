@@ -1,19 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { LAYOUT_BASE, makeScaleFns } from '../theme/layout';
 import { colors } from '../theme';
-
-const SCREEN_W = Dimensions.get('window').width;
-const PHOTO_SIZE = SCREEN_W / 2 - 28;
 
 type PhotoItem = { uri: string; label: string };
 
@@ -36,6 +35,12 @@ export default function BookingPhotoGallery({
   photoRefPath,
   storageBookingId,
 }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { width } = useWindowDimensions();
+  const photoSize = useMemo(
+    () => makeScaleFns(width, LAYOUT_BASE.height).rw(LAYOUT_BASE.width / 2 - 28),
+    [width],
+  );
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -142,8 +147,12 @@ export default function BookingPhotoGallery({
   return (
     <View style={styles.grid}>
       {photos.map((photo, index) => (
-        <Pressable key={`${photo.label}-${index}`} style={styles.item}>
-          <Image source={{ uri: photo.uri }} style={styles.image} resizeMode="cover" />
+        <Pressable key={`${photo.label}-${index}`} style={[styles.item, { width: photoSize }]}>
+          <Image
+            source={{ uri: photo.uri }}
+            style={[styles.image, { width: photoSize, height: photoSize }]}
+            resizeMode="cover"
+          />
           <View style={styles.label}>
             <Text style={styles.labelText}>{photo.label}</Text>
           </View>
@@ -153,18 +162,17 @@ export default function BookingPhotoGallery({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   loading: { paddingVertical: 24, alignItems: 'center' },
   empty: { paddingVertical: 20, alignItems: 'center', gap: 8 },
   emptyText: { color: colors.textMuted, fontSize: 13, fontWeight: '500' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   item: {
-    width: PHOTO_SIZE,
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: colors.progressTrack,
   },
-  image: { width: PHOTO_SIZE, height: PHOTO_SIZE },
+  image: {},
   label: {
     position: 'absolute',
     bottom: 0,
@@ -175,4 +183,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   labelText: { color: '#fff', fontSize: 11, fontWeight: '600' },
-});
+};

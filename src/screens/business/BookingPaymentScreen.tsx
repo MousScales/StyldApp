@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useMemo, useState } from 'react';
@@ -31,6 +32,7 @@ import {
   DepositKind,
   computeBalanceDue,
   computeDepositAmount,
+  effectiveBookingPayment,
 } from '../../data/bookingPayment';
 import { useUnsavedChangesGuard } from '../../hooks/useUnsavedChangesGuard';
 import { computeServiceFee, totalChargeWithServiceFee } from '../../lib/bookingServiceFee';
@@ -55,20 +57,20 @@ const PAYMENT_MODES: {
   badge?: string;
 }[] = [
   {
+    id: 'in_person',
+    label: 'Pay in person',
+    subtitle: 'Book for free — pay when they arrive',
+    badge: 'Default',
+  },
+  {
     id: 'deposit',
     label: 'Deposit online',
     subtitle: 'Hold the slot with a partial payment — balance due in person',
-    badge: 'Popular',
   },
   {
     id: 'full',
     label: 'Full price online',
     subtitle: 'Clients pay the full estimate when they book',
-  },
-  {
-    id: 'in_person',
-    label: 'Pay in person',
-    subtitle: 'Book for free — pay when they arrive',
   },
 ];
 
@@ -125,6 +127,8 @@ function PaymentModeCard({
   locked?: boolean;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <Pressable
       style={({ pressed }) => [
@@ -162,6 +166,8 @@ function PaymentModeCard({
 }
 
 function ClientPreview({ payment }: { payment: BookingPaymentSettings }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { catalogServices, getPrice, getStyleMeta } = useServiceCatalog();
   const previewService = useMemo(() => {
     const first = catalogServices[0];
@@ -237,6 +243,8 @@ function DepositAmountEditor({
   payment: BookingPaymentSettings;
   onChange: (next: BookingPaymentSettings) => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const isPercent = payment.depositKind === 'percent';
 
   const included = payment.depositIncludedInPrice !== false;
@@ -346,6 +354,8 @@ function CancellationPresetCard({
   description: string;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <Pressable
       style={({ pressed }) => [styles.modeCard, pressed && styles.modeCardPressed]}
@@ -363,6 +373,8 @@ function CancellationPresetCard({
 }
 
 export default function BookingPaymentScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { linkedSite, hasLinkedSite } = useSiteData();
   const [payment, setPayment] = useState<BookingPaymentSettings>(DEFAULT_BOOKING_PAYMENT);
   const [cancellationPolicy, setCancellationPolicy] = useState<CancellationPolicySettings>(
@@ -385,11 +397,11 @@ export default function BookingPaymentScreen({ navigation }: Props) {
         loadCancellationPolicy(linkedSite),
         fetchStripeConnectStatus().catch(() => null),
       ]);
-      setPayment(paymentData);
+      const stripeReadyNow =
+        stripeStatus?.status === 'ready' || stripeStatus?.status === 'pending_review';
+      setStripeReady(stripeReadyNow);
+      setPayment(effectiveBookingPayment(paymentData, stripeReadyNow));
       setCancellationPolicy(policyData);
-      setStripeReady(
-        stripeStatus?.status === 'ready' || stripeStatus?.status === 'pending_review',
-      );
       setIsDirty(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load booking payment settings.');
@@ -640,7 +652,7 @@ export default function BookingPaymentScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   scrollContent: {
     paddingBottom: 48,
   },
@@ -1032,4 +1044,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-});
+};

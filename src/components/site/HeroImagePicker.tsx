@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,7 +10,9 @@ import {
   Text,
   View,
 } from 'react-native';
+import { HeroImageFocus } from '../../lib/heroImageFocus';
 import { pickSiteImageFromLibrary } from '../../lib/pickSiteImage';
+import SiteImageCropFrame from './SiteImageCropFrame';
 import { colors } from '../../theme';
 
 type HeroImagePickerProps = {
@@ -20,6 +23,11 @@ type HeroImagePickerProps = {
   onPick: (uri: string) => Promise<void>;
   onRemove?: () => void;
   large?: boolean;
+  repositionable?: boolean;
+  /** width / height shown on the live site */
+  aspectRatio?: number;
+  focus?: HeroImageFocus;
+  onFocusChange?: (focus: HeroImageFocus) => void;
 };
 
 export default function HeroImagePicker({
@@ -30,9 +38,17 @@ export default function HeroImagePicker({
   onPick,
   onRemove,
   large,
+  repositionable = false,
+  aspectRatio,
+  focus,
+  onFocusChange,
 }: HeroImagePickerProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [picking, setPicking] = useState(false);
   const displayUri = localUri ?? imageUrl;
+  const frameAspect = aspectRatio ?? (large ? 4 / 5 : 1);
+  const canReposition = Boolean(repositionable && displayUri && focus && onFocusChange);
 
   const pickImage = async () => {
     const picked = await pickSiteImageFromLibrary(
@@ -52,10 +68,42 @@ export default function HeroImagePicker({
 
   const isBusy = busy || picking;
 
+  if (canReposition) {
+    return (
+      <View>
+        <SiteImageCropFrame
+          imageUri={displayUri!}
+          aspectRatio={frameAspect}
+          focus={focus!}
+          onFocusChange={onFocusChange!}
+          borderRadius={large ? 18 : 14}
+          disabled={isBusy}
+        />
+        <View style={styles.actionRow}>
+          <Pressable style={styles.actionBtn} onPress={pickImage} disabled={isBusy}>
+            {isBusy ? (
+              <ActivityIndicator size="small" color={colors.accentPink} />
+            ) : (
+              <>
+                <Ionicons name="camera-outline" size={16} color={colors.accentPink} />
+                <Text style={styles.actionBtnText}>Change photo</Text>
+              </>
+            )}
+          </Pressable>
+          {onRemove ? (
+            <Pressable style={styles.actionBtn} onPress={onRemove} disabled={isBusy}>
+              <Text style={styles.removeText}>Remove</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View>
       <Pressable
-        style={[styles.button, large && styles.buttonLarge]}
+        style={[styles.button, large && styles.buttonLarge, { aspectRatio: large ? 4 / 5 : undefined }]}
         onPress={pickImage}
         disabled={isBusy}
       >
@@ -87,7 +135,7 @@ export default function HeroImagePicker({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   button: {
     position: 'relative',
     borderRadius: 16,
@@ -137,6 +185,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 10,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  actionBtnText: {
+    color: colors.accentPink,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   removeBtn: {
     alignSelf: 'flex-start',
     marginTop: 8,
@@ -147,4 +212,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-});
+};

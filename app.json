@@ -2,7 +2,7 @@
   "expo": {
     "name": "Styld",
     "slug": "styld",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.crmstyld.app",
-      "buildNumber": "3",
+      "buildNumber": "7",
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -24,6 +24,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.crmstyld.app",
+      "versionCode": 7,
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO"
@@ -45,7 +46,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Styld to access your photos."
+          "photosPermission": "Styld uses your photo library so you can upload photos of your salon work, business logo, and portfolio images to your booking website."
         }
       ],
       "expo-font"

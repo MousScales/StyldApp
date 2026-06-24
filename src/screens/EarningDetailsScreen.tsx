@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
@@ -23,28 +24,32 @@ import {
 } from '../lib/stripeConnect';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
 import { colors } from '../theme';
+import { LAYOUT_BASE, makeScaleFns } from '../theme/layout';
 import { maskMoney } from '../utils/money';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'EarningDetails'>;
 
-const CHART_WIDTH = Dimensions.get('window').width - 72;
 const CHART_HEIGHT = 160;
 
 function PayoutsBarChart({ payouts }: { payouts: StripePayout[] }) {
+  const { width, height } = useWindowDimensions();
+  const { rw } = makeScaleFns(width, height);
+  const chartWidth = rw(LAYOUT_BASE.width - 72);
+
   if (!payouts.length) return null;
 
   const recent = [...payouts].slice(0, 7).reverse();
   const maxAmount = Math.max(...recent.map((p) => p.amountCents), 1);
-  const chartInnerWidth = CHART_WIDTH - 36;
+  const chartInnerWidth = chartWidth - rw(36);
   const chartInnerHeight = CHART_HEIGHT - 28;
   const slotWidth = chartInnerWidth / recent.length;
   const barWidth = slotWidth * 0.5;
 
   return (
-    <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+    <Svg width={chartWidth} height={CHART_HEIGHT}>
       {recent.map((payout, index) => {
         const barHeight = Math.max(4, (payout.amountCents / maxAmount) * chartInnerHeight);
-        const x = 36 + index * slotWidth + (slotWidth - barWidth) / 2;
+        const x = rw(36) + index * slotWidth + (slotWidth - barWidth) / 2;
         const y = chartInnerHeight - barHeight + 8;
         const label = new Date(payout.arrivalDate * 1000).toLocaleDateString('en-US', {
           month: 'numeric',
@@ -63,7 +68,7 @@ function PayoutsBarChart({ payouts }: { payouts: StripePayout[] }) {
         );
       })}
       {recent.map((payout, index) => {
-        const x = 36 + index * slotWidth + slotWidth / 2;
+        const x = rw(36) + index * slotWidth + slotWidth / 2;
         const label = new Date(payout.arrivalDate * 1000).toLocaleDateString('en-US', {
           month: 'numeric',
           day: 'numeric',
@@ -103,6 +108,8 @@ function statusLabel(status: string) {
 }
 
 export default function EarningDetailsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { privacyMode } = usePrivacyMode();
   const { getRevenueForPeriod } = useSiteData();
   const [summary, setSummary] = useState<StripeConnectSummary | null>(null);
@@ -279,7 +286,7 @@ export default function EarningDetailsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -468,4 +475,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-});
+};

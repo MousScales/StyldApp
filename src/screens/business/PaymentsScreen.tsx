@@ -37,6 +37,7 @@ import {
   DepositKind,
   computeBalanceDue,
   computeDepositAmount,
+  effectiveBookingPayment,
 } from '../../data/bookingPayment';
 import {
   loadBookingPayment,
@@ -140,9 +141,9 @@ const tabStyles = StyleSheet.create({
 // ─── Booking payments tab ─────────────────────────────────────────────────────
 
 const PAYMENT_MODES: { id: BookingPaymentMode; label: string; subtitle: string; badge?: string }[] = [
-  { id: 'deposit', label: 'Deposit online', subtitle: 'Hold the slot with a partial payment — balance due in person', badge: 'Popular' },
+  { id: 'in_person', label: 'Pay in person', subtitle: 'Book for free — pay when they arrive', badge: 'Default' },
+  { id: 'deposit', label: 'Deposit online', subtitle: 'Hold the slot with a partial payment — balance due in person' },
   { id: 'full', label: 'Full price online', subtitle: 'Clients pay the full estimate when they book' },
-  { id: 'in_person', label: 'Pay in person', subtitle: 'Book for free — pay when they arrive' },
 ];
 
 const DEPOSIT_PRESETS_PERCENT = [10, 20, 25, 50];
@@ -294,9 +295,10 @@ function BookingTab({ onGoToPayouts }: { onGoToPayouts: () => void }) {
         loadCancellationPolicy(linkedSite),
         fetchStripeConnectStatus().catch(() => null),
       ]);
-      setPayment(pd);
+      const stripeReadyNow = ss?.status === 'ready' || ss?.status === 'pending_review';
+      setStripeReady(stripeReadyNow);
+      setPayment(effectiveBookingPayment(pd, stripeReadyNow));
       setCancellationPolicy(policyData);
-      setStripeReady(ss?.status === 'ready' || ss?.status === 'pending_review');
       setIsDirty(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load settings.');

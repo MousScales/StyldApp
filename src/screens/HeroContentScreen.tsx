@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useRef } from 'react';
 import {
@@ -20,10 +21,14 @@ import { colors } from '../theme';
 type Props = NativeStackScreenProps<SiteStackParamList, 'HeroContent'>;
 
 function SectionTitle({ text }: { text: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return <Text style={styles.sectionTitle}>{text}</Text>;
 }
 
 function Hint({ text }: { text: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return <Text style={styles.hint}>{text}</Text>;
 }
 
@@ -37,6 +42,8 @@ function itemsToPolicyString(items: string[]): string {
 }
 
 export default function HeroContentScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { content, updateContent } = useSiteContent();
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
@@ -137,7 +144,7 @@ export default function HeroContentScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -229,4 +236,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-});
+};

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -40,6 +41,8 @@ type AppointmentComposerSheetProps = {
 type Step = 'style' | 'client';
 
 function ClientAvatar({ name }: { name: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const initials = name
     .split(' ')
     .filter(Boolean)
@@ -64,6 +67,8 @@ export default function AppointmentComposerSheet({
   onClose,
   onSave,
 }: AppointmentComposerSheetProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [step, setStep] = useState<Step>('style');
   const [selectedStyle, setSelectedStyle] = useState<CatalogService | null>(null);
   const [clientQuery, setClientQuery] = useState('');
@@ -299,6 +304,8 @@ function Field({
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   multiline?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -314,7 +321,7 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -573,4 +580,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-});
+};

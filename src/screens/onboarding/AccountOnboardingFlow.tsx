@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,8 +18,10 @@ import {
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
+import { useBrand, useSetPreviewBusinessType } from '../../context/BrandContext';
 import { useOnboarding } from '../../context/OnboardingContext';
-import { buildSiteContentFromOnboarding, OnboardingSurvey } from '../../data/onboarding';
+import { useSiteContent } from '../../context/SiteContentContext';
+import { buildSiteContentFromOnboarding, BUSINESS_TYPE_OPTIONS, BusinessType, labelForBusinessType, OnboardingSurvey, specialtyForBusinessType, taglineRoleForBusinessType } from '../../data/onboarding';
 import OnboardingConfetti from '../../components/OnboardingConfetti';
 import {
   buildAccountOnboardingResponses,
@@ -37,6 +40,7 @@ type Props = {
 
 const STEPS = [
   'Welcome',
+  'Type',
   'Why',
   'Heard',
   'Excited',
@@ -83,6 +87,8 @@ const DREAM_OPTIONS = [
 ] as const;
 
 function OnboardingBackground() {
+  const { colors } = useBrand();
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%">
@@ -111,6 +117,8 @@ function OnboardingBackground() {
 }
 
 function BrandLockup() {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.brandLockup}>
       <Image source={BRAND_ICON} style={styles.brandIcon} resizeMode="cover" />
@@ -120,6 +128,8 @@ function BrandLockup() {
 }
 
 function StepQuestion({ question, hint }: { question: string; hint?: string }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.questionBlock}>
       <Text style={styles.question}>{question}</Text>
@@ -145,6 +155,8 @@ function Field({
   autoFocus?: boolean;
   flex?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={[styles.field, flex && styles.fieldFlex]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
@@ -166,11 +178,16 @@ function ChoiceChips({
   options,
   selected,
   onSelect,
+  multi,
 }: {
   options: readonly string[];
   selected: string[];
   onSelect: (value: string) => void;
+  multi?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { colors } = useBrand();
+
   return (
     <View style={styles.chipGrid}>
       {options.map((option) => {
@@ -196,14 +213,53 @@ function ChoiceChips({
   );
 }
 
+function ChoiceCards({
+  options,
+  selected,
+  onSelect,
+}: {
+  options: typeof BUSINESS_TYPE_OPTIONS;
+  selected: BusinessType | '';
+  onSelect: (value: BusinessType) => void;
+}) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
+  return (
+    <View style={styles.typeCardStack}>
+      {options.map((option) => {
+        const active = selected === option.value;
+        return (
+          <Pressable
+            key={option.value}
+            style={[styles.typeCard, active && styles.typeCardActive]}
+            onPress={() => onSelect(option.value)}
+          >
+            <View style={styles.typeCardCopy}>
+              <Text style={[styles.typeCardLabel, active && styles.typeCardLabelActive]}>
+                {option.label}
+              </Text>
+              <Text style={styles.typeCardDescription}>{option.description}</Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function toggleChip(list: string[], value: string, multi: boolean): string[] {
   if (!multi) return [value];
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
 export default function AccountOnboardingFlow({ onComplete, previewOnly = false }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { colors, copy } = useBrand();
+  const setPreviewBusinessType = useSetPreviewBusinessType();
+
   const { profile, updateProfile, user, clearNewSignUp, signOut } = useAuth();
-  const { refresh, markAccountOnboardingSaved } = useOnboarding();
+  const { refresh: refreshOnboarding, markAccountOnboardingSaved } = useOnboarding();
+  const { saveContentNow } = useSiteContent();
 
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -219,6 +275,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
   }, [profile?.full_name, user?.user_metadata?.full_name]);
 
   const [whyStyld, setWhyStyld] = useState<string[]>([]);
+  const [businessType, setBusinessType] = useState<BusinessType | ''>('');
   const [heardFrom, setHeardFrom] = useState('');
   const [excitedAbout, setExcitedAbout] = useState<string[]>([]);
   const [dreamOutcome, setDreamOutcome] = useState('');
@@ -237,13 +294,14 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
 
   const survey = useMemo<OnboardingSurvey>(
     () => ({
+      businessType,
       whyStyld,
       heardFrom,
       excitedAbout,
       dreamOutcome,
       dreamNote: dreamNote.trim(),
     }),
-    [whyStyld, heardFrom, excitedAbout, dreamOutcome, dreamNote],
+    [businessType, whyStyld, heardFrom, excitedAbout, dreamOutcome, dreamNote],
   );
 
   const excitementLine = useMemo(() => {
@@ -253,9 +311,10 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
   }, [excitedAbout, whyStyld]);
 
   const canContinue = useMemo(() => {
-    if (step === 5) return businessName.trim().length > 0;
+    if (step === 1) return businessType !== '';
+    if (step === 6) return businessName.trim().length > 0;
     return true;
-  }, [step, businessName]);
+  }, [step, businessType, businessName]);
 
   const animateStep = (next: number) => {
     Animated.sequence([
@@ -294,7 +353,8 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
       await ensureUserSiteSeeded(userId, businessName.trim());
       const content = buildSiteContentFromOnboarding({
         businessName: businessName.trim(),
-        specialty: '',
+        specialty: businessType ? specialtyForBusinessType(businessType) : '',
+        businessType: businessType || undefined,
         phoneDisplay: phone,
         email,
         instagramHandle: instagram,
@@ -306,9 +366,10 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
         heroLayout: 'split',
         taglineLeft: 'Book with',
         taglineRightLine1: businessName.trim().split(' ')[0] || 'your',
-        taglineRightLine2: 'stylist',
+        taglineRightLine2: businessType ? taglineRoleForBusinessType(businessType) : 'stylist',
       });
       await saveSiteSetting(userId, 'site_content', content);
+      await saveContentNow(content);
       await saveSiteSetting(userId, 'site_theme', {
         heroLayout: 'split',
         heroImagePath: null,
@@ -342,7 +403,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
       await syncUserSiteRegistry(userId, businessName.trim());
       clearNewSignUp();
       onComplete();
-      void refresh();
+      void refreshOnboarding();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not save onboarding. Try again.';
       if (isStaleAuthUserDbError(message)) {
@@ -411,11 +472,9 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
                 <Text style={styles.welcomeTitle}>
                   {firstName ? `Hey ${firstName},` : 'Welcome —'}
                   {'\n'}
-                  <Text style={styles.welcomeAccent}>your chair is about to get busier.</Text>
+                  <Text style={styles.welcomeAccent}>{copy.welcomeAccent}</Text>
                 </Text>
-                <Text style={styles.welcomeSubtitle}>
-                  A few fun questions, then we'll set up your business — takes about two minutes.
-                </Text>
+                <Text style={styles.welcomeSubtitle}>{copy.welcomeSubtitle}</Text>
                 <View style={styles.welcomeFeatures}>
                   {[
                     { icon: 'globe-outline' as const, text: 'Your own booking website' },
@@ -434,6 +493,23 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
             {step === 1 ? (
               <>
                 <StepQuestion
+                  question="What best describes you?"
+                  hint="We'll tailor your site and setup to match."
+                />
+                <ChoiceCards
+                  options={BUSINESS_TYPE_OPTIONS}
+                  selected={businessType}
+                  onSelect={(value) => {
+                    setBusinessType(value);
+                    setPreviewBusinessType(value);
+                  }}
+                />
+              </>
+            ) : null}
+
+            {step === 2 ? (
+              <>
+                <StepQuestion
                   question="Why did you download Styld?"
                   hint="Pick everything that sounds like you — no wrong answers."
                 />
@@ -446,7 +522,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
               </>
             ) : null}
 
-            {step === 2 ? (
+            {step === 3 ? (
               <>
                 <StepQuestion
                   question="Where did you hear about us?"
@@ -460,7 +536,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
               </>
             ) : null}
 
-            {step === 3 ? (
+            {step === 4 ? (
               <>
                 <StepQuestion
                   question="What are you most excited to try?"
@@ -475,7 +551,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
               </>
             ) : null}
 
-            {step === 4 ? (
+            {step === 5 ? (
               <>
                 <StepQuestion
                   question="A fully booked week would feel like…"
@@ -497,7 +573,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
               </>
             ) : null}
 
-            {step === 5 ? (
+            {step === 6 ? (
               <>
                 <StepQuestion
                   question="What's your business called?"
@@ -513,7 +589,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
               </>
             ) : null}
 
-            {step === 6 ? (
+            {step === 7 ? (
               <>
                 <StepQuestion
                   question="How can clients reach you?"
@@ -544,7 +620,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
               </>
             ) : null}
 
-            {step === 7 ? (
+            {step === 8 ? (
               <>
                 <StepQuestion
                   question="Where are you based?"
@@ -579,7 +655,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
               </>
             ) : null}
 
-            {step === 8 ? (
+            {step === 9 ? (
               <View style={styles.doneBlock}>
                 <OnboardingConfetti />
                 <View style={styles.doneGlow} pointerEvents="none" />
@@ -592,9 +668,15 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
                 </Text>
                 <Text style={styles.doneSubtitle}>
                   {firstName ? `${firstName}, ` : ''}
-                  your booking site is next. We're here for {excitementLine}.
+                  {copy.onboardingDoneSubtitle} We're here for {excitementLine}.
                 </Text>
                 <View style={styles.doneCard}>
+                  {businessType ? (
+                    <View style={styles.doneCardSection}>
+                      <Text style={styles.doneCardLabel}>You're a</Text>
+                      <Text style={styles.doneCardValue}>{labelForBusinessType(businessType)}</Text>
+                    </View>
+                  ) : null}
                   {businessName.trim() ? (
                     <View style={styles.doneCardSection}>
                       <Text style={styles.doneCardLabel}>Your business</Text>
@@ -643,11 +725,17 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
           </Pressable>
         ) : (
           <View style={styles.footerRow}>
-            <Pressable style={styles.skipBtn} onPress={goNext}>
-              <Text style={styles.skipBtnText}>Skip</Text>
-            </Pressable>
+            {step === 1 || step === 6 ? null : (
+              <Pressable style={styles.skipBtn} onPress={goNext}>
+                <Text style={styles.skipBtnText}>Skip</Text>
+              </Pressable>
+            )}
             <Pressable
-              style={[styles.primaryBtn, styles.primaryBtnFlex, !canContinue && styles.primaryBtnDisabled]}
+              style={[
+                styles.primaryBtn,
+                step === 1 ? styles.primaryBtnFull : styles.primaryBtnFlex,
+                !canContinue && styles.primaryBtnDisabled,
+              ]}
               onPress={goNext}
               disabled={!canContinue}
             >
@@ -660,7 +748,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   header: {
@@ -795,6 +883,34 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: colors.accentPink,
+  },
+
+  typeCardStack: { gap: 12 },
+  typeCard: {
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+  },
+  typeCardActive: {
+    borderColor: colors.accentPinkBorder,
+    backgroundColor: colors.accentPinkMuted,
+  },
+  typeCardCopy: { gap: 4 },
+  typeCardLabel: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  typeCardLabelActive: {
+    color: colors.accentPink,
+  },
+  typeCardDescription: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
   },
 
   dreamNoteWrap: { marginTop: 24 },
@@ -947,6 +1063,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   primaryBtnFlex: { flex: 1 },
+  primaryBtnFull: { flex: 1, width: '100%' },
   primaryBtnDisabled: { opacity: 0.45 },
   primaryBtnText: {
     color: '#0a0a0a',
@@ -954,4 +1071,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.2,
   },
-});
+};

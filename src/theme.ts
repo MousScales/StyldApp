@@ -1,3 +1,5 @@
+import { BARBER_ACCENT, BrandPaletteKey, getAccentPalette, SALON_ACCENT } from './theme/brandPalettes';
+
 /** Use these for any number/stat/monetary display to make them visually distinct. */
 export const fonts = {
   number: 'SpaceGrotesk_700Bold',
@@ -5,7 +7,7 @@ export const fonts = {
   numberLight: 'SpaceGrotesk_300Light',
 };
 
-export const colors = {
+const BASE_COLORS = {
   background: '#0a0a0a',
   text: '#f5f5f5',
   textMuted: '#a1a1aa',
@@ -13,7 +15,6 @@ export const colors = {
   navbarBorder: 'rgba(255, 255, 255, 0.08)',
   navbarActive: '#ffffff',
   navbarInactive: 'rgba(255, 255, 255, 0.45)',
-  activeGlow: 'rgba(252, 97, 163, 0.45)',
   calendarSelectedDay: '#2c2c2e',
   calendarGridLine: 'rgba(255, 255, 255, 0.06)',
   eventCompleted: '#1e3a2f',
@@ -21,15 +22,6 @@ export const colors = {
   eventPending: '#1c1c1e',
   eventPendingBorder: 'rgba(255, 255, 255, 0.08)',
   fab: '#2c2c2e',
-  accentPink: '#fc61a3',
-  accentPinkDeep: '#ee5690',
-  accentPinkMuted: 'rgba(252, 97, 163, 0.15)',
-  accentPinkSoft: 'rgba(252, 97, 163, 0.14)',
-  accentPinkBorder: 'rgba(252, 97, 163, 0.28)',
-  accentPinkGlow: 'rgba(252, 97, 163, 0.35)',
-  accentPinkRing: 'rgba(252, 97, 163, 0.35)',
-  accentBlue: '#fc61a3',
-  accentBlueMuted: 'rgba(252, 97, 163, 0.15)',
   accentOrange: '#e8872a',
   accentOrangeBadge: '#3d2a18',
   accentGold: '#f5b942',
@@ -37,7 +29,25 @@ export const colors = {
   cardBorder: 'rgba(255, 255, 255, 0.06)',
   progressTrack: '#2a2a2a',
   notificationBadge: '#ef4444',
-  chartBlue: '#fc61a3',
   chartTan: '#c9956b',
-  profileBlue: '#fc61a3',
-};
+} as const;
+
+export type AppColors = typeof BASE_COLORS & typeof SALON_ACCENT;
+
+function buildColors(palette: BrandPaletteKey): AppColors {
+  return { ...BASE_COLORS, ...getAccentPalette(palette) };
+}
+
+export function getBrandColors(palette: BrandPaletteKey): AppColors {
+  return buildColors(palette);
+}
+
+/** Mutable theme colors — updated in place when brand palette changes. */
+export const colors: AppColors = buildColors('salon');
+
+export function applyBrandPalette(palette: BrandPaletteKey): void {
+  Object.assign(colors, buildColors(palette));
+}
+
+export { BARBER_ACCENT, SALON_ACCENT };
+export { LAYOUT_BASE, makeScaleFns, getWidthScale, getHeightScale } from './theme/layout';

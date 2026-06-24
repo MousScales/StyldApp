@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -6,17 +7,19 @@ import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import SiteDesignEditor from '../components/site/SiteDesignEditor';
 import SitePreviewWebView from '../components/site/SitePreviewWebView';
@@ -27,10 +30,10 @@ import { useAppAccess } from '../context/AppAccessContext';
 import { useAuth } from '../context/AuthContext';
 import { useOnboarding } from '../context/OnboardingContext';
 import { usePurchases } from '../context/PurchasesContext';
-import { formatStylePrice } from '../data/siteStyles';
+import { formatStylePriceRange } from '../data/siteStyles';
 import { LOCATION_PARTS, LocationPart, SITE_SECTIONS, SiteSection } from '../data/siteContent';
 import { DEFAULT_STYLE_DURATION_MINUTES, formatStyleDuration } from '../data/siteStyles';
-import { SitePreviewTheme } from '../lib/sitePreviewHtml';
+import { buildSitePreviewInjection, buildSitePreviewTheme, SitePreviewTheme } from '../lib/sitePreviewHtml';
 import { getSiteRootDomain, normalizeSubdomain } from '../data/sitePublish';
 import { checkSubdomainAvailability } from '../lib/sitePublish';
 import { openLiveSiteUrl } from '../lib/openLiveSite';
@@ -56,6 +59,8 @@ function Field({
   multiline?: boolean;
   placeholder?: string;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -78,6 +83,8 @@ function InstagramField({
   value: string;
   onChangeText: (v: string) => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const clean = value.replace(/^@/, '');
   return (
     <View style={styles.field}>
@@ -116,6 +123,8 @@ function SectionCard({
   onToggle: (id: SiteSection) => void;
   children: React.ReactNode;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -178,6 +187,8 @@ function LocationPartCard({
   onToggle: (id: LocationPart) => void;
   children: React.ReactNode;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -226,6 +237,8 @@ function LocationPartCard({
 }
 
 export default function SiteEditorScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { content, updateContent, isSaving, saveContentNow } = useSiteContent();
   const { user } = useAuth();
   const { isBuildSiteOnly } = useAppAccess();
@@ -245,6 +258,11 @@ export default function SiteEditorScreen({ navigation }: Props) {
   const [tab, setTab] = useState<EditorTab>('style');
   const [previewMode, setPreviewMode] = useState<PreviewMode>('hidden');
   const [previewKey, setPreviewKey] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [domainInputFocused, setDomainInputFocused] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const publishScrollY = useRef(0);
+  const { height: windowHeight } = useWindowDimensions();
 
   // Bump the preview key every time this screen comes into focus so the
   // WebView always loads the latest theme/content on re-entry.
@@ -253,6 +271,41 @@ export default function SiteEditorScreen({ navigation }: Props) {
       setPreviewKey((k) => k + 1);
     }, []),
   );
+
+  const scrollToDomainField = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, publishScrollY.current - 12),
+        animated: true,
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setDomainInputFocused(false);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (domainInputFocused && keyboardVisible) {
+      scrollToDomainField();
+    }
+  }, [domainInputFocused, keyboardVisible, scrollToDomainField]);
+
+  const shrinkPreviewForKeyboard =
+    previewMode === 'split' && keyboardVisible && tab === 'publish';
+  const splitPreviewHeight = shrinkPreviewForKeyboard
+    ? Math.round(windowHeight * 0.16)
+    : Math.round(windowHeight * 0.52);
 
   // ── Publish state ──
   const rootDomain = getSiteRootDomain();
@@ -391,7 +444,7 @@ export default function SiteEditorScreen({ navigation }: Props) {
           id: service.id,
           title: meta?.title ?? service.name,
           description: meta?.description ?? service.description ?? '',
-          priceLabel: formatStylePrice(price),
+          priceLabel: formatStylePriceRange(price, meta?.addons),
           sizeLabel: service.variant !== 'STANDARD' ? service.variant : undefined,
           durationLabel: formatStyleDuration(
             meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
@@ -404,23 +457,13 @@ export default function SiteEditorScreen({ navigation }: Props) {
   );
 
   const previewTheme = useMemo<SitePreviewTheme>(
-    () => ({
-      heroLayout: theme.heroLayout,
-      heroImageUrl,
-      logoImageUrl,
-      heroStackImageUrls: stackImageUrls,
-      primaryColor: theme.primaryColor,
-      secondaryColor: theme.secondaryColor,
-      backgroundColor: theme.backgroundColor,
-      navbarColor: theme.navbarColor,
-      cardOutlineColor: theme.cardOutlineColor,
-      styleCardLayout: theme.styleCardLayout,
-      fontFamily: theme.fontFamily,
-      templateId: theme.templateId,
-      zoomedOut: previewMode === 'split',
-      hideBookNowButton: theme.hideBookNowButton,
-    }),
-    [heroImageUrl, logoImageUrl, stackImageUrls, theme, previewMode],
+    () =>
+      buildSitePreviewTheme(
+        theme,
+        { heroImageUrl, logoImageUrl, heroStackImageUrls: stackImageUrls },
+        { zoomedOut: previewMode === 'split' },
+      ),
+    [heroImageUrl, logoImageUrl, previewMode, stackImageUrls, theme],
   );
 
   const fullscreenTheme = useMemo<SitePreviewTheme>(
@@ -552,7 +595,7 @@ export default function SiteEditorScreen({ navigation }: Props) {
 
       {/* Split preview */}
       {previewMode === 'split' ? (
-        <View style={styles.previewWrap}>
+        <View style={[styles.previewWrap, { height: splitPreviewHeight }]}>
           <SitePreviewWebView
             key={previewKey}
             content={content}
@@ -563,31 +606,43 @@ export default function SiteEditorScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {/* Editor tabs */}
-      <View style={styles.tabs}>
-        {([
-          ['style', 'Style', 'color-palette-outline'],
-          ['photos', 'Photos', 'images-outline'],
-          ['content', 'Content', 'create-outline'],
-          ['location', 'Location', 'location-outline'],
-          ['publish', 'Domain', 'globe-outline'],
-        ] as const).map(([key, label, icon]) => (
-          <Pressable
-            key={key}
-            style={[styles.tab, tab === key && styles.tabActive]}
-            onPress={() => setTab(key)}
-          >
-            <Ionicons
-              name={icon}
-              size={16}
-              color={tab === key ? colors.accentPink : colors.textMuted}
-            />
-            <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <KeyboardAvoidingView
+        style={styles.editorPanel}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 4 : 0}
+      >
+        {/* Editor tabs */}
+        <View style={styles.tabs}>
+          {([
+            ['style', 'Style', 'color-palette-outline'],
+            ['photos', 'Photos', 'images-outline'],
+            ['content', 'Content', 'create-outline'],
+            ['location', 'Location', 'location-outline'],
+            ['publish', 'Domain', 'globe-outline'],
+          ] as const).map(([key, label, icon]) => (
+            <Pressable
+              key={key}
+              style={[styles.tab, tab === key && styles.tabActive]}
+              onPress={() => setTab(key)}
+            >
+              <Ionicons
+                name={icon}
+                size={16}
+                color={tab === key ? colors.accentPink : colors.textMuted}
+              />
+              <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
 
-      <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.formScroll}
+          contentContainerStyle={styles.form}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
+        >
         <Animated.View style={{ opacity: tabAnim }}>
         {/* ── Style tab: colors + fonts ── */}
         {tab === 'style' ? (
@@ -602,10 +657,14 @@ export default function SiteEditorScreen({ navigation }: Props) {
         {/* ── Content tab: bio, policy, menu ── */}
         {tab === 'content' ? (
           <>
-            {theme.heroLayout === 'split' ? (
+            {theme.heroLayout === 'split' || theme.heroLayout === 'cover' ? (
               <>
                 <Text style={styles.groupTitle}>About & policy</Text>
-                <Text style={styles.helper}>Shown on the right side of your site header.</Text>
+                <Text style={styles.helper}>
+                  {theme.heroLayout === 'cover'
+                    ? 'Shown on your /book page after the splash screen.'
+                    : 'Shown beside your header photo on the site.'}
+                </Text>
                 <Pressable style={styles.navRow} onPress={() => navigation.navigate('HeroAbout')}>
                   <View style={styles.navRowIcon}>
                     <Ionicons name="person-circle-outline" size={20} color={colors.accentPink} />
@@ -618,6 +677,18 @@ export default function SiteEditorScreen({ navigation }: Props) {
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                 </Pressable>
+                <Pressable
+                  style={styles.toggleRow}
+                  onPress={() => toggleSection('aboutMe')}
+                >
+                  <View style={styles.toggleRowBody}>
+                    <Text style={styles.toggleRowLabel}>Show About Me on site</Text>
+                    <Text style={styles.toggleRowSub}>Uncheck to hide this section from your live site</Text>
+                  </View>
+                  <View style={[styles.toggleBox, isSectionVisible('aboutMe') && styles.toggleBoxOn]}>
+                    {isSectionVisible('aboutMe') && <Ionicons name="checkmark" size={14} color="#fff" />}
+                  </View>
+                </Pressable>
                 <Pressable style={styles.navRow} onPress={() => navigation.navigate('HeroPolicy')}>
                   <View style={styles.navRowIcon}>
                     <Ionicons name="document-text-outline" size={20} color={colors.accentPink} />
@@ -629,6 +700,18 @@ export default function SiteEditorScreen({ navigation }: Props) {
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </Pressable>
+                <Pressable
+                  style={styles.toggleRow}
+                  onPress={() => toggleSection('policies')}
+                >
+                  <View style={styles.toggleRowBody}>
+                    <Text style={styles.toggleRowLabel}>Show policies on site</Text>
+                    <Text style={styles.toggleRowSub}>Uncheck to hide this section from your live site</Text>
+                  </View>
+                  <View style={[styles.toggleBox, isSectionVisible('policies') && styles.toggleBoxOn]}>
+                    {isSectionVisible('policies') && <Ionicons name="checkmark" size={14} color="#fff" />}
+                  </View>
                 </Pressable>
               </>
             ) : null}
@@ -656,7 +739,11 @@ export default function SiteEditorScreen({ navigation }: Props) {
             >
               <View style={styles.toggleRowBody}>
                 <Text style={styles.toggleRowLabel}>Hide "Book Now" button</Text>
-                <Text style={styles.toggleRowSub}>Remove the button from the top-right of your site</Text>
+                <Text style={styles.toggleRowSub}>
+                  {theme.heroLayout === 'cover'
+                    ? 'Hides the top-right nav button only — your splash page keeps its centered Book Now'
+                    : 'Remove the button from the top-right of your site'}
+                </Text>
               </View>
               <View style={[styles.toggleBox, theme.hideBookNowButton && styles.toggleBoxOn]}>
                 {theme.hideBookNowButton && <Ionicons name="checkmark" size={14} color="#fff" />}
@@ -780,11 +867,21 @@ export default function SiteEditorScreen({ navigation }: Props) {
 
             {/* Domain */}
             <Text style={styles.publishSectionLabel}>Domain</Text>
-            <View style={styles.publishDomainRow}>
+            <View
+              style={styles.publishDomainRow}
+              onLayout={(event) => {
+                publishScrollY.current = event.nativeEvent.layout.y;
+              }}
+            >
               <TextInput
                 style={styles.publishSubdomainInput}
                 value={subdomain}
                 onChangeText={(v) => { setSubdomain(v); setPublishStep('idle'); setPublishError(null); }}
+                onFocus={() => {
+                  setDomainInputFocused(true);
+                  scrollToDomainField();
+                }}
+                onBlur={() => setDomainInputFocused(false)}
                 placeholder="your-name"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
@@ -819,7 +916,8 @@ export default function SiteEditorScreen({ navigation }: Props) {
           </View>
         ) : null}
         </Animated.View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Fullscreen preview modal */}
       <Modal
@@ -856,7 +954,7 @@ export default function SiteEditorScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -978,13 +1076,18 @@ const styles = StyleSheet.create({
     borderColor: colors.navbarBorder,
   },
   previewWrap: {
-    height: Math.round(SCREEN_HEIGHT * 0.52),
     marginHorizontal: 16,
     marginBottom: 10,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.cardBorder,
+  },
+  editorPanel: {
+    flex: 1,
+  },
+  formScroll: {
+    flex: 1,
   },
   tabs: {
     flexDirection: 'row',
@@ -1405,4 +1508,4 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
-});
+};

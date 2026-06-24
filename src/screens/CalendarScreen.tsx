@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -291,6 +291,7 @@ function MonthView({
   getEvents: (key: string) => CalendarEvent[];
   onDayPress: (day: Date) => void;
 }) {
+  const moStyles = useResponsiveStyles(BASE_MO_STYLES);
   const monthStart = getMonthStart(selectedDate);
   const startPadding = monthStart.getDay();
   const daysInMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).getDate();
@@ -374,6 +375,8 @@ function MonthView({
 
 // ─── CalendarScreen ───────────────────────────────────────────────────────────
 export default function CalendarScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { linkedSite, getCalendarEventsForDateKey, hasLinkedSite, isLoading } = useSiteData();
   const [bookingHours, setBookingHours] = useState<BookingHours>(DEFAULT_BOOKING_HOURS);
   const [blocks, setBlocks] = useState<BlockedInterval[]>([]);
@@ -450,6 +453,8 @@ export default function CalendarScreen({ navigation }: Props) {
   }
 
   function handleMonthDayPress(day: Date) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
     setSelectedDate(day);
     setViewMode('day');
   }
@@ -679,7 +684,7 @@ export default function CalendarScreen({ navigation }: Props) {
 }
 
 // ─── Day-view styles (completely unchanged) ───────────────────────────────────
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -930,7 +935,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-});
+};
 
 // ─── Week-view styles ─────────────────────────────────────────────────────────
 const wkStyles = StyleSheet.create({
@@ -1055,9 +1060,7 @@ const wkStyles = StyleSheet.create({
 });
 
 // ─── Month-view styles ────────────────────────────────────────────────────────
-const screenWidth = Dimensions.get('window').width;
-
-const moStyles = StyleSheet.create({
+const BASE_MO_STYLES = {
   container: {
     paddingHorizontal: 12,
     paddingTop: 4,
@@ -1129,4 +1132,4 @@ const moStyles = StyleSheet.create({
     height: 5,
     borderRadius: 2.5,
   },
-});
+} as const;

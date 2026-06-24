@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import {
   ActivityIndicator,
@@ -21,11 +22,15 @@ import { CatalogService } from '../../data/serviceCatalog';
 import {
   DEFAULT_STYLE_DURATION_MINUTES,
   formatStyleDuration,
-  formatStylePrice,
+  formatStylePriceRange,
+  getIncompleteStyleAddons,
+  normalizeStyleAddons,
   STYLE_DURATION_PRESETS,
+  StyleAddon,
 } from '../../data/siteStyles';
 import { pickSiteImageFromLibrary } from '../../lib/pickSiteImage';
 import { colors } from '../../theme';
+import StyleAddonsEditor from './StyleAddonsEditor';
 
 type StyleEditorCardProps = {
   service: CatalogService;
@@ -55,11 +60,14 @@ function StylePill({
   selected: boolean;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { getPrice, getStyleMeta } = useServiceCatalog();
   const meta = getStyleMeta(service.id);
   const title = meta?.title ?? service.name;
   const price = getPrice(service.id);
   const durationMinutes = meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES;
+  const addons = meta?.addons ?? [];
 
   return (
     <Pressable
@@ -76,7 +84,7 @@ function StylePill({
           {title}
         </Text>
         <Text style={styles.stylePillMeta} numberOfLines={1}>
-          {formatStyleDuration(durationMinutes)} · {formatStylePrice(price)}
+          {formatStyleDuration(durationMinutes)} · {formatStylePriceRange(price, addons)}
         </Text>
       </View>
     </Pressable>
@@ -98,6 +106,8 @@ function StylePhoto({
   busy?: boolean;
   placeholder?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { getCoverUrl } = useServiceCatalog();
   const coverUrl = styleId ? getCoverUrl(styleId, false) : null;
   const uri = localUri ?? coverUrl;
@@ -148,6 +158,8 @@ function Field({
   onFocus?: () => void;
   fieldRef?: RefObject<View | null>;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View ref={fieldRef} style={styles.field} collapsable={false}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -175,6 +187,8 @@ function DurationPicker({
   onChange: (minutes: number) => void;
   disabled?: boolean;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>Duration</Text>
@@ -206,6 +220,8 @@ function DurationPicker({
 }
 
 function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEditorCardProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { getStyleMeta, getPrice, upsertStyle, deleteStyle, uploadStyleImage } = useServiceCatalog();
 
   const meta = getStyleMeta(service.id);
@@ -215,6 +231,7 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
   const [durationMinutes, setDurationMinutes] = useState(
     meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
   );
+  const [addons, setAddons] = useState<StyleAddon[]>(meta?.addons ?? []);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -225,20 +242,26 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
   const descriptionRef = useRef<View>(null);
   const priceRef = useRef<View>(null);
 
-  const snapshot = `${title}|${description}|${price}|${durationMinutes}`;
+  const normalizedAddons = normalizeStyleAddons(addons);
+  const snapshot = `${title}|${description}|${price}|${durationMinutes}|${normalizedAddons.map((a) => `${a.id}:${a.name}:${a.price}`).join(';')}`;
   const parsedPrice = Number(price.replace(/[^0-9.]/g, '')) || 0;
 
   useEffect(() => {
-    setTitle(meta?.title ?? service.name);
-    setDescription(meta?.description ?? service.description ?? '');
+    const nextMeta = getStyleMeta(service.id);
+    setTitle(nextMeta?.title ?? service.name);
+    setDescription(nextMeta?.description ?? service.description ?? '');
     setPrice(String(getPrice(service.id) || ''));
-    setDurationMinutes(meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES);
+    setDurationMinutes(nextMeta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES);
+    setAddons(nextMeta?.addons ?? []);
     setLocalImageUri(null);
     skipNextSave.current = true;
-    lastSavedSnapshot.current = `${meta?.title ?? service.name}|${meta?.description ?? service.description ?? ''}|${getPrice(service.id) || ''}|${meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES}`;
-  }, [getPrice, meta?.description, meta?.durationMinutes, meta?.title, service.description, service.id, service.name]);
+    lastSavedSnapshot.current = `${nextMeta?.title ?? service.name}|${nextMeta?.description ?? service.description ?? ''}|${getPrice(service.id) || ''}|${nextMeta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES}|${normalizeStyleAddons(nextMeta?.addons).map((a) => `${a.id}:${a.name}:${a.price}`).join(';')}`;
+    // Only reset when switching styles — not after every auto-save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service.id]);
 
   const saveStyle = useCallback(async () => {
+    if (getIncompleteStyleAddons(addons).length > 0) return;
     onBusyChange(service.id);
     try {
       await upsertStyle({
@@ -247,6 +270,7 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
         description,
         price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
         durationMinutes,
+        addons: normalizedAddons,
         category: meta?.category ?? service.category,
         venue: service.venue,
       });
@@ -259,9 +283,11 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
       onBusyChange(null);
     }
   }, [
+    addons,
     description,
     durationMinutes,
     meta?.category,
+    normalizedAddons,
     onBusyChange,
     parsedPrice,
     service.category,
@@ -391,6 +417,7 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
             onChange={setDurationMinutes}
             disabled={busy}
           />
+          <StyleAddonsEditor addons={addons} onChange={setAddons} disabled={busy} />
         </View>
       </View>
     </View>
@@ -403,17 +430,20 @@ function AddStylePanel({
   onFieldFocus,
 }: {
   onAdd: (
-    input: { title: string; description: string; price: number; durationMinutes: number },
+    input: { title: string; description: string; price: number; durationMinutes: number; addons?: StyleAddon[] },
     imageUri: string | null,
     mimeType: string | null,
   ) => Promise<void>;
   isAdding: boolean;
   onFieldFocus: (fieldRef: View | null) => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_STYLE_DURATION_MINUTES);
+  const [addons, setAddons] = useState<StyleAddon[]>([]);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageMimeType, setImageMimeType] = useState<string | null>(null);
   const titleRef = useRef<View>(null);
@@ -441,6 +471,7 @@ function AddStylePanel({
           description: description.trim(),
           price: parsedPrice,
           durationMinutes,
+          addons: normalizeStyleAddons(addons),
         },
         imageUri,
         imageMimeType,
@@ -449,6 +480,7 @@ function AddStylePanel({
       setDescription('');
       setPrice('');
       setDurationMinutes(DEFAULT_STYLE_DURATION_MINUTES);
+      setAddons([]);
       setImageUri(null);
       setImageMimeType(null);
     } catch {
@@ -501,6 +533,7 @@ function AddStylePanel({
             onChange={setDurationMinutes}
             disabled={isAdding}
           />
+          <StyleAddonsEditor addons={addons} onChange={setAddons} disabled={isAdding} />
 
           <Pressable
             style={[styles.addButton, !canAdd && styles.addButtonDisabled]}
@@ -527,6 +560,8 @@ function StylesEditorBody({
 }: {
   onFieldFocus: (fieldRef: View | null) => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { catalogServices, isLoading, error, upsertStyle, isSaving } = useServiceCatalog();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -573,7 +608,7 @@ function StylesEditorBody({
   };
 
   const handleAdd = async (
-    input: { title: string; description: string; price: number; durationMinutes: number },
+    input: { title: string; description: string; price: number; durationMinutes: number; addons?: StyleAddon[] },
     imageUri: string | null,
     mimeType: string | null,
   ) => {
@@ -677,6 +712,8 @@ function StylesEditorBody({
 }
 
 export default function SiteStylesEditor({ manageKeyboard = false }: SiteStylesEditorProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const scrollRef = useRef<ScrollView>(null);
   const contentRef = useRef<View>(null);
   const [keyboardPadding, setKeyboardPadding] = useState(0);
@@ -745,7 +782,7 @@ export default function SiteStylesEditor({ manageKeyboard = false }: SiteStylesE
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   keyboardRoot: {
     flex: 1,
   },
@@ -990,4 +1027,4 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-});
+};

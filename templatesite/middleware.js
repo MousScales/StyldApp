@@ -3,6 +3,7 @@ import { rewrite } from '@vercel/functions';
 const ROOT_DOMAIN = process.env.STYLD_ROOT_DOMAIN || 'styldd.com';
 
 const TENANT_STATIC_PAGES = {
+  '/book': '/tenant/book.html',
   '/booking': '/booking.html',
   '/booking-lookup': '/booking-lookup.html',
   '/manage-booking': '/manage-booking.html',

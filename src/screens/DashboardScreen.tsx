@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -10,7 +11,8 @@ import BrandLogo from '../components/BrandLogo';
 import NotificationsPanel from '../components/NotificationsPanel';
 import ScreenGradient from '../components/ScreenGradient';
 import ServiceImage from '../components/ServiceImage';
-import { Period } from '../data/periods';
+import { useBrand } from '../context/BrandContext';
+import { getDashboardVibeMessages } from '../data/brandCopy';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { usePushNotifications } from '../context/PushNotificationsContext';
 import { useSiteData } from '../context/SiteDataContext';
@@ -52,10 +54,10 @@ function bookingStatusLabel(status: string, depositPaid: boolean): string {
   return 'Pending';
 }
 
-function bookingStatusColor(status: string, depositPaid: boolean): string {
+function bookingStatusColor(status: string, depositPaid: boolean, accent: string): string {
   if (status === 'completed') return '#15803d';
   if (status === 'cancelled' || status === 'canceled') return '#dc2626';
-  if (depositPaid || status === 'confirmed') return colors.accentPink;
+  if (depositPaid || status === 'confirmed') return accent;
   return colors.textMuted;
 }
 
@@ -121,14 +123,17 @@ const skStyles = StyleSheet.create({
 // ─── sub-components ──────────────────────────────────────────────────────────
 
 function JobsProgressBar({ progress }: { progress: number }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { colors: brandColors } = useBrand();
+
   return (
     <View style={styles.progressTrack}>
       <View style={[styles.progressFillWrap, { width: `${progress * 100}%` }]}>
         <Svg width="100%" height="100%" preserveAspectRatio="none">
           <Defs>
             <LinearGradient id="jobsGradient" x1="0" y1="0" x2="1" y2="0">
-              <Stop offset="0" stopColor={colors.accentPinkDeep} />
-              <Stop offset="1" stopColor={colors.accentPink} />
+              <Stop offset="0" stopColor={brandColors.accentPinkDeep} />
+              <Stop offset="1" stopColor={brandColors.accentPink} />
             </LinearGradient>
           </Defs>
           <Rect width="100%" height="100%" rx={3} fill="url(#jobsGradient)" />
@@ -145,59 +150,11 @@ function dailyPick<T>(arr: T[], seed?: number): T {
   return arr[(dayOfYear + (seed ?? 0)) % arr.length];
 }
 
-const DAY_OFF_MESSAGES = [
-  { quote: 'Enjoy your day off 🌿', sub: 'Nothing booked — rest up.' },
-  { quote: 'Clear calendar today ✨', sub: 'Take some time for yourself.' },
-  { quote: 'A well-earned rest 🛁', sub: 'Recharge and come back stronger.' },
-  { quote: 'No clients today 🤍', sub: 'Do something you love.' },
-  { quote: 'Free day — make it yours 🌸', sub: "You've been putting in the work." },
-  { quote: 'Nothing on the books 🎵', sub: 'Breathe. You deserve this.' },
-  { quote: 'Self-care day? Sounds right 💆‍♀️', sub: "Your schedule says so." },
-  { quote: 'Clear skies today ☀️', sub: 'Enjoy every minute of it.' },
-  { quote: 'Time belongs to you today 🕊️', sub: 'No rush, no clients.' },
-  { quote: 'Rest is part of the work 💤', sub: 'Off the clock and loving it.' },
-];
-
-const NOT_STARTED_MESSAGES = [
-  (n: number) => ({ quote: `${n} ${n === 1 ? 'appointment' : 'appointments'} lined up today.`, sub: 'Time to make it happen.' }),
-  (n: number) => ({ quote: `Big day ahead — ${n} booked 💼`, sub: "Let's get it." }),
-  (n: number) => ({ quote: `${n} ${n === 1 ? 'client is' : 'clients are'} counting on you today ✨`, sub: "You've got this." }),
-  (n: number) => ({ quote: 'Rise and shine — your clients await 🌅', sub: `${n} ${n === 1 ? 'appointment' : 'appointments'} on the books.` }),
-  (n: number) => ({ quote: `Ready to crush ${n} today? 🔥`, sub: "Doors open, let's go." }),
-  (n: number) => ({ quote: 'Your chair is ready. Are you? 💅', sub: `${n} ${n === 1 ? 'appointment' : 'appointments'} scheduled.` }),
-  (n: number) => ({ quote: `Day ${n > 1 ? `packed with ${n}` : 'starting with 1'} — let's do this 🎯`, sub: 'Nothing but momentum today.' }),
-  (n: number) => ({ quote: `${n} chances to make someone feel amazing today 🌟`, sub: "That's the job. That's the gift." }),
-  (n: number) => ({ quote: 'Good morning — big things ahead ☀️', sub: `${n} ${n === 1 ? 'appointment' : 'appointments'} waiting.` }),
-  (n: number) => ({ quote: `Every great day starts here 💪`, sub: `${n} ${n === 1 ? 'appointment' : 'appointments'} to go.` }),
-];
-
-const IN_PROGRESS_MESSAGES = [
-  (done: number, left: number) => ({ quote: `${left} more to go — keep it up 💪`, sub: `${done} done so far.` }),
-  (done: number, left: number) => ({ quote: `On a roll — ${left} left 🔥`, sub: `${done} already behind you.` }),
-  (done: number, left: number) => ({ quote: `${done} down, ${left} to finish strong ✨`, sub: 'Keep the momentum.' }),
-  (done: number, left: number) => ({ quote: `Almost there — ${left} ${left === 1 ? 'one' : 'more'} left 🎯`, sub: "You're doing amazing." }),
-  (done: number, left: number) => ({ quote: `${left} to go and you're flying 🚀`, sub: `${done} wrapped up so far.` }),
-  (done: number, left: number) => ({ quote: 'Mid-day grind 💅', sub: `${done} done · ${left} left to go.` }),
-  (done: number, left: number) => ({ quote: `Killing it — just ${left} left 💅`, sub: `${done} already handled.` }),
-  (done: number, left: number) => ({ quote: `Halfway isn't stopping you 🌊`, sub: `${done} done, ${left} to go.` }),
-  (done: number, left: number) => ({ quote: `${done} clients left happy so far 🤍`, sub: `${left} more to go.` }),
-  (done: number, left: number) => ({ quote: `Push through — ${left} ${left === 1 ? 'appointment' : 'appointments'} away from a full day ✅`, sub: `${done} checked off.` }),
-];
-
-const ALL_DONE_MESSAGES = [
-  (n: number) => ({ quote: 'Wrapped up for the day 🙌', sub: `All ${n} done — incredible.` }),
-  (n: number) => ({ quote: 'You crushed it today 🔥', sub: `Every single ${n === 1 ? 'one' : `${n}`} — done.` }),
-  (n: number) => ({ quote: 'Clean sweep 💅', sub: `All ${n} ${n === 1 ? 'appointment' : 'appointments'} completed.` }),
-  (n: number) => ({ quote: "That's a wrap ✨", sub: `${n} ${n === 1 ? 'client' : 'clients'} taken care of today.` }),
-  (n: number) => ({ quote: 'Legend behavior 👑', sub: `${n} for ${n}. Perfect day.` }),
-  (n: number) => ({ quote: 'Done and dusted 🌟', sub: 'Time to rest up — you earned it.' }),
-  (n: number) => ({ quote: 'Every client seen. Every box ticked ✅', sub: "That's a full day's work." }),
-  (n: number) => ({ quote: 'Another great day in the books 📖', sub: `${n} ${n === 1 ? 'appointment' : 'appointments'} completed.` }),
-  (n: number) => ({ quote: 'Full send today 🚀', sub: `All ${n} handled — go celebrate.` }),
-  (n: number) => ({ quote: 'The chair is empty. The work is done 🤍', sub: `${n} ${n === 1 ? 'appointment' : 'appointments'} — all wrapped up.` }),
-];
-
 function DayVibeCard({ jobStats }: { jobStats: { completed: number; total: number; progress: number } }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { businessType } = useBrand();
+  const vibeMessages = useMemo(() => getDashboardVibeMessages(businessType), [businessType]);
+
   const { total, completed } = jobStats;
   const remaining = total - completed;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -214,18 +171,18 @@ function DayVibeCard({ jobStats }: { jobStats: { completed: number; total: numbe
   let sub: string | null = null;
 
   if (total === 0) {
-    const m = dailyPick(DAY_OFF_MESSAGES);
+    const m = dailyPick(vibeMessages.dayOff);
     quote = m.quote; sub = m.sub;
   } else if (completed === 0) {
-    const fn = dailyPick(NOT_STARTED_MESSAGES);
+    const fn = dailyPick(vibeMessages.notStarted);
     const m = fn(total);
     quote = m.quote; sub = m.sub;
   } else if (completed < total) {
-    const fn = dailyPick(IN_PROGRESS_MESSAGES, completed);
+    const fn = dailyPick(vibeMessages.inProgress, completed);
     const m = fn(completed, remaining);
     quote = m.quote; sub = m.sub;
   } else {
-    const fn = dailyPick(ALL_DONE_MESSAGES);
+    const fn = dailyPick(vibeMessages.allDone);
     const m = fn(total);
     quote = m.quote; sub = m.sub;
   }
@@ -243,6 +200,8 @@ function DayVibeCard({ jobStats }: { jobStats: { completed: number; total: numbe
 
 /** Grouped day header */
 function DayHeader({ label, count }: { label: string; count: number }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const isToday = label.startsWith('Today');
   return (
     <View style={styles.dayHeader}>
@@ -267,6 +226,8 @@ function AppointmentRow({
   privacyMode: boolean;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <Pressable
       style={styles.apptRow}
@@ -325,8 +286,11 @@ function RecentBookingRow({
   privacyMode: boolean;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const { colors: brandColors } = useBrand();
+
   const statusLabel = bookingStatusLabel(booking.bookingStatus, booking.depositPaid);
-  const statusColor = bookingStatusColor(booking.bookingStatus, booking.depositPaid);
+  const statusColor = bookingStatusColor(booking.bookingStatus, booking.depositPaid, brandColors.accentPink);
 
   const apptDateStr = booking.startsAt
     ? booking.startsAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
@@ -369,7 +333,7 @@ function RecentBookingRow({
           {/* Deposit pill */}
           {booking.depositPaid && (
             <View style={styles.recentDepositBadge}>
-              <Ionicons name="checkmark" size={9} color={colors.accentPink} />
+              <Ionicons name="checkmark" size={9} color={brandColors.accentPink} />
               <Text style={styles.recentDepositText}>dep.</Text>
             </View>
           )}
@@ -389,6 +353,8 @@ function RecentBookingRow({
 // ─── main screen ─────────────────────────────────────────────────────────────
 
 export default function DashboardScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('month');
   const [displayValue, setDisplayValue] = useState(MONTH_VALUE);
   const [stripeSummary, setStripeSummary] = useState<StripeConnectSummary | null | undefined>(undefined);
@@ -672,7 +638,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
 // ─── styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 120 },
@@ -877,4 +843,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyCardText: { color: colors.textMuted, fontSize: 14, fontWeight: '500', textAlign: 'center' },
-});
+};

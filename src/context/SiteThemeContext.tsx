@@ -13,6 +13,7 @@ import {
   normalizeSiteTheme,
   SiteTheme,
 } from '../data/siteTheme';
+import { DEFAULT_HERO_IMAGE_FOCUS, DEFAULT_STACK_IMAGE_FOCUS } from '../lib/heroImageFocus';
 import { uploadGalleryImageFromUri, uploadHeroImageFromUri, uploadLogoImageFromUri, uploadStackImageFromUri } from '../lib/siteAdmin';
 import { getStyleCoverImageUrl } from '../lib/siteServices';
 import { loadSiteSetting, saveSiteSetting } from '../lib/siteRecords';
@@ -132,7 +133,12 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const storagePath = await uploadHeroImageFromUri(linkedSite, fileUri);
-        const next = { ...theme, heroImagePath: storagePath };
+        const next = {
+          ...theme,
+          heroImagePath: storagePath,
+          heroImageFocusX: DEFAULT_HERO_IMAGE_FOCUS.x,
+          heroImageFocusY: DEFAULT_HERO_IMAGE_FOCUS.y,
+        };
         setTheme(next);
         await saveSiteSetting(user.id, 'site_theme', next);
       } catch (err) {
@@ -239,9 +245,14 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       try {
         const currentPaths = theme.heroStackImagePaths ?? [];
+        const currentFocus = theme.heroStackImageFocus ?? [];
         const slot = currentPaths.length;
         const storagePath = await uploadStackImageFromUri(linkedSite, slot, fileUri);
-        const next = { ...theme, heroStackImagePaths: [...currentPaths, storagePath] };
+        const next = {
+          ...theme,
+          heroStackImagePaths: [...currentPaths, storagePath],
+          heroStackImageFocus: [...currentFocus, { ...DEFAULT_STACK_IMAGE_FOCUS }],
+        };
         setTheme(next);
         await saveSiteSetting(user.id, 'site_theme', next);
       } catch (err) {
@@ -258,7 +269,8 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
   const removeStackImage = useCallback(
     (slot: number) => {
       const paths = (theme.heroStackImagePaths ?? []).filter((_, i) => i !== slot);
-      updateTheme({ heroStackImagePaths: paths });
+      const focus = (theme.heroStackImageFocus ?? []).filter((_, i) => i !== slot);
+      updateTheme({ heroStackImagePaths: paths, heroStackImageFocus: focus });
     },
     [theme, updateTheme],
   );

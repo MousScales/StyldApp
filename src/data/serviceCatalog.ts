@@ -14,16 +14,23 @@ export type CatalogService = {
 };
 
 const CATEGORY_ORDER: Record<string, number> = {
-  KNOTLESS: 0,
-  'BOHO BRAIDS': 1,
-  'PASSION TWIST': 2,
-  FULANI: 3,
-  'WIG & WEAVES': 4,
-  'FEED-IN BRAIDS': 5,
-  LOCS: 6,
-  'NATURAL STYLES': 7,
-  STYLES: 8,
-  SERVICES: 8,
+  HAIRCUTS: 0,
+  FADES: 1,
+  COMBO: 2,
+  BEARD: 3,
+  GROOMING: 4,
+  DESIGN: 5,
+  KIDS: 6,
+  KNOTLESS: 10,
+  'BOHO BRAIDS': 11,
+  'PASSION TWIST': 12,
+  FULANI: 13,
+  'WIG & WEAVES': 14,
+  'FEED-IN BRAIDS': 15,
+  LOCS: 16,
+  'NATURAL STYLES': 17,
+  STYLES: 18,
+  SERVICES: 18,
 };
 
 const SIZE_LABELS: Record<string, string> = {

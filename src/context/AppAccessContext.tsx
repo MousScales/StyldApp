@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo } from 'react';
+import { useAuth } from './AuthContext';
 import { usePurchases } from './PurchasesContext';
 import { useOnboarding } from './OnboardingContext';
 
@@ -18,6 +19,7 @@ type AppAccessContextValue = {
 const AppAccessContext = createContext<AppAccessContextValue | undefined>(undefined);
 
 export function AppAccessProvider({ children }: { children: React.ReactNode }) {
+  const { isPlatformAdmin } = useAuth();
   const { isLoading, sitePublish, state } = useOnboarding();
   const {
     isReady: purchasesReady,
@@ -27,6 +29,10 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
   } = usePurchases();
 
   const value = useMemo<AppAccessContextValue>(() => {
+    if (isPlatformAdmin) {
+      return { phase: 'full', isBuildSiteOnly: false, requiresSubscription: false };
+    }
+
     if (!isLoading && !state.responsesSavedAt) {
       return { phase: 'account_onboarding', isBuildSiteOnly: false, requiresSubscription: false };
     }
@@ -50,6 +56,7 @@ export function AppAccessProvider({ children }: { children: React.ReactNode }) {
 
     return { phase: 'full', isBuildSiteOnly: false, requiresSubscription: false };
   }, [
+    isPlatformAdmin,
     state.responsesSavedAt,
     isLoading,
     purchasesReady,

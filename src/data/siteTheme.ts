@@ -1,9 +1,216 @@
-export type HeroLayout = 'split' | 'stack' | 'image-below' | 'minimal';
+import {
+  DEFAULT_HERO_IMAGE_FOCUS,
+  HeroImageFocus,
+  legacyPositionFromFocus,
+  normalizeHeroImageFocus,
+  normalizeStackImageFocusList,
+} from '../lib/heroImageFocus';
+import { normalizeSiteTextColors, ALL_SITE_TEXT_COLOR_KEYS } from '../lib/siteTextColors';
+
+export type HeroLayout = 'split' | 'stack' | 'cover' | 'image-below' | 'minimal';
 export type StyleCardLayout = 'card' | 'outlined';
 export type FontFamily = 'cormorant' | 'inter' | 'playfair' | 'dm-sans' | 'montserrat' | 'poppins' | 'lora' | 'nunito';
 export type TemplateId = 'profile';
 
 export type HeroImagePosition = 'center top' | 'center center' | 'center bottom';
+
+/** Wide 3:1 banners vs tall 4:9 portrait frames in stack hero layout. */
+export type HeroStackImageFormat = 'wide' | 'tall';
+
+export const HERO_STACK_IMAGE_FORMAT_OPTIONS: {
+  id: HeroStackImageFormat;
+  label: string;
+  desc: string;
+  sizeHint: string;
+  aspectRatio: number;
+}[] = [
+  {
+    id: 'wide',
+    label: 'Wide banner',
+    desc: '3:1 landscape',
+    sizeHint: '1200 × 400 px',
+    aspectRatio: 3,
+  },
+  {
+    id: 'tall',
+    label: 'Tall portrait',
+    desc: '4:9 portrait',
+    sizeHint: '400 × 900 px',
+    aspectRatio: 4 / 9,
+  },
+];
+
+export function normalizeHeroStackImageFormat(value: unknown): HeroStackImageFormat {
+  return value === 'tall' ? 'tall' : 'wide';
+}
+
+export function getHeroStackAspectRatio(format: HeroStackImageFormat = 'wide'): number {
+  return format === 'tall' ? 4 / 9 : 3;
+}
+
+export type SiteTextColorKey =
+  | 'heading'
+  | 'body'
+  | 'muted'
+  | 'serviceName'
+  | 'price'
+  | 'accent'
+  | 'link'
+  | 'nav'
+  | 'navButton'
+  | 'navButtonBg'
+  | 'splashBrand'
+  | 'splashButton'
+  | 'splashButtonBg';
+
+export type SiteTextColors = Partial<Record<SiteTextColorKey, string>>;
+
+/** Link a site element color to a brand palette color (updates when palette changes). */
+export type SiteColorSource = 'accent' | 'text' | 'background' | 'navbar' | 'custom';
+
+export type SiteTextColorGroupId = 'bookNow' | 'topBar' | 'splashTitle' | 'pageText' | 'servicesMenu';
+
+export type SiteTextColorField = {
+  key: SiteTextColorKey;
+  label: string;
+  hint: string;
+  group: SiteTextColorGroupId;
+  /** Shown only when heroLayout is cover (full-screen splash). */
+  coverOnly?: boolean;
+  /** Optional subsection label inside a group (e.g. nav vs splash Book Now). */
+  subGroup?: string;
+};
+
+export const SITE_COLOR_SOURCE_LABELS: Record<Exclude<SiteColorSource, 'custom'>, string> = {
+  accent: 'Brand accent',
+  text: 'Main text',
+  background: 'Page background',
+  navbar: 'Top bar background',
+};
+
+export const SITE_TEXT_COLOR_GROUPS: {
+  id: SiteTextColorGroupId;
+  title: string;
+  description: string;
+  coverOnly?: boolean;
+}[] = [
+  {
+    id: 'bookNow',
+    title: 'Book Now button',
+    description: 'Colors for booking buttons in the top bar and on your full-screen splash.',
+  },
+  {
+    id: 'topBar',
+    title: 'Top bar',
+    description: 'Your logo and business name on menu and book pages.',
+  },
+  {
+    id: 'splashTitle',
+    title: 'Splash screen',
+    description: 'Large business name centered on your cover photo.',
+    coverOnly: true,
+  },
+  {
+    id: 'pageText',
+    title: 'Page text',
+    description: 'Headings, paragraphs, and links on your about and book pages.',
+  },
+  {
+    id: 'servicesMenu',
+    title: 'Services menu',
+    description: 'Service cards, prices, and category filter tabs.',
+  },
+];
+
+export const SITE_TEXT_COLOR_FIELDS: SiteTextColorField[] = [
+  {
+    key: 'navButton',
+    label: 'Button text',
+    hint: 'Label on the Book Now in your top bar (menu & book pages)',
+    group: 'bookNow',
+    subGroup: 'Top bar button',
+  },
+  {
+    key: 'navButtonBg',
+    label: 'Button background',
+    hint: 'Fill color behind the top bar Book Now',
+    group: 'bookNow',
+    subGroup: 'Top bar button',
+  },
+  {
+    key: 'splashButton',
+    label: 'Button text',
+    hint: 'Label on the centered Book Now over your cover photo',
+    group: 'bookNow',
+    subGroup: 'Splash button',
+    coverOnly: true,
+  },
+  {
+    key: 'splashButtonBg',
+    label: 'Button background',
+    hint: 'Fill color behind the centered splash Book Now',
+    group: 'bookNow',
+    subGroup: 'Splash button',
+    coverOnly: true,
+  },
+  {
+    key: 'nav',
+    label: 'Business name',
+    hint: 'Logo and name in the top bar',
+    group: 'topBar',
+  },
+  {
+    key: 'splashBrand',
+    label: 'Splash name',
+    hint: 'Large name centered on your full-screen cover photo',
+    group: 'splashTitle',
+    coverOnly: true,
+  },
+  {
+    key: 'heading',
+    label: 'Section headings',
+    hint: 'About, Menu, Policies, and Location titles',
+    group: 'pageText',
+  },
+  {
+    key: 'body',
+    label: 'Body text',
+    hint: 'Bio paragraphs and policy bullets',
+    group: 'pageText',
+  },
+  {
+    key: 'muted',
+    label: 'Secondary text',
+    hint: 'Menu blurbs, durations, and fine print',
+    group: 'pageText',
+  },
+  {
+    key: 'link',
+    label: 'Links',
+    hint: 'Address, email, and social links',
+    group: 'pageText',
+  },
+  {
+    key: 'serviceName',
+    label: 'Service names',
+    hint: 'Title on each menu card',
+    group: 'servicesMenu',
+  },
+  {
+    key: 'price',
+    label: 'Prices',
+    hint: 'Price on each menu card',
+    group: 'servicesMenu',
+  },
+  {
+    key: 'accent',
+    label: 'Highlights',
+    hint: 'Category tabs and heading underlines',
+    group: 'servicesMenu',
+  },
+];
+
+export type SiteTextColorSources = Partial<Record<SiteTextColorKey, SiteColorSource>>;
 
 export type SiteTheme = {
   heroLayout: HeroLayout;
@@ -14,12 +221,22 @@ export type SiteTheme = {
   backgroundColor: string | null;
   navbarColor: string | null;
   heroImagePosition: HeroImagePosition;
+  heroImageFocusX: number;
+  heroImageFocusY: number;
   heroStackImagePaths: string[];
+  heroStackImageFocus: HeroImageFocus[];
+  heroStackImageFormat: HeroStackImageFormat;
   styleCardLayout: StyleCardLayout;
   cardOutlineColor: string | null;
   fontFamily: FontFamily;
   templateId: TemplateId;
   hideBookNowButton: boolean;
+  /** Soft blur on the full-screen cover splash background image. */
+  heroCoverBlur: boolean;
+  /** Optional per-element text color overrides (hex). Used when textColorSources[key] is custom or unset. */
+  textColors: SiteTextColors;
+  /** Link element colors to brand palette colors so they stay in sync. */
+  textColorSources: SiteTextColorSources;
 };
 
 export const DEFAULT_SITE_THEME: SiteTheme = {
@@ -31,12 +248,19 @@ export const DEFAULT_SITE_THEME: SiteTheme = {
   backgroundColor: null,
   navbarColor: null,
   heroImagePosition: 'center top',
+  heroImageFocusX: DEFAULT_HERO_IMAGE_FOCUS.x,
+  heroImageFocusY: DEFAULT_HERO_IMAGE_FOCUS.y,
   heroStackImagePaths: [],
+  heroStackImageFocus: [],
+  heroStackImageFormat: 'wide',
   styleCardLayout: 'card',
   cardOutlineColor: null,
   fontFamily: 'cormorant',
   templateId: 'profile',
   hideBookNowButton: false,
+  heroCoverBlur: false,
+  textColors: {},
+  textColorSources: {},
 };
 
 export type FontFamilyOption = {
@@ -93,6 +317,11 @@ export const HERO_LAYOUT_OPTIONS: HeroLayoutOption[] = [
     title: 'Text only',
     description: 'Skip the big photo and lead with a clean, typography-focused hero.',
   },
+  {
+    id: 'cover',
+    title: 'Full screen',
+    description: 'Full-screen splash with your name — Book Now opens a separate page with about, policies & menu.',
+  },
 ];
 
 function isValidHexColor(value: unknown): value is string {
@@ -105,11 +334,30 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
 
   const layout = source.heroLayout;
   const heroLayout: HeroLayout =
-    layout === 'split' || layout === 'stack' || layout === 'image-below' || layout === 'minimal'
+    layout === 'split' ||
+    layout === 'stack' ||
+    layout === 'cover' ||
+    layout === 'image-below' ||
+    layout === 'minimal'
       ? layout
       : DEFAULT_SITE_THEME.heroLayout;
 
   const validFontIds: FontFamily[] = ['cormorant', 'inter', 'playfair', 'dm-sans', 'montserrat', 'poppins', 'lora', 'nunito'];
+
+  const heroImagePosition: HeroImagePosition =
+    source.heroImagePosition === 'center center' || source.heroImagePosition === 'center bottom'
+      ? (source.heroImagePosition as HeroImagePosition)
+      : DEFAULT_SITE_THEME.heroImagePosition;
+
+  const heroStackImagePaths = Array.isArray(source.heroStackImagePaths)
+    ? (source.heroStackImagePaths as unknown[]).filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+    : [];
+
+  const heroFocus = normalizeHeroImageFocus(
+    source.heroImageFocusX,
+    source.heroImageFocusY,
+    heroImagePosition,
+  );
 
   return {
     heroLayout,
@@ -143,14 +391,30 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     fontFamily: validFontIds.includes(source.fontFamily as FontFamily)
       ? (source.fontFamily as FontFamily)
       : DEFAULT_SITE_THEME.fontFamily,
-    heroImagePosition:
-      source.heroImagePosition === 'center center' || source.heroImagePosition === 'center bottom'
-        ? (source.heroImagePosition as HeroImagePosition)
-        : DEFAULT_SITE_THEME.heroImagePosition,
-    heroStackImagePaths: Array.isArray(source.heroStackImagePaths)
-      ? (source.heroStackImagePaths as unknown[]).filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
-      : [],
+    heroImagePosition: legacyPositionFromFocus(heroFocus),
+    heroImageFocusX: heroFocus.x,
+    heroImageFocusY: heroFocus.y,
+    heroStackImagePaths,
+    heroStackImageFocus: normalizeStackImageFocusList(source.heroStackImageFocus, heroStackImagePaths.length),
+    heroStackImageFormat: normalizeHeroStackImageFormat(source.heroStackImageFormat),
     templateId: 'profile',
     hideBookNowButton: source.hideBookNowButton === true,
+    heroCoverBlur: source.heroCoverBlur === true,
+    textColors: normalizeSiteTextColors(source.textColors),
+    textColorSources: normalizeSiteTextColorSources(source.textColorSources),
   };
+}
+
+export function normalizeSiteTextColorSources(value: unknown): SiteTextColorSources {
+  if (!value || typeof value !== 'object') return {};
+  const source = value as Record<string, unknown>;
+  const result: SiteTextColorSources = {};
+  const valid: SiteColorSource[] = ['accent', 'text', 'background', 'navbar', 'custom'];
+  ALL_SITE_TEXT_COLOR_KEYS.forEach((key) => {
+    const raw = source[key];
+    if (typeof raw === 'string' && valid.includes(raw as SiteColorSource)) {
+      result[key] = raw as SiteColorSource;
+    }
+  });
+  return result;
 }

@@ -1,10 +1,17 @@
 import { ServiceVenue } from './serviceCatalog';
 
+export type StyleAddon = {
+  id: string;
+  name: string;
+  price: number;
+};
+
 export type StyleMetaEntry = {
   title: string;
   description: string;
   category: string;
   durationMinutes?: number;
+  addons?: StyleAddon[];
 };
 
 export const DEFAULT_STYLE_DURATION_MINUTES = 120;
@@ -53,6 +60,7 @@ export function normalizeStyleMeta(value: unknown): StyleCatalogMeta {
     if (!title) continue;
 
     const durationRaw = entry.durationMinutes ?? entry.duration_minutes;
+    const addons = normalizeStyleAddons(entry.addons);
     result[styleId] = {
       title,
       description: typeof entry.description === 'string' ? entry.description.trim() : '',
@@ -61,6 +69,7 @@ export function normalizeStyleMeta(value: unknown): StyleCatalogMeta {
           ? entry.category.trim()
           : DEFAULT_STYLE_CATEGORY,
       durationMinutes: normalizeStyleDurationMinutes(durationRaw),
+      ...(addons.length ? { addons } : {}),
     };
   }
   return result;
@@ -76,7 +85,54 @@ export function createStyleId(title: string, venue: ServiceVenue = 'studio'): st
   return `${venue}-${slug || 'style'}-${suffix}`;
 }
 
+export function normalizeStyleAddons(value: unknown): StyleAddon[] {
+  if (!Array.isArray(value)) return [];
+  const result: StyleAddon[] = [];
+  value.forEach((raw, index) => {
+    if (!raw || typeof raw !== 'object') return;
+    const entry = raw as Record<string, unknown>;
+    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+    if (!name) return;
+    const priceRaw = typeof entry.price === 'number' ? entry.price : Number(entry.price);
+    const price = Number.isFinite(priceRaw) ? Math.max(0, priceRaw) : 0;
+    const id =
+      typeof entry.id === 'string' && entry.id.trim()
+        ? entry.id.trim()
+        : `addon-${index + 1}`;
+    result.push({ id, name, price });
+  });
+  return result;
+}
+
+export function createStyleAddonId(): string {
+  return `addon-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 4)}`;
+}
+
+/** Rows the user started but did not name — blocked on explicit save. */
+export function getIncompleteStyleAddons(addons: StyleAddon[]): StyleAddon[] {
+  return addons.filter((addon) => !addon.name.trim());
+}
+
+export function getStylePriceBounds(
+  basePrice: number,
+  addons?: StyleAddon[],
+): { min: number; max: number } {
+  const base = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 0;
+  const pricedAddons = (addons ?? []).map((addon) => addon.price).filter((price) => price > 0);
+  if (!pricedAddons.length) {
+    return { min: base, max: base };
+  }
+  return { min: base, max: base + Math.max(...pricedAddons) };
+}
+
 export function formatStylePrice(price: number): string {
   if (!Number.isFinite(price) || price <= 0) return 'Price TBD';
   return `$${Math.round(price)}`;
+}
+
+export function formatStylePriceRange(basePrice: number, addons?: StyleAddon[]): string {
+  const { min, max } = getStylePriceBounds(basePrice, addons);
+  if (max <= 0) return 'Price TBD';
+  if (!addons?.length || min === max) return formatStylePrice(min);
+  return `$${Math.round(min)}–$${Math.round(max)}`;
 }

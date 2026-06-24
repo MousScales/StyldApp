@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
@@ -30,6 +31,8 @@ export default function NotificationsPanel({
   onMarkRead,
   onMarkAllRead,
 }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const insets = useSafeAreaInsets();
   const unreadCount = notifications.filter((item) => item.unread).length;
 
@@ -105,7 +108,7 @@ export default function NotificationsPanel({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -243,4 +246,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chartBlue,
     marginTop: 6,
   },
-});
+};

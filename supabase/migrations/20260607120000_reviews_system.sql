@@ -19,6 +19,7 @@ create index if not exists styld_site_records_user_reviews_idx
   where record_type = 'review';
 
 -- Verify a review invite token and return booking context for the review form
+drop function if exists public.styld_tenant_get_review_context(text, text);
 create or replace function public.styld_tenant_get_review_context(
   p_subdomain text,
   p_token text
@@ -73,6 +74,7 @@ end;
 $$;
 
 -- Submit a review from the public review page
+drop function if exists public.styld_tenant_submit_review(text, text, integer, text, text);
 create or replace function public.styld_tenant_submit_review(
   p_subdomain text,
   p_token text,

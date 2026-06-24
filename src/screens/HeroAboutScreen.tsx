@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   KeyboardAvoidingView,
@@ -19,6 +20,8 @@ import { colors } from '../theme';
 type Props = NativeStackScreenProps<SiteStackParamList, 'HeroAbout'>;
 
 export default function HeroAboutScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { content, updateContent } = useSiteContent();
 
   return (
@@ -65,7 +68,7 @@ export default function HeroAboutScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -108,4 +111,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     minHeight: 160,
   },
-});
+};

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import {
   ActivityIndicator,
   Image,
@@ -28,6 +29,8 @@ import { colors } from '../theme';
 type AuthMode = 'signIn' | 'signUp';
 
 export default function LoginScreen() {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { signIn, signUp, signInWithApple } = useAuth();
   const [mode, setMode] = useState<AuthMode>('signIn');
   const [fullName, setFullName] = useState('');
@@ -284,7 +287,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -456,4 +459,4 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
-});
+};

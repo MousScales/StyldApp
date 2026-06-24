@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -30,6 +31,8 @@ import { colors } from '../theme';
 type Props = NativeStackScreenProps<SiteStackParamList, 'LinkSite'>;
 
 export default function LinkSiteScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { user } = useAuth();
   const { refresh } = useSiteData();
   const [loading, setLoading] = useState(true);
@@ -208,7 +211,7 @@ export default function LinkSiteScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -332,4 +335,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-});
+};

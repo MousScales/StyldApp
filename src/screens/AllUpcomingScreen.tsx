@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
@@ -17,6 +18,8 @@ import type { AppointmentDetail } from '../data/appointments';
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AllUpcoming'>;
 
 function DayHeader({ label, count }: { label: string; count: number }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const isToday = label.startsWith('Today');
   return (
     <View style={styles.dayHeader}>
@@ -42,6 +45,8 @@ function AppointmentRow({
   privacyMode: boolean;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <Pressable
       style={[styles.apptRow, !isLast && styles.apptRowBorder]}
@@ -79,6 +84,8 @@ function AppointmentRow({
 }
 
 export default function AllUpcomingScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { getUpcomingAppointments } = useSiteData();
   const { privacyMode } = usePrivacyMode();
   const { content: siteContent } = useSiteContent();
@@ -139,7 +146,7 @@ export default function AllUpcomingScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
 
@@ -224,4 +231,4 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   depositBadgeText: { color: colors.accentPink, fontSize: 10, fontWeight: '700' },
-});
+};

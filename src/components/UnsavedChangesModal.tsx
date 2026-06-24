@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { colors } from '../theme';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 
 const STYLD_ICON = require('../../assets/icon.png') as ImageSourcePropType;
 
@@ -33,6 +34,8 @@ export default function UnsavedChangesModal({
   onSave,
   onDiscard,
 }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onStay}>
       <View style={styles.overlay}>
@@ -76,7 +79,7 @@ export default function UnsavedChangesModal({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   overlay: {
     flex: 1,
     justifyContent: 'center',
@@ -174,4 +177,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-});
+};

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { Image, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useSiteContent } from '../context/SiteContentContext';
@@ -28,6 +29,7 @@ export default function BrandLogo({
   circular = false,
   style,
 }: BrandLogoProps) {
+  const styles = useResponsiveStyles(BASE_STYLES);
   const { logoImageUrl } = useSiteTheme();
   const { content } = useSiteContent();
   const { profile } = useAuth();
@@ -95,7 +97,7 @@ export default function BrandLogo({
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   wrap: { alignItems: 'center', justifyContent: 'center' },
   circular: { overflow: 'hidden' },
   placeholder: {
@@ -118,4 +120,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     maxWidth: 120,
   },
-});
+};

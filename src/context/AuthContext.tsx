@@ -1,7 +1,9 @@
 import { Session, User } from '@supabase/supabase-js';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isPlatformAdminEmail, isPlatformAdminUser } from '../lib/platformAdmin';
+import { deleteAccount as requestAccountDeletion } from '../lib/deleteAccount';
 
 export type StyldProfile = {
   id: string;
@@ -18,6 +20,7 @@ type AuthContextValue = {
   user: User | null;
   profile: StyldProfile | null;
   isReady: boolean;
+  isPlatformAdmin: boolean;
   isNewSignUp: boolean;
   clearNewSignUp: () => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -29,6 +32,7 @@ type AuthContextValue = {
     full_name?: string | null;
     business_name?: string | null;
   }) => Promise<{ error: string | null }>;
+  deleteAccount: () => Promise<{ error: string | null }>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -153,6 +157,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error && isPlatformAdminEmail(email)) {
+      setIsNewSignUp(false);
+    }
     return { error: error?.message ?? null };
   };
 
@@ -258,12 +265,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null };
   };
 
+  const deleteAccount = async () => {
+    const { error } = await requestAccountDeletion();
+    if (error) {
+      return { error };
+    }
+
+    await supabase.auth.signOut();
+    setProfile(null);
+    return { error: null };
+  };
+
+  const isPlatformAdmin = useMemo(
+    () => isPlatformAdminUser(session?.user ?? null),
+    [session?.user],
+  );
+
   const value = useMemo(
     () => ({
       session,
       user: session?.user ?? null,
       profile,
       isReady,
+      isPlatformAdmin,
       isNewSignUp,
       clearNewSignUp,
       signIn,
@@ -272,8 +296,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       refreshProfile,
       updateProfile,
+      deleteAccount,
     }),
-    [session, profile, isReady, isNewSignUp],
+    [session, profile, isReady, isPlatformAdmin, isNewSignUp],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

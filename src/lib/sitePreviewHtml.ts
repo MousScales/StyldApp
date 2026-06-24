@@ -6,7 +6,9 @@ import {
   SiteContent,
   SiteSection,
 } from '../data/siteContent';
-import { FontFamily, FONT_FAMILY_OPTIONS, GOOGLE_FONTS_URL, HeroLayout, StyleCardLayout, TemplateId } from '../data/siteTheme';
+import { DEFAULT_SITE_THEME, FontFamily, FONT_FAMILY_OPTIONS, GOOGLE_FONTS_URL, HeroLayout, SiteTextColors, SiteTextColorSources, StyleCardLayout, TemplateId, SiteTheme } from '../data/siteTheme';
+import { buildTextColorsCssFromTheme } from './siteTextColors';
+import { focusToBackgroundPosition, HeroImageFocus } from './heroImageFocus';
 
 const SITE_PREVIEW_CSS = `
 :root{--pink:#db2777;--pink-dark:#9f1239;--ink:#0a0a0a;--cream:#fafafa;--muted:#525252;--muted-soft:#737373;--pink-heading:#ec4899;--hero-pink:#f472b6;--hero-pink-deep:#be185d;--white:#fff;--radius:12px;--shadow:0 8px 32px rgba(13,13,13,.08);--font-display:"Cormorant Garamond",Georgia,serif;--font-body:"Source Sans 3",system-ui,sans-serif;--filter-active-text:#fff}
@@ -55,7 +57,7 @@ const SITE_PREVIEW_CSS = `
 .section-popular-styles .catalog-service-card__title{font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:var(--ink);line-height:1.25}
 .section-popular-styles .catalog-service-card__mid{display:flex;flex-direction:row;align-items:baseline;justify-content:space-between;gap:.75rem}
 .section-popular-styles .catalog-service-card__size{font-size:.85rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.section-popular-styles .catalog-service-card__price{font-size:1.1rem;font-weight:700;color:var(--pink-dark);white-space:nowrap}
+.section-popular-styles .catalog-service-card__price{font-size:1.1rem;font-weight:700;color:var(--ink);white-space:nowrap}
 .section--reels-showcase{background:linear-gradient(180deg,rgba(253,242,248,.42) 0%,#fff 100%);border-block:1px solid rgba(219,39,119,.09)}
 .reels-carousel__track{display:flex;gap:1rem;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:.5rem}
 .reels-carousel__slide{flex:0 0 min(18rem,calc(100vw - 3rem));scroll-snap-align:start}
@@ -80,14 +82,19 @@ const SITE_PREVIEW_CSS = `
 .style-pill__body{flex:1;min-width:0}
 .style-pill__name{font-weight:700;font-size:.92rem;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
 .style-pill__desc{font-size:.75rem;color:var(--muted);margin-top:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.style-pill__price{font-weight:800;font-size:.9rem;color:var(--pink);flex-shrink:0;white-space:nowrap}
+.style-pill__price{font-weight:800;font-size:.9rem;color:var(--ink);flex-shrink:0;white-space:nowrap}
 @media (max-width:768px){.section{padding:2.4rem 0}.section-head{margin-bottom:1.65rem;text-align:center}.card-grid{display:flex;flex-wrap:nowrap;gap:1rem;overflow-x:auto;scroll-snap-type:x mandatory;padding:0 .25rem .85rem;margin-inline:-.25rem;-webkit-overflow-scrolling:touch}.card-grid>*{flex:0 0 min(18.25rem,calc(100vw - 3rem));scroll-snap-align:start;max-width:min(18.25rem,calc(100vw - 3rem))}.info-cards{display:grid;grid-template-columns:1fr;gap:1rem}.location-map{height:220px}.hero-ctas--scale{flex-direction:column;align-items:stretch;width:100%;max-width:360px;margin-inline:auto}.hero-ctas--scale .hero-btn--lg{width:100%;justify-content:center}}
-.profile-nav{background:var(--nav-bg,var(--pink));border-bottom:1px solid rgba(0,0,0,.06);padding:.875rem 0;position:sticky;top:0;z-index:100}
+.profile-nav{background:var(--nav-bg,var(--pink));border-bottom:none;padding:.875rem 0;position:sticky;top:0;z-index:100}
 .profile-nav__inner{display:flex;align-items:center;justify-content:space-between;gap:1rem}
-.profile-brand{font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--nav-text,#fff);display:flex;align-items:center;gap:.6rem;text-decoration:none}
+.profile-brand{font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--text-nav,var(--nav-text,#fff));display:flex;align-items:center;gap:.6rem;text-decoration:none}
 .profile-brand__logo{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.2);flex-shrink:0}
 .profile-brand__logo-img{width:38px;height:38px;border-radius:10px;object-fit:cover;flex-shrink:0}
-.profile-book-btn{display:inline-flex;align-items:center;padding:.6rem 1.25rem;background:var(--ink);color:var(--pink);border-radius:999px;font-weight:700;font-size:.9rem;text-decoration:none;white-space:nowrap}
+.profile-book-btn{display:inline-flex;align-items:center;padding:.6rem 1.35rem;background:var(--text-nav-button-bg,var(--ink));color:var(--text-nav-button,var(--pink));border-radius:999px;font-weight:700;font-size:.9rem;text-decoration:none;white-space:nowrap;transition:opacity .15s}
+.profile-book-btn:hover{opacity:.88}
+.profile-about-body,.profile-policy-body{color:var(--text-body,var(--muted));font-size:.975rem;line-height:1.72;margin:0}
+.profile-policy-body{padding-left:1.25rem;list-style:disc}
+.profile-policy-body li{margin-bottom:.35rem}
+.profile-policy-body li:last-child{margin-bottom:0}
 .profile-hero{padding:2.5rem 0 2rem;background:var(--cream)}
 .profile-hero__grid{display:grid;grid-template-columns:2fr 3fr;gap:2.5rem;align-items:start}
 .profile-photo{border-radius:20px;overflow:hidden;aspect-ratio:3/4;background:linear-gradient(180deg,#f0ece5 0%,#e4dfd7 100%);box-shadow:0 12px 40px rgba(0,0,0,.10)}
@@ -97,7 +104,6 @@ const SITE_PREVIEW_CSS = `
 .profile-about-head,.profile-policy-head{font-family:var(--font-display);color:var(--ink);margin:0}
 .profile-about-head{font-size:1.5rem;font-weight:700;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
 .profile-policy-head{font-size:1.5rem;font-weight:700;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
-.profile-about-body,.profile-policy-body{color:var(--muted);font-size:.95rem;line-height:1.7;margin:0}
 .profile-menu-section{padding:2.5rem 0;background:var(--cream,#fff);border-top:1px solid rgba(0,0,0,.06)}
 .profile-menu-head{margin-bottom:1.25rem}
 .profile-menu-head h2{font-family:var(--font-display);font-size:clamp(1.5rem,3vw,2.1rem);font-weight:700;color:var(--ink);margin:0 0 .3rem;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
@@ -112,8 +118,8 @@ const SITE_PREVIEW_CSS = `
 .profile-service-card__img{width:64px;height:64px;border-radius:12px;flex-shrink:0;background:linear-gradient(145deg,#e8e3db,#d6d0c7);background-size:cover;background-position:center}
 .profile-service-card__body{flex:1;min-width:0}
 .profile-service-card__name{font-weight:700;font-size:.88rem;color:var(--ink);line-height:1.3}
-.profile-service-card__price{font-size:.83rem;font-weight:700;color:var(--pink);margin-top:.15rem}
-.profile-service-card__duration{font-size:.75rem;color:var(--muted)}
+.profile-service-card__price{font-size:.83rem;font-weight:700;color:var(--ink);margin-top:.15rem}
+.profile-service-card__duration{font-size:.76rem;color:var(--muted)}
 .profile-location-section{padding:2.5rem 0;background:var(--cream);border-top:1px solid rgba(0,0,0,.06)}
 .profile-location-head{margin-bottom:1.25rem}
 .profile-location-head h2{font-family:var(--font-display);font-size:clamp(1.4rem,2.5vw,2rem);font-weight:700;color:var(--ink);margin:0;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
@@ -126,9 +132,11 @@ const SITE_PREVIEW_CSS = `
 .profile-ig-link a{display:inline-flex;align-items:center;gap:.35rem}
 .profile-ig-icon{width:15px;height:15px;flex-shrink:0;vertical-align:middle;color:var(--pink)}
 .profile-location-map{width:100%;height:240px;border:0;border-top:1px solid rgba(0,0,0,.06);display:block}
+.profile-location-map--preview{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.05);color:var(--muted);font-size:.85rem;font-weight:600}
 .profile-service-card-wrap{display:flex;flex-direction:column}
 .profile-service-card-wrap .profile-service-card{flex:1}
-.profile-service-card__expand-btn{display:flex;align-items:center;justify-content:space-between;width:100%;padding:.45rem .75rem;background:transparent;border:none;border-top:1px solid rgba(0,0,0,.07);cursor:pointer;font-family:var(--font-body);font-size:.78rem;font-weight:600;color:var(--muted);text-align:left;gap:.5rem}
+.profile-service-card__expand-btn{display:flex;align-items:center;justify-content:space-between;width:100%;padding:.45rem .75rem;background:transparent;border:none;border-top:1px solid rgba(0,0,0,.07);cursor:pointer;font-family:var(--font-body);font-size:.76rem;font-weight:400;color:var(--muted);text-align:left;gap:.5rem}
+.profile-service-card__expand-label{font-size:inherit;font-weight:inherit;color:inherit}
 .profile-service-card__expand-btn:hover{color:var(--pink)}
 .profile-service-card__expand-chevron{flex-shrink:0;transition:transform .2s}
 .profile-service-card__expand-btn.is-open .profile-service-card__expand-chevron{transform:rotate(180deg)}
@@ -138,15 +146,56 @@ const SITE_PREVIEW_CSS = `
 .profile-hero--stack{overflow:hidden}
 .profile-hero--cover{padding:0}
 .profile-hero--cover .profile-hero__grid{display:block;width:100%;max-width:100%;margin:0;padding:0}
-.profile-hero--cover .profile-photo{width:100%;aspect-ratio:unset;height:clamp(420px,72vh,760px);border-radius:0;box-shadow:none}
+.profile-hero--cover .profile-photo{width:100%;aspect-ratio:unset;height:100dvh;min-height:480px;max-height:none;border-radius:0;box-shadow:none}
 .profile-hero--cover .profile-photo__bg{background-position:center;background-size:cover;min-height:unset;height:100%;position:relative}
-.profile-cover-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.08) 0%,rgba(0,0,0,.52) 100%);display:flex;flex-direction:column;justify-content:flex-end;padding:2rem 2rem 1.75rem}
-.profile-cover-overlay .profile-brand{font-size:1.6rem;font-weight:700;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.35);text-decoration:none;font-family:var(--font-display);display:block;margin-bottom:.85rem}
-.profile-cover-overlay .profile-book-btn{align-self:flex-start}
+.profile-cover-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.12) 0%,rgba(0,0,0,.35) 45%,rgba(0,0,0,.62) 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:2rem 1.5rem;gap:1.1rem}
+.profile-cover-overlay .profile-cover-brand{font-size:clamp(1.85rem,6vw,3rem);font-weight:700;color:#fff;text-shadow:0 2px 16px rgba(0,0,0,.45);font-family:var(--font-display);line-height:1.15;max-width:18ch}
+.profile-cover-overlay .profile-book-btn{align-self:center;padding:.75rem 1.75rem;font-size:1rem;background:#fff;color:var(--ink);box-shadow:0 4px 24px rgba(0,0,0,.28)}
+.profile-cover-overlay .profile-book-btn:hover{opacity:.92}
+.profile-photo__bg--blurred{background-image:none!important;overflow:hidden}
+.profile-photo__bg--blurred::before{content:'';position:absolute;inset:-28px;background-image:var(--hero-cover-bg);background-size:cover;background-position:var(--hero-cover-position,center center);filter:blur(14px);transform:scale(1.06);z-index:0}
+.profile-photo__bg--blurred .profile-cover-overlay{z-index:1}
+.profile-hero--cover .profile-info{padding:2rem 0 .5rem;scroll-margin-top:4.5rem}
+#site-main-content{scroll-margin-top:4.5rem}
+body.hero-layout-cover .profile-nav:not(.profile-nav--cover-splash) .profile-brand{visibility:hidden}
+body.page-cover-splash .preview-banner{display:none!important}
+body.page-cover-splash{margin:0;overflow:hidden;height:100dvh;background:var(--cream,#fafafa)}
+body.page-cover-splash .profile-nav--cover-splash{display:block!important;position:fixed;top:0;left:0;right:0;z-index:30;background:transparent!important;border:none;box-shadow:none;padding:.875rem 0;pointer-events:none}
+body.page-cover-splash .profile-nav--cover-splash .profile-nav__inner{pointer-events:auto}
+body.page-cover-splash .profile-nav--cover-splash .profile-brand{visibility:visible!important;color:var(--text-splash-brand,#fff);text-shadow:0 1px 10px rgba(0,0,0,.55)}
+body.page-cover-splash .profile-nav--cover-splash .profile-book-btn{display:none!important}
+body.page-cover-splash .profile-nav:not(.profile-nav--cover-splash){display:none!important}
+body.page-cover-splash .profile-hero--cover{padding:0;margin:0;background:transparent}
+body.page-cover-splash .profile-hero--cover .container{width:100%;max-width:100%;margin:0;padding:0}
+body.page-cover-splash .profile-hero--cover .profile-photo{width:100%;aspect-ratio:unset;height:100dvh;min-height:320px;max-height:none;border-radius:0;box-shadow:none}
+body.page-cover-splash .profile-hero--cover .profile-photo__bg{min-height:100%;height:100%;position:relative}
+body.page-cover-splash .profile-below-hero{display:none!important}
+body.preview-cover-on-book{overflow:auto;height:auto;min-height:100%;background:var(--cream,#fafafa)}
+body.preview-cover-on-book.page-book .profile-nav{position:sticky;top:0;z-index:100}
+body.preview-cover-on-book .preview-cover-splash{display:none!important}
+.preview-cover-book[hidden]{display:none!important}
+.preview-cover-book:not([hidden]){display:block}
+.profile-book-intro{padding:1rem 0 .25rem}
+body.page-book .profile-nav .profile-brand{visibility:visible}
+html{scroll-behavior:smooth}
 .profile-hero-stack{display:block;width:100%}
 .profile-hero-stack__img{display:block;width:100%;max-width:100%;aspect-ratio:3/1;object-fit:cover;object-position:center}
+.profile-hero-stack--tall{display:flex;flex-direction:column;align-items:center;width:100%}
+.profile-hero-stack--tall .profile-hero-stack__img{aspect-ratio:4/9;width:min(92vw,400px);max-width:400px}
 .profile-hero--stack .profile-hero__grid{grid-template-columns:1fr;padding-top:1.5rem}
 .profile-hero--stack .profile-photo{display:none}
+.profile-about-head,.profile-policy-head,.profile-menu-head h2,.profile-location-head h2,.profile-reviews-head h2{color:var(--text-heading,var(--ink));border-bottom-color:var(--text-accent,var(--pink))}
+.profile-about-body,.profile-policy-body{color:var(--text-body,var(--muted))}
+.profile-menu-blurb,.profile-service-card__duration,.profile-service-card__expand-btn,.profile-service-card__desc{color:var(--text-muted,var(--muted))}
+.profile-service-card__name{color:var(--text-service-name,var(--ink))}
+.profile-service-card__price{color:var(--text-price,var(--ink))}
+.profile-menu-filter:hover{border-color:var(--text-accent,var(--pink));color:var(--text-accent,var(--pink))}
+.profile-menu-filter--active{background:var(--text-accent,var(--pink));border-color:var(--text-accent,var(--pink))}
+.profile-location-col a,.profile-ig-link a{color:var(--text-link,var(--pink))}
+.profile-brand{color:var(--text-nav,var(--nav-text,#fff))}
+.profile-book-btn:not(.profile-book-btn--cover-splash){color:var(--text-nav-button,var(--pink));background:var(--text-nav-button-bg,var(--ink))}
+.profile-cover-overlay .profile-cover-brand{color:var(--text-splash-brand,#fff)}
+.profile-cover-overlay .profile-book-btn{color:var(--text-splash-button,var(--ink));background:var(--text-splash-button-bg,#fff)}
 `;
 
 function escapeHtml(value: string): string {
@@ -174,6 +223,10 @@ export type SitePreviewTheme = {
   heroImageUrl?: string | null;
   logoImageUrl?: string | null;
   heroStackImageUrls?: string[];
+  heroImageFocusX?: number;
+  heroImageFocusY?: number;
+  heroStackImageFocus?: HeroImageFocus[];
+  heroStackImageFormat?: 'wide' | 'tall';
   primaryColor?: string | null;
   secondaryColor?: string | null;
   backgroundColor?: string | null;
@@ -184,6 +237,11 @@ export type SitePreviewTheme = {
   fontFamily?: FontFamily | null;
   templateId?: TemplateId | null;
   hideBookNowButton?: boolean;
+  /** True when rendered inside the compact editor WebView (Desktop preview pane). */
+  embeddedPreview?: boolean;
+  heroCoverBlur?: boolean;
+  textColors?: SiteTextColors;
+  textColorSources?: SiteTextColorSources;
 };
 
 export const DEFAULT_PREVIEW_THEME: SitePreviewTheme = {
@@ -197,6 +255,41 @@ export const DEFAULT_PREVIEW_THEME: SitePreviewTheme = {
   fontFamily: 'cormorant',
   templateId: 'profile',
 };
+
+export function buildSitePreviewTheme(
+  theme: SiteTheme,
+  assets: {
+    heroImageUrl?: string | null;
+    logoImageUrl?: string | null;
+    heroStackImageUrls?: string[];
+  },
+  options?: { zoomedOut?: boolean; embeddedPreview?: boolean },
+): SitePreviewTheme {
+  return {
+    heroLayout: theme.heroLayout,
+    heroImageUrl: assets.heroImageUrl,
+    logoImageUrl: assets.logoImageUrl,
+    heroStackImageUrls: assets.heroStackImageUrls,
+    heroImageFocusX: theme.heroImageFocusX,
+    heroImageFocusY: theme.heroImageFocusY,
+    heroStackImageFocus: theme.heroStackImageFocus,
+    heroStackImageFormat: theme.heroStackImageFormat,
+    primaryColor: theme.primaryColor,
+    secondaryColor: theme.secondaryColor,
+    backgroundColor: theme.backgroundColor,
+    navbarColor: theme.navbarColor,
+    cardOutlineColor: theme.cardOutlineColor,
+    styleCardLayout: theme.styleCardLayout,
+    fontFamily: theme.fontFamily,
+    templateId: theme.templateId,
+    hideBookNowButton: theme.hideBookNowButton,
+    heroCoverBlur: theme.heroCoverBlur,
+    textColors: theme.textColors,
+    textColorSources: theme.textColorSources,
+    zoomedOut: options?.zoomedOut ?? false,
+    embeddedPreview: options?.embeddedPreview ?? false,
+  };
+}
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const clean = hex.replace('#', '');
@@ -263,8 +356,19 @@ function buildColorOverrideCss(theme: SitePreviewTheme): string {
     ? (0.299 * primaryRgb[0] + 0.587 * primaryRgb[1] + 0.114 * primaryRgb[2]) / 255
     : 0;
   const filterActiveText = primaryLuminance > 0.5 ? '#000000' : '#ffffff';
-  const hideBookNowPart = theme.hideBookNowButton ? '.profile-book-btn{display:none!important}' : '';
-  return `:root{--pink:${primary};--pink-dark:${primaryDark};--pink-heading:${primaryHeading};--hero-pink:${primaryLight};--hero-pink-deep:${primaryDark};--pink-light:${primaryLight};--ink:${secondary};--font-display:${fontDisplay};--font-body:${fontBody};--filter-active-text:${filterActiveText};${bgPart}${navBgPart}${navTextPart}${mutedPart}${cardOutlinePart}}${hideBookNowPart}`;
+  const hideBookNowPart = theme.hideBookNowButton
+    ? '.profile-nav .profile-book-btn{display:none!important}'
+    : '';
+  const textColorsPart = buildTextColorsCssFromTheme({
+    ...DEFAULT_SITE_THEME,
+    primaryColor: primary,
+    secondaryColor: secondary,
+    backgroundColor: bgColor,
+    navbarColor: navbarColor,
+    textColors: theme.textColors ?? {},
+    textColorSources: theme.textColorSources ?? {},
+  });
+  return `:root{--pink:${primary};--pink-dark:${primaryDark};--pink-heading:${primaryHeading};--hero-pink:${primaryLight};--hero-pink-deep:${primaryDark};--pink-light:${primaryLight};--ink:${secondary};--font-display:${fontDisplay};--font-body:${fontBody};--filter-active-text:${filterActiveText};${bgPart}${navBgPart}${navTextPart}${mutedPart}${cardOutlinePart}${textColorsPart}}${hideBookNowPart}`;
 }
 
 export function getSitePreviewPageUrl(): string | null {
@@ -272,6 +376,57 @@ export function getSitePreviewPageUrl(): string | null {
   if (!base) return null;
   return `${base}/preview.html`;
 }
+
+/** In-preview click handling — embedded in inline HTML; also injected for hosted preview. */
+export const STYLD_PREVIEW_INTERACTIONS_SCRIPT = `
+(function(){
+  if(window.__styldPreviewBound) return;
+  window.__styldPreviewBound = true;
+  document.addEventListener('click', function(e){
+    var link = e.target && e.target.closest ? e.target.closest('a') : null;
+    if(link){
+      var action = link.getAttribute('data-styld-preview') || '';
+      var href = (link.getAttribute('href') || '').trim();
+      var coverBook = document.getElementById('preview-cover-book');
+      if(action === 'open-book' || (coverBook && link.classList.contains('profile-book-btn--cover-splash'))){
+        e.preventDefault();
+        e.stopPropagation();
+        if(window.showStyldPreviewCoverBook) window.showStyldPreviewCoverBook();
+        return false;
+      }
+      if(action === 'open-splash' && coverBook && !coverBook.hasAttribute('hidden')){
+        e.preventDefault();
+        e.stopPropagation();
+        if(window.showStyldPreviewCoverSplash) window.showStyldPreviewCoverSplash();
+        return false;
+      }
+      if(href.indexOf('/booking') === 0 || href === '/book'){
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      if(link.classList.contains('profile-service-card') || link.classList.contains('style-pill')){
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      if(href && href !== '#' && href.indexOf('javascript:') !== 0){
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      return;
+    }
+    var btn = e.target && e.target.closest ? e.target.closest('button') : null;
+    if(btn && !btn.getAttribute('onclick')){
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }, true);
+  document.addEventListener('submit', function(e){ e.preventDefault(); }, true);
+})();
+`;
 
 export function buildSitePreviewInjection(
   content: SiteContent,
@@ -283,9 +438,15 @@ export function buildSitePreviewInjection(
   return `window.__STYLD_SITE_CONTENT__=${JSON.stringify(content)};window.__STYLD_SITE_STYLES__=${JSON.stringify(styles)};window.__STYLD_SITE_THEME__=${JSON.stringify(theme)};${colorInject}`;
 }
 
-function heroImageAttr(url: string | null | undefined): string {
+function heroImageAttr(url: string | null | undefined, focus?: HeroImageFocus): string {
   if (!url) return '';
-  return ` style="background-image:url('${url.replace(/'/g, '%27')}');background-size:cover;background-position:center;"`;
+  const position = focus ? focusToBackgroundPosition(focus) : 'center';
+  return ` style="background-image:url('${url.replace(/'/g, '%27')}');background-size:cover;background-position:${position};"`;
+}
+
+function stackImageTag(url: string, focus?: HeroImageFocus): string {
+  const position = focus ? focusToBackgroundPosition(focus) : 'center';
+  return `<img class="profile-hero-stack__img" src="${url.replace(/"/g, '%22')}" alt="" loading="lazy" style="object-position:${position};"/>`;
 }
 
 function buildHeroCtasHtml(): string {
@@ -298,7 +459,10 @@ function buildHeroInnerHtml(content: SiteContent, theme: SitePreviewTheme): stri
   const left = escapeHtml(content.taglineLeft);
   const r1 = escapeHtml(content.taglineRightLine1);
   const r2 = escapeHtml(content.taglineRightLine2);
-  const img = heroImageAttr(theme.heroImageUrl);
+  const img = heroImageAttr(theme.heroImageUrl, {
+    x: theme.heroImageFocusX ?? 50,
+    y: theme.heroImageFocusY ?? 22,
+  });
   const visualClass = theme.heroImageUrl
     ? 'hero-scale-visual hero-scale-visual--photo'
     : 'hero-scale-visual';
@@ -383,10 +547,14 @@ function buildStylePillsHtml(styles: SitePreviewStyle[]): string {
       const imgHtml = style.imageUrl
         ? `<div class="style-pill__img--bg" style="background-image:url('${style.imageUrl.replace(/'/g, '%27')}')"></div>`
         : `<div class="style-pill__img"></div>`;
-      const metaBits = [style.durationLabel, style.priceLabel].filter(Boolean);
-      const descText = style.description || metaBits.join(' · ');
-      const desc = descText ? `<div class="style-pill__desc">${escapeHtml(descText)}</div>` : '';
-      const price = '';
+      const desc = style.description
+        ? `<div class="style-pill__desc">${escapeHtml(style.description)}</div>`
+        : style.durationLabel
+          ? `<div class="style-pill__desc">${escapeHtml(style.durationLabel)}</div>`
+          : '';
+      const price = style.priceLabel
+        ? `<span class="style-pill__price">${escapeHtml(style.priceLabel)}</span>`
+        : '';
       return `<a class="style-pill" href="#">${imgHtml}<div class="style-pill__body"><div class="style-pill__name">${escapeHtml(style.title)}</div>${desc}</div>${price}</a>`;
     })
     .join('');
@@ -406,14 +574,14 @@ function buildProfileServiceCardHtml(style: SitePreviewStyle, outlined = false):
   const imgStyle = style.imageUrl
     ? ` style="background-image:url('${style.imageUrl.replace(/'/g, '%27')}');background-size:cover;background-position:center;"`
     : '';
-  const bookHref = style.id ? `/booking?style=${encodeURIComponent(style.id)}` : '/booking';
+  const cardHref = '#';
   const cat = style.category?.trim() || '';
   const desc = style.description?.trim() || '';
 
-  const cardLink = `<a class="${cls}" href="${bookHref}"><div class="profile-service-card__img" aria-hidden="true"${imgStyle}></div><div class="profile-service-card__body"><div class="profile-service-card__name">${escapeHtml(style.title)}</div>${style.priceLabel ? `<div class="profile-service-card__price">${escapeHtml(style.priceLabel)}</div>` : ''}${style.durationLabel ? `<div class="profile-service-card__duration">${escapeHtml(style.durationLabel)}</div>` : ''}</div></a>`;
+  const cardLink = `<a class="${cls}" href="${cardHref}"><div class="profile-service-card__img" aria-hidden="true"${imgStyle}></div><div class="profile-service-card__body"><div class="profile-service-card__name">${escapeHtml(style.title)}</div>${style.priceLabel ? `<div class="profile-service-card__price">${escapeHtml(style.priceLabel)}</div>` : ''}${style.durationLabel ? `<div class="profile-service-card__duration">${escapeHtml(style.durationLabel)}</div>` : ''}</div></a>`;
 
   const expandHtml = desc
-    ? `<button class="profile-service-card__expand-btn" type="button" aria-expanded="false" onclick="(function(btn){var w=btn.closest('.profile-service-card-wrap');var d=w&&w.querySelector('.profile-service-card__desc');if(!d)return;var open=d.hidden;d.hidden=!open;btn.classList.toggle('is-open',open);btn.setAttribute('aria-expanded',open?'true':'false');})(this)"><span>About this service</span><svg class="profile-service-card__expand-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button><div class="profile-service-card__desc" hidden>${escapeHtml(desc)}</div>`
+    ? `<button class="profile-service-card__expand-btn" type="button" aria-expanded="false" onclick="(function(btn){var w=btn.closest('.profile-service-card-wrap');var d=w&&w.querySelector('.profile-service-card__desc');if(!d)return;var open=d.hidden;d.hidden=!open;btn.classList.toggle('is-open',open);btn.setAttribute('aria-expanded',open?'true':'false');})(this)"><span class="profile-service-card__expand-label">About this service</span><svg class="profile-service-card__expand-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button><div class="profile-service-card__desc" hidden>${escapeHtml(desc)}</div>`
     : '';
 
   return `<div class="profile-service-card-wrap"${cat ? ` data-category="${escapeHtml(cat)}"` : ''}>${cardLink}${expandHtml}</div>`;
@@ -452,16 +620,33 @@ export function buildProfileSitePreviewHtml(
     : `<div class="profile-brand__logo" aria-hidden="true"></div>`;
 
   const isStack = theme.heroLayout === 'stack';
+  const isCover = theme.heroLayout === 'cover';
   const stackUrls = theme.heroStackImageUrls ?? [];
+  const focusStyle =
+    theme.heroImageFocusX != null && theme.heroImageFocusY != null
+      ? ` background-position:${focusToBackgroundPosition({ x: theme.heroImageFocusX, y: theme.heroImageFocusY })};`
+      : '';
+  const coverBgPosition =
+    theme.heroImageFocusX != null && theme.heroImageFocusY != null
+      ? focusToBackgroundPosition({ x: theme.heroImageFocusX, y: theme.heroImageFocusY })
+      : 'center center';
+  const coverBlur = isCover && theme.heroCoverBlur === true;
+  const photoBgClass = coverBlur ? 'profile-photo__bg profile-photo__bg--blurred' : 'profile-photo__bg';
+  let photoBgStyle = '';
+  if (theme.heroImageUrl) {
+    const escapedUrl = theme.heroImageUrl.replace(/'/g, '%27');
+    photoBgStyle = coverBlur
+      ? ` style="--hero-cover-bg:url('${escapedUrl}');--hero-cover-position:${coverBgPosition};"`
+      : ` style="background-image:url('${escapedUrl}');${focusStyle}"`;
+  }
 
-  const photoStyle = theme.heroImageUrl
-    ? ` style="background-image:url('${theme.heroImageUrl.replace(/'/g, '%27')}');"`
+  const coverOverlayHtml = isCover
+    ? `<div class="profile-cover-overlay"><span class="profile-cover-brand">${escapeHtml(content.brandName)}</span><a class="profile-book-btn profile-book-btn--cover-splash" href="#" data-styld-preview="open-book">Book Now</a></div>`
     : '';
-  const photoHtml = `<div class="profile-photo__bg"${photoStyle}></div>`;
 
   const aboutHtml = content.heroDescription
-    ? `<p class="profile-about-body">${escapeHtml(content.heroDescription)}</p>`
-    : `<p class="profile-about-body" style="color:#bbb;font-style:italic">Add your bio in the editor…</p>`;
+    ? `<p class="profile-about-body" id="profile-about-body">${escapeHtml(content.heroDescription)}</p>`
+    : `<p class="profile-about-body" id="profile-about-body" style="color:#bbb;font-style:italic">Add your bio in the editor…</p>`;
 
   const policyBullets = content.bookingPolicy
     ? content.bookingPolicy.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -497,7 +682,7 @@ export function buildProfileSitePreviewHtml(
     : '';
 
   const mapHtml = !isLocationPartHidden(content, 'map') && mapSrc
-    ? `<iframe class="profile-location-map" title="Map" loading="lazy" src="${escapeHtml(mapSrc)}"></iframe>`
+    ? `<div class="profile-location-map profile-location-map--preview" aria-hidden="true">Map preview</div>`
     : '';
 
   const visitTitle = !hasAddress
@@ -510,19 +695,93 @@ export function buildProfileSitePreviewHtml(
     ? ''
     : `<section class="profile-location-section" id="preview-visit-section" data-site-section="visit"><div class="container"><div class="profile-location-head"><h2>${visitTitle}</h2></div><div class="profile-location-card"><div class="profile-location-info">${addressColHtml}${contactColHtml}${socialColHtml}</div>${mapHtml}</div></div></section>`;
 
+  const stackFocus = theme.heroStackImageFocus ?? [];
+  const stackFormat = theme.heroStackImageFormat === 'tall' ? 'tall' : 'wide';
   const stackImagesHtml = isStack && stackUrls.length > 0
-    ? `<div class="profile-hero-stack">${stackUrls.map((u) => `<img class="profile-hero-stack__img" src="${u.replace(/"/g, '%22')}" alt="" loading="lazy"/>`).join('')}</div>`
+    ? `<div class="profile-hero-stack profile-hero-stack--${stackFormat}">${stackUrls.map((u, i) => stackImageTag(u, stackFocus[i])).join('')}</div>`
     : '';
 
   const isSplit = theme.heroLayout === 'split';
-  const infoHtml = isSplit
-    ? `<div class="profile-info">
-<div class="profile-section-block"><h2 class="profile-about-head">About Me</h2>${aboutHtml}</div>
-<div class="profile-section-block" id="profile-policy-block"><h3 class="profile-policy-head">Policies</h3>${policyHtml}</div>
+  const showAbout = !isSectionHidden(content, 'aboutMe');
+  const showPolicies = !isSectionHidden(content, 'policies');
+  const aboutBlockHtml = showAbout
+    ? `<div class="profile-section-block" id="profile-about-block" data-site-section="aboutMe"><h2 class="profile-about-head" id="profile-about-title">About Me</h2>${aboutHtml}</div>`
+    : '';
+  const policyBlockHtml = showPolicies
+    ? `<div class="profile-section-block" id="profile-policy-block" data-site-section="policies"><h3 class="profile-policy-head">Policies</h3>${policyHtml}</div>`
+    : '';
+  const infoHtml =
+    isSplit && (aboutBlockHtml || policyBlockHtml)
+      ? `<div class="profile-info" id="site-main-content">
+${aboutBlockHtml}
+${policyBlockHtml}
+</div>`
+      : '';
+
+  const heroSectionClass = isStack
+    ? 'profile-hero profile-hero--stack'
+    : isCover
+      ? 'profile-hero profile-hero--cover'
+      : 'profile-hero';
+
+  const bodyClass = isCover
+    ? 'tpl-profile page-home page-splash page-cover-splash hero-layout-cover'
+    : 'tpl-profile page-home';
+
+  const bookIntroHtml =
+    isCover && (aboutBlockHtml || policyBlockHtml)
+      ? `<section class="profile-book-intro"><div class="container"><div class="profile-info" id="site-main-content">${aboutBlockHtml}${policyBlockHtml}</div></div></section>`
+      : isCover
+        ? ''
+        : '';
+
+  const footerHtml = `<footer class="site-footer site-footer--home-promo"><div class="container footer-bottom">
+<p>&copy; ${escapeHtml(content.brandName)}</p>
+<p class="footer-built-by"><a class="footer-built-by__link" href="https://styldd.com" target="_blank" rel="noopener noreferrer"><img class="footer-built-by__logo" src="https://styldd.com/assets/styld-icon.png" alt="" width="22" height="22" decoding="async"/><span>Built with Styld</span></a></p></div></footer>`;
+
+  const bookPageMainHtml =
+    isCover
+      ? `<main>${menuSection}${visitSection}</main>${footerHtml}`
+      : '';
+
+  const belowHeroHtml = isCover
+    ? ''
+    : `<main>
+${menuSection}
+${visitSection}
+</main>
+${footerHtml}`;
+
+  const bookPageNavHtml = `<nav class="profile-nav" id="profile-nav"><div class="container profile-nav__inner">
+<a class="profile-brand" href="#" data-styld-preview="open-splash">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
+<a class="profile-book-btn" href="#">Book Now</a>
+</div></nav>`;
+
+  const coverBookPageHtml = isCover
+    ? `<div id="preview-cover-book" class="preview-cover-book" hidden>
+${bookPageNavHtml}
+${bookIntroHtml}
+${bookPageMainHtml}
 </div>`
     : '';
 
-  const heroSectionClass = isStack ? 'profile-hero profile-hero--stack' : 'profile-hero';
+  const splashWrapOpen = isCover ? '<div id="preview-cover-splash" class="preview-cover-splash">' : '';
+  const splashWrapClose = isCover ? '</div>' : '';
+
+  const navBookHref = '#';
+
+  const previewBannerHtml = isCover
+    ? ''
+    : '<div class="preview-banner">Styld preview — this is how your booking site will look</div>';
+
+  const navHtml = isCover
+    ? `<nav class="profile-nav profile-nav--cover-splash" id="profile-nav"><div class="container profile-nav__inner">
+<a class="profile-brand" href="#">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
+</div></nav>`
+    : `<nav class="profile-nav" id="profile-nav"><div class="container profile-nav__inner">
+<a class="profile-brand" href="#">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
+<a class="profile-book-btn" href="${navBookHref}">Book Now</a>
+</div></nav>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -534,24 +793,72 @@ export function buildProfileSitePreviewHtml(
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="${GOOGLE_FONTS_URL}" rel="stylesheet"/>
 <style>${SITE_PREVIEW_CSS}${colorOverrideCss}</style>
+<script defer>
+(function(){
+  var coverSplashEl=document.getElementById('preview-cover-splash');
+  var coverBookEl=document.getElementById('preview-cover-book');
+  function fitCoverPreview(){
+    if(!document.body.classList.contains('page-cover-splash')) return;
+    var h=document.documentElement.clientHeight||window.innerHeight||0;
+    if(h<1) return;
+    document.documentElement.style.height=h+'px';
+    document.body.style.height=h+'px';
+    var photo=document.querySelector('.profile-hero--cover .profile-photo');
+    var photoBg=document.getElementById('profile-hero-photo');
+    if(photo) photo.style.height=h+'px';
+    if(photoBg) photoBg.style.height='100%';
+  }
+  window.fitCoverPreview=fitCoverPreview;
+  window.showStyldPreviewCoverBook=function(){
+    try{
+      if(!coverBookEl) return;
+      document.body.classList.remove('page-cover-splash','page-splash');
+      document.body.classList.add('page-book','preview-cover-on-book');
+      if(coverSplashEl) coverSplashEl.setAttribute('hidden','');
+      coverBookEl.removeAttribute('hidden');
+      document.documentElement.style.height='auto';
+      document.body.style.height='auto';
+      document.body.style.overflow='auto';
+      window.scrollTo(0,0);
+    }catch(err){}
+  };
+  window.showStyldPreviewCoverSplash=function(){
+    try{
+      if(!coverSplashEl) return;
+      document.body.classList.add('page-cover-splash','page-splash');
+      document.body.classList.remove('page-book','preview-cover-on-book');
+      if(coverBookEl) coverBookEl.setAttribute('hidden','');
+      coverSplashEl.removeAttribute('hidden');
+      document.body.style.overflow='hidden';
+      fitCoverPreview();
+      window.scrollTo(0,0);
+    }catch(err){}
+  };
+  function bootCoverPreview(){
+    if(!document.body.classList.contains('page-cover-splash')) return;
+    fitCoverPreview();
+    window.addEventListener('resize',fitCoverPreview);
+  }
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',bootCoverPreview);
+  }else{
+    bootCoverPreview();
+  }
+})();
+${STYLD_PREVIEW_INTERACTIONS_SCRIPT}
+</script>
 </head>
-<body class="tpl-profile page-home">
-<div class="preview-banner">Styld preview — this is how your booking site will look</div>
-<nav class="profile-nav"><div class="container profile-nav__inner">
-<a class="profile-brand" href="#">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
-<a class="profile-book-btn" href="#">Book Now</a>
-</div></nav>
+<body class="${bodyClass}">
+${previewBannerHtml}
+${splashWrapOpen}
+${navHtml}
 <section class="${heroSectionClass}">${stackImagesHtml}<div class="container profile-hero__grid">
-<div class="profile-photo">${photoHtml}</div>
+<div class="profile-photo" id="profile-photo-wrap"><div class="${photoBgClass}" id="profile-hero-photo"${photoBgStyle}>${coverOverlayHtml}</div></div>
 ${infoHtml}
 </div></section>
-<main>
-${menuSection}
-${visitSection}
-</main>
-<footer class="site-footer site-footer--home-promo"><div class="container footer-bottom">
-<p>&copy; ${escapeHtml(content.brandName)}</p>
-<p class="footer-built-by"><a class="footer-built-by__link" href="https://styldd.com" target="_blank" rel="noopener noreferrer"><span>Built with Styld</span></a></p></div></footer>
+${splashWrapClose}
+${coverBookPageHtml}
+${belowHeroHtml}
 </body></html>`;
 }
 

@@ -1,4 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -32,6 +33,8 @@ import { colors } from '../../theme';
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Schedule'>;
 
 export default function ScheduleScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { linkedSite, hasLinkedSite, getCalendarEventsForDateKey } = useSiteData();
   const [blocks, setBlocks] = useState<BlockedInterval[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -226,7 +229,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   content: {
     flex: 1,
     paddingBottom: 16,
@@ -283,4 +286,4 @@ const styles = StyleSheet.create({
   blockRange: { color: colors.text, fontSize: 15, fontWeight: '500' },
   blockNote: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
   remove: { color: '#f87171', fontSize: 13, fontWeight: '600' },
-});
+};

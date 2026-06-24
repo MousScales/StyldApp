@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useMemo, useState } from 'react';
@@ -48,6 +49,8 @@ function formatReviewDate(date: Date): string {
 }
 
 function StarRating({ rating }: { rating: number }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.starsRow}>
       {Array.from({ length: 5 }, (_, index) => {
@@ -74,6 +77,8 @@ function ReviewCard({
   deleting: boolean;
   onDelete: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   return (
     <View style={styles.reviewCard}>
       <View style={styles.reviewHead}>
@@ -107,6 +112,8 @@ function ReviewCard({
 }
 
 export default function ReviewsSettingsScreen({ navigation }: Props) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
   const { user } = useAuth();
   const [enabled, setEnabled] = useState(DEFAULT_REVIEWS_SETTINGS.enabled);
   const [reviews, setReviews] = useState<SiteReview[]>([]);
@@ -281,7 +288,7 @@ export default function ReviewsSettingsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const BASE_STYLES = {
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
   header: {
@@ -377,4 +384,4 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
   },
-});
+};
