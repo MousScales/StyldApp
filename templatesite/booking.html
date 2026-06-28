@@ -86,6 +86,11 @@
               </select>
             </div>
 
+            <div class="field style-addon-field" id="style-variant-field-wrap" hidden>
+              <span class="field-label">Choose your version</span>
+              <div id="style-variant-list" class="style-addon-list" role="radiogroup" aria-label="Service version"></div>
+            </div>
+
             <div class="field style-addon-field" id="style-addon-field-wrap" hidden>
               <span class="field-label">Optional add-on</span>
               <div id="style-addon-list" class="style-addon-list" role="radiogroup" aria-label="Optional add-on"></div>
@@ -288,6 +293,32 @@
             <p class="cancellation-policy-text" id="cancellation-policy-text"></p>
           </section>
 
+          <section class="form-section hidden" id="booking-products-section" aria-hidden="true">
+            <h2>Add products <span class="label-optional">(optional)</span></h2>
+            <p class="deposit-note">Include shop items with your appointment — pickup at your visit unless you order separately with shipping.</p>
+            <div id="booking-products-list" class="booking-products-list"></div>
+          </section>
+
+          <section class="form-section hidden" id="promo-code-section" aria-hidden="true">
+            <h2>Promo code</h2>
+            <p class="deposit-note">Have a discount code? Apply it before you complete your booking.</p>
+            <div class="promo-code-row">
+              <input
+                type="text"
+                id="promo-code-input"
+                class="promo-code-input"
+                placeholder="Enter code"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+                maxlength="24"
+              />
+              <button type="button" id="promo-code-apply" class="btn btn-secondary promo-code-apply">Apply</button>
+            </div>
+            <p id="promo-code-feedback" class="booking-feedback" role="status" hidden></p>
+            <p id="promo-code-applied" class="promo-code-applied" hidden></p>
+          </section>
+
           <section class="form-section hidden" id="payment-section" aria-hidden="true">
             <h2>Payment</h2>
             <p class="payment-card-trust" id="payment-card-trust" hidden>
@@ -321,6 +352,14 @@
           <div class="price-line" id="side-style-addon-row" hidden>
             <span>Add-on</span>
             <span id="side-style-addon">—</span>
+          </div>
+          <div class="price-line" id="side-products-row" hidden>
+            <span>Products</span>
+            <span id="side-products-subtotal">—</span>
+          </div>
+          <div class="price-line" id="side-promo-row" hidden>
+            <span>Promo discount</span>
+            <span id="side-promo-discount">—</span>
           </div>
           <div class="price-line total">
             <span id="side-total-label">Estimated total</span>

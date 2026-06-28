@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BrandLogo from '../BrandLogo';
+import TabletContent from '../layout/TabletContent';
 import { colors } from '../../theme';
 
 type BusinessScreenLayoutProps = {
@@ -26,6 +27,7 @@ type BusinessScreenLayoutProps = {
   headerRight?: ReactNode;
   scroll?: boolean;
   contentStyle?: ViewStyle;
+  transparentBackground?: boolean;
 };
 
 export function BusinessLinkRequired({ message }: { message?: string }) {
@@ -54,8 +56,11 @@ export default function BusinessScreenLayout({
   headerRight,
   scroll = true,
   contentStyle,
+  transparentBackground = false,
 }: BusinessScreenLayoutProps) {
   const styles = useResponsiveStyles(BASE_STYLES);
+  const transparentStyles = useResponsiveStyles(stylesTransparent);
+  const layoutStyles = transparentBackground ? transparentStyles : styles;
 
   const body = !hasLinkedSite ? (
     <BusinessLinkRequired message={linkMessage} />
@@ -70,32 +75,34 @@ export default function BusinessScreenLayout({
     </View>
   ) : scroll ? (
     <ScrollView
-      contentContainerStyle={[styles.scrollContent, contentStyle]}
+      contentContainerStyle={[layoutStyles.scrollContent, contentStyle]}
       showsVerticalScrollIndicator={false}
     >
       {children}
     </ScrollView>
   ) : (
-    <View style={[styles.body, contentStyle]}>{children}</View>
+    <View style={[layoutStyles.body, contentStyle]}>{children}</View>
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={onBack}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle}>{title}</Text>
-        <View style={styles.headerRight}>
-          {headerRight}
-          {onRefresh ? (
-            <Pressable style={styles.iconButton} onPress={onRefresh}>
-              <Ionicons name="refresh-outline" size={20} color={colors.textMuted} />
-            </Pressable>
-          ) : null}
+    <SafeAreaView style={layoutStyles.container} edges={['top']}>
+      <TabletContent style={{ flex: 1 }}>
+        <View style={layoutStyles.header}>
+          <Pressable style={layoutStyles.backButton} onPress={onBack}>
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
+          </Pressable>
+          <Text style={layoutStyles.headerTitle}>{title}</Text>
+          <View style={layoutStyles.headerRight}>
+            {headerRight}
+            {onRefresh ? (
+              <Pressable style={layoutStyles.iconButton} onPress={onRefresh}>
+                <Ionicons name="refresh-outline" size={20} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-      </View>
-      {body}
+        {body}
+      </TabletContent>
     </SafeAreaView>
   );
 }
@@ -193,5 +200,21 @@ const BASE_STYLES = {
     fontWeight: '400',
     textAlign: 'center',
     lineHeight: 20,
+  },
+};
+
+const stylesTransparent = {
+  ...BASE_STYLES,
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: 0,
+  },
+  scrollContent: {
+    paddingHorizontal: 0,
+    paddingBottom: 40,
   },
 };

@@ -1,5 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
+import { useDeviceLayout } from '../hooks/useDeviceLayout';
 import {
   FlatList,
   Pressable,
@@ -47,6 +48,7 @@ function ClientRow({
   privacyMode,
   selectionMode,
   selected,
+  isLast = false,
   onPress,
   onToggleSelect,
   onLongPressSelect,
@@ -55,6 +57,7 @@ function ClientRow({
   privacyMode: boolean;
   selectionMode: boolean;
   selected: boolean;
+  isLast?: boolean;
   onPress: () => void;
   onToggleSelect: () => void;
   onLongPressSelect: () => void;
@@ -66,7 +69,11 @@ function ClientRow({
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && { opacity: 0.55 }]}
+      style={({ pressed }) => [
+        styles.row,
+        isLast && styles.rowLast,
+        pressed && { opacity: 0.55 },
+      ]}
       onPress={selectionMode ? onToggleSelect : onPress}
       onLongPress={selectionMode ? undefined : onLongPressSelect}
     >
@@ -103,14 +110,9 @@ function ClientRow({
   );
 }
 
-function Divider() {
-  const styles = useResponsiveStyles(BASE_STYLES);
-
-  return <View style={styles.divider} />;
-}
-
 export default function ClientListScreen({ navigation }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
+  const { scrollBottomPadding } = useDeviceLayout();
 
   const { privacyMode } = usePrivacyMode();
   const { clients, hasLinkedSite, isLoading, businessLabel } = useSiteData();
@@ -203,6 +205,15 @@ export default function ClientListScreen({ navigation }: Props) {
                   <Text style={styles.headerComposeText}>Compose</Text>
                 </Pressable>
               ) : null}
+              {!selectionMode && hasLinkedSite ? (
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => navigation.navigate('ClientReminders')}
+                  style={styles.headerAction}
+                >
+                  <Ionicons name="alarm-outline" size={20} color={colors.accentPink} />
+                </Pressable>
+              ) : null}
               {!selectionMode && hasLinkedSite && clients.length > 0 ? (
                 <Pressable hitSlop={10} onPress={startContactFlow} style={styles.headerAction}>
                   <Ionicons name="mail-outline" size={20} color={colors.accentPink} />
@@ -270,25 +281,21 @@ export default function ClientListScreen({ navigation }: Props) {
             data={filtered}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listPad}
-            ItemSeparatorComponent={Divider}
-            ListHeaderComponent={<View style={styles.cardTop} />}
-            ListFooterComponent={<View style={styles.cardBottom} />}
-            renderItem={({ item }) => (
-              <View style={styles.cardRow}>
-                <ClientRow
-                  client={item}
-                  privacyMode={privacyMode}
-                  selectionMode={selectionMode}
-                  selected={selectedIds.has(item.id)}
-                  onPress={() => navigation.navigate('ClientDetail', { clientId: item.id })}
-                  onToggleSelect={() => toggleClient(item.id)}
-                  onLongPressSelect={() => {
-                    setSelectionMode(true);
-                    setSelectedIds(new Set([item.id]));
-                  }}
-                />
-              </View>
+            contentContainerStyle={[styles.listPad, { paddingBottom: scrollBottomPadding }]}
+            renderItem={({ item, index }) => (
+              <ClientRow
+                client={item}
+                privacyMode={privacyMode}
+                selectionMode={selectionMode}
+                selected={selectedIds.has(item.id)}
+                isLast={index === filtered.length - 1}
+                onPress={() => navigation.navigate('ClientDetail', { clientId: item.id })}
+                onToggleSelect={() => toggleClient(item.id)}
+                onLongPressSelect={() => {
+                  setSelectionMode(true);
+                  setSelectedIds(new Set([item.id]));
+                }}
+              />
             )}
           />
         )}
@@ -375,13 +382,10 @@ const BASE_STYLES = {
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.calendarGridLine,
   },
   searchInput: {
     flex: 1,
@@ -391,44 +395,18 @@ const BASE_STYLES = {
     padding: 0,
   },
   listPad: {
-    paddingHorizontal: 16,
-    paddingBottom: 120,
-  },
-  cardTop: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: colors.cardBorder,
-    height: 2,
-  },
-  cardBottom: {
-    backgroundColor: colors.card,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    borderWidth: 1,
-    borderTopWidth: 0,
-    borderColor: colors.cardBorder,
-    height: 4,
-  },
-  cardRow: {
-    backgroundColor: colors.card,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingHorizontal: 16,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.cardBorder,
-    marginLeft: 70,
+    paddingHorizontal: 20,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 13,
+    paddingVertical: 14,
     gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.calendarGridLine,
+  },
+  rowLast: {
+    borderBottomWidth: 0,
   },
   checkbox: {
     width: 22,

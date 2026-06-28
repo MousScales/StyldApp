@@ -2,55 +2,128 @@ import { Ionicons } from '@expo/vector-icons';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import BusinessScreenLayout, { BusinessSection } from '../../components/business/BusinessScreenLayout';
 import PeriodSelector from '../../components/PeriodSelector';
 import { Period } from '../../data/periods';
 import { usePrivacyMode } from '../../context/PrivacyContext';
 import { useSiteData } from '../../context/SiteDataContext';
 import {
-  fetchAnalyticsSummary,
+  fetchBusinessAnalytics,
   friendlyPath,
-  type AnalyticsSummary,
+  type BusinessAnalyticsSummary,
 } from '../../lib/siteAnalytics';
 import { ProfileStackParamList } from '../../navigation/ProfileNavigator';
-import { colors } from '../../theme';
+import { colors, fonts } from '../../theme';
 import { maskMoney } from '../../utils/money';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'BusinessStats'>;
 
-// ─── sub-components ──────────────────────────────────────────────────────────
+type MetricTone = 'pink' | 'green' | 'purple' | 'amber' | 'blue';
 
-function StatRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
+const TONE_COLORS: Record<MetricTone, { bg: string; fg: string }> = {
+  pink: { bg: 'rgba(219, 39, 119, 0.14)', fg: colors.accentPink },
+  green: { bg: 'rgba(34, 197, 94, 0.14)', fg: '#22c55e' },
+  purple: { bg: 'rgba(124, 58, 237, 0.14)', fg: '#a78bfa' },
+  amber: { bg: 'rgba(245, 185, 66, 0.14)', fg: colors.accentGold },
+  blue: { bg: 'rgba(56, 189, 248, 0.14)', fg: '#38bdf8' },
+};
+
+function HeroBanner({ children }: { children: ReactNode }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
+  return (
+    <View style={styles.heroWrap}>
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFillObject}>
+        <Defs>
+          <LinearGradient id="analyticsHero" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={colors.accentPink} stopOpacity="0.22" />
+            <Stop offset="0.55" stopColor="#7c3aed" stopOpacity="0.12" />
+            <Stop offset="1" stopColor={colors.card} stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#analyticsHero)" />
+      </Svg>
+      <View style={styles.heroInner}>{children}</View>
+    </View>
+  );
+}
+
+function MetricTile({
+  icon,
+  label,
+  value,
+  tone = 'pink',
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  tone?: MetricTone;
+}) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const toneStyle = TONE_COLORS[tone];
+
+  return (
+    <View style={styles.metricTile}>
+      <View style={[styles.metricIconWrap, { backgroundColor: toneStyle.bg }]}>
+        <Ionicons name={icon} size={18} color={toneStyle.fg} />
+      </View>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function SectionCard({ title, children }: { title: string; children: ReactNode }) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
+  return (
+    <View style={styles.sectionCard}>
+      <Text style={styles.sectionCardTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+function StatRow({ label, value, last, hint }: { label: string; value: string; last?: boolean; hint?: string }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
   return (
     <View style={[styles.row, !last && styles.rowBorder]}>
-      <Text style={styles.rowLabel}>{label}</Text>
+      <View style={styles.rowLabelWrap}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {hint ? <Text style={styles.rowHint}>{hint}</Text> : null}
+      </View>
       <Text style={styles.rowValue}>{value}</Text>
     </View>
   );
 }
 
 function BigStatPair({
-  left, right,
+  left,
+  right,
 }: {
-  left: { label: string; value: string };
-  right: { label: string; value: string };
+  left: { label: string; value: string; tone?: MetricTone };
+  right: { label: string; value: string; tone?: MetricTone };
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
+  const renderStat = (stat: { label: string; value: string; tone?: MetricTone }) => {
+    const tone = TONE_COLORS[stat.tone ?? 'pink'];
+    return (
+      <View style={styles.bigStat}>
+        <Text style={[styles.bigStatValue, { color: tone.fg }]}>{stat.value}</Text>
+        <Text style={styles.bigStatLabel}>{stat.label}</Text>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.bigStatRow}>
-      <View style={[styles.bigStat, { marginRight: 8 }]}>
-        <Text style={styles.bigStatValue}>{left.value}</Text>
-        <Text style={styles.bigStatLabel}>{left.label}</Text>
-      </View>
-      <View style={styles.bigStat}>
-        <Text style={styles.bigStatValue}>{right.value}</Text>
-        <Text style={styles.bigStatLabel}>{right.label}</Text>
-      </View>
+      {renderStat(left)}
+      {renderStat(right)}
     </View>
   );
 }
@@ -74,14 +147,14 @@ function DeviceBar({ mobile, tablet, desktop }: { mobile: number; tablet: number
   return (
     <View>
       <View style={styles.deviceBar}>
-        {mobile  > 0 && <View style={[styles.deviceSeg, styles.deviceMobile,  { flex: mobile  }]} />}
-        {tablet  > 0 && <View style={[styles.deviceSeg, styles.deviceTablet,  { flex: tablet  }]} />}
+        {mobile > 0 && <View style={[styles.deviceSeg, styles.deviceMobile, { flex: mobile }]} />}
+        {tablet > 0 && <View style={[styles.deviceSeg, styles.deviceTablet, { flex: tablet }]} />}
         {desktop > 0 && <View style={[styles.deviceSeg, styles.deviceDesktop, { flex: desktop }]} />}
-        {other   > 0 && <View style={[styles.deviceSeg, styles.deviceOther,   { flex: other   }]} />}
+        {other > 0 && <View style={[styles.deviceSeg, styles.deviceOther, { flex: other }]} />}
       </View>
       <View style={styles.deviceLegend}>
-        <LegendDot color={colors.accentPink}  label={`Mobile ${mobile}%`} />
-        <LegendDot color="#7c3aed"            label={`Desktop ${desktop}%`} />
+        <LegendDot color={colors.accentPink} label={`Mobile ${mobile}%`} />
+        <LegendDot color="#7c3aed" label={`Desktop ${desktop}%`} />
         {tablet > 0 && <LegendDot color="#0891b2" label={`Tablet ${tablet}%`} />}
       </View>
     </View>
@@ -99,22 +172,20 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-// ─── main screen ─────────────────────────────────────────────────────────────
-
 export default function BusinessStatsScreen({ navigation }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
-  const { hasLinkedSite, clients, appointments, getRevenueForPeriod } = useSiteData();
+  const { hasLinkedSite, clients, appointments, bookings, getRevenueForPeriod, getMoneyStatsForLastDays, getUpcomingAppointments, getTodayJobStats } = useSiteData();
   const { privacyMode } = usePrivacyMode();
-  const [period, setPeriod]             = useState<Period>('week');
-  const [analytics, setAnalytics]       = useState<AnalyticsSummary | null>(null);
+  const [period, setPeriod] = useState<Period>('week');
+  const [analytics, setAnalytics] = useState<BusinessAnalyticsSummary | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   const loadAnalytics = useCallback(async () => {
     if (!hasLinkedSite) return;
     setAnalyticsLoading(true);
     try {
-      const data = await fetchAnalyticsSummary();
+      const data = await fetchBusinessAnalytics();
       setAnalytics(data);
     } catch {
       setAnalytics(null);
@@ -159,6 +230,71 @@ export default function BusinessStatsScreen({ navigation }: Props) {
     [analytics],
   );
 
+  const money30d = useMemo(() => getMoneyStatsForLastDays(30), [getMoneyStatsForLastDays]);
+  const todayJobs = useMemo(() => getTodayJobStats(), [getTodayJobStats]);
+  const upcomingCount = getUpcomingAppointments(500).length;
+
+  const bookingOverview = useMemo(() => {
+    const total = bookings.length;
+    const cancelled = bookings.filter(
+      (b) => b.bookingStatus === 'cancelled' || b.bookingStatus === 'canceled',
+    ).length;
+    const completedCount = appointments.filter((a) => a.status === 'completed').length;
+    const pendingPayment = bookings.filter(
+      (b) =>
+        !b.depositPaid &&
+        b.paymentStatus.toLowerCase() !== 'in_person' &&
+        (b.bookingStatus === 'pending_payment' || b.paymentStatus.toLowerCase() === 'pending'),
+    ).length;
+    return { total, cancelled, completed: completedCount, pendingPayment, upcomingCount };
+  }, [appointments, bookings, upcomingCount]);
+
+  const periodBookings = useMemo(() => {
+    const now = new Date();
+    let start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    let end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+
+    if (period === 'week') {
+      start.setDate(now.getDate() - now.getDay());
+    } else if (period === 'month') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (period === 'year') {
+      start = new Date(now.getFullYear(), 0, 1);
+      end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else if (period === 'all') {
+      start = new Date(0);
+    }
+
+    const inPeriod = bookings.filter((b) => {
+      const created = b.createdAt;
+      return created >= start && created <= end;
+    });
+    const completedInPeriod = inPeriod.filter((b) => b.bookingStatus === 'completed').length;
+    const cancelledInPeriod = inPeriod.filter(
+      (b) => b.bookingStatus === 'cancelled' || b.bookingStatus === 'canceled',
+    ).length;
+    const revenue = getRevenueForPeriod(period);
+    const avg =
+      completedInPeriod > 0
+        ? inPeriod
+            .filter((b) => b.bookingStatus === 'completed' && (b.price > 0 || b.depositAmount > 0))
+            .reduce((sum, b) => sum + (b.price || b.depositAmount), 0) / completedInPeriod
+        : 0;
+
+    return {
+      newBookings: inPeriod.length,
+      completedInPeriod,
+      cancelledInPeriod,
+      revenue,
+      avg,
+    };
+  }, [bookings, getRevenueForPeriod, period]);
+
+  const siteLive = Boolean(analytics?.subdomain);
+
   return (
     <BusinessScreenLayout
       title="Analytics"
@@ -167,14 +303,70 @@ export default function BusinessStatsScreen({ navigation }: Props) {
       linkMessage="Link your site to start tracking analytics."
       onRefresh={loadAnalytics}
     >
+      <HeroBanner>
+        <Text style={styles.heroEyebrow}>Overview</Text>
+        <Text style={styles.heroTitle}>Your business at a glance</Text>
+        <View style={styles.heroMetrics}>
+          <MetricTile
+            icon="calendar-outline"
+            label="Total bookings"
+            value={String(bookingOverview.total)}
+            tone="pink"
+          />
+          <MetricTile
+            icon="cash-outline"
+            label="Collected · 30d"
+            value={maskMoney(money30d.collected, privacyMode)}
+            tone="green"
+          />
+          <MetricTile
+            icon="globe-outline"
+            label="Page views · 30d"
+            value={siteLive && !analyticsLoading ? String(analytics?.views30d ?? 0) : '—'}
+            tone="purple"
+          />
+        </View>
+      </HeroBanner>
 
-      {/* ── Website analytics ── */}
-      <BusinessSection title="Website traffic">
+      <SectionCard title="Business snapshot">
+        <BigStatPair
+          left={{ label: 'Upcoming', value: String(bookingOverview.upcomingCount), tone: 'pink' }}
+          right={{ label: 'Completed jobs', value: String(bookingOverview.completed), tone: 'green' }}
+        />
+        <BigStatPair
+          left={{ label: 'Pending payment', value: String(bookingOverview.pendingPayment), tone: 'amber' }}
+          right={{ label: 'Cancelled', value: String(bookingOverview.cancelled), tone: 'purple' }}
+        />
+      </SectionCard>
+
+      <SectionCard title="Today">
+        <StatRow
+          label="Jobs completed"
+          hint="Finished vs scheduled today"
+          value={`${todayJobs.completed} / ${todayJobs.total}`}
+        />
+        <StatRow
+          label="Progress"
+          value={`${Math.round(todayJobs.progress * 100)}%`}
+          last
+        />
+      </SectionCard>
+
+      <SectionCard title="Payments · last 30 days">
+        <StatRow label="Collected" value={maskMoney(money30d.collected, privacyMode)} />
+        <StatRow label="Still pending" value={maskMoney(money30d.pending, privacyMode)} />
+        <StatRow label="Paid bookings" value={String(money30d.paidBookings)} />
+        <StatRow label="Awaiting payment" value={String(money30d.pendingBookings)} last />
+      </SectionCard>
+
+      <SectionCard title="Website traffic">
         {analyticsLoading ? (
           <ActivityIndicator color={colors.accentPink} style={{ marginVertical: 16 }} />
-        ) : !analytics?.subdomain ? (
+        ) : !siteLive ? (
           <View style={styles.zeroState}>
-            <Ionicons name="globe-outline" size={28} color={colors.textMuted} />
+            <View style={styles.zeroStateIcon}>
+              <Ionicons name="globe-outline" size={26} color={colors.accentPink} />
+            </View>
             <Text style={styles.zeroStateTitle}>Publish your site to start tracking</Text>
             <Text style={styles.zeroStateBody}>
               Page views and visitor data appear here once your site is live.
@@ -183,36 +375,34 @@ export default function BusinessStatsScreen({ navigation }: Props) {
         ) : (
           <>
             <BigStatPair
-              left={{ label: 'Page views\n7 days',       value: String(analytics.views7d) }}
-              right={{ label: 'Page views\n30 days',      value: String(analytics.views30d) }}
+              left={{ label: 'Page views · 7 days', value: String(analytics?.views7d ?? 0), tone: 'pink' }}
+              right={{ label: 'Page views · 30 days', value: String(analytics?.views30d ?? 0), tone: 'purple' }}
             />
             <BigStatPair
-              left={{ label: 'Unique visitors\n7 days',  value: String(analytics.sessions7d) }}
-              right={{ label: 'Unique visitors\n30 days', value: String(analytics.sessions30d) }}
+              left={{ label: 'Unique visitors · 7 days', value: String(analytics?.sessions7d ?? 0), tone: 'blue' }}
+              right={{ label: 'Unique visitors · 30 days', value: String(analytics?.sessions30d ?? 0), tone: 'green' }}
             />
           </>
         )}
-      </BusinessSection>
+      </SectionCard>
 
-      {/* ── Device breakdown ── */}
-      {analytics?.subdomain && !analyticsLoading && (
-        <BusinessSection title="Visitor devices — 30 days">
-          {analytics.views30d === 0 ? (
+      {siteLive && !analyticsLoading && (
+        <SectionCard title="Visitor devices · 30 days">
+          {analytics?.views30d === 0 ? (
             <Text style={styles.emptyNote}>No visitors yet — check back after your site gets traffic.</Text>
           ) : (
             <DeviceBar
-              mobile={analytics.devices.mobile}
-              tablet={analytics.devices.tablet}
-              desktop={analytics.devices.desktop}
+              mobile={analytics?.devices.mobile ?? 0}
+              tablet={analytics?.devices.tablet ?? 0}
+              desktop={analytics?.devices.desktop ?? 0}
             />
           )}
-        </BusinessSection>
+        </SectionCard>
       )}
 
-      {/* ── Top pages ── */}
-      {analytics?.subdomain && !analyticsLoading && (
-        <BusinessSection title="Top pages — 30 days">
-          {analytics.topPages.length === 0 ? (
+      {siteLive && !analyticsLoading && (
+        <SectionCard title="Top pages · 30 days">
+          {analytics?.topPages.length === 0 ? (
             <Text style={styles.emptyNote}>0 page views recorded yet.</Text>
           ) : (
             analytics.topPages.map((page, i) => (
@@ -223,13 +413,12 @@ export default function BusinessStatsScreen({ navigation }: Props) {
               </View>
             ))
           )}
-        </BusinessSection>
+        </SectionCard>
       )}
 
-      {/* ── Referrers ── */}
-      {analytics?.subdomain && !analyticsLoading && (
-        <BusinessSection title="Traffic sources — 30 days">
-          {analytics.referrers.length === 0 ? (
+      {siteLive && !analyticsLoading && (
+        <SectionCard title="Traffic sources · 30 days">
+          {analytics?.referrers.length === 0 ? (
             <Text style={styles.emptyNote}>No external traffic sources tracked yet.</Text>
           ) : (
             analytics.referrers.map((ref, i) => (
@@ -240,20 +429,26 @@ export default function BusinessStatsScreen({ navigation }: Props) {
               </View>
             ))
           )}
-        </BusinessSection>
+        </SectionCard>
       )}
 
-      {/* ── Booking stats ── */}
       <BusinessSection title="Bookings">
-        <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} centered={false} />
-        <View style={{ height: 12 }} />
-        <StatRow label="Revenue" value={maskMoney(getRevenueForPeriod(period), privacyMode)} />
-        <StatRow label="Completed bookings" value={String(completed.length)} />
-        <StatRow label="Total clients" value={String(clients.length)} last />
+        <View style={styles.sectionCard}>
+          <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} centered={false} />
+          <View style={{ height: 12 }} />
+          <StatRow label="Revenue" value={maskMoney(periodBookings.revenue, privacyMode)} />
+          <StatRow label="New bookings" value={String(periodBookings.newBookings)} />
+          <StatRow label="Completed" value={String(periodBookings.completedInPeriod)} />
+          <StatRow label="Cancelled" value={String(periodBookings.cancelledInPeriod)} />
+          <StatRow
+            label="Avg completed value"
+            value={periodBookings.avg > 0 ? maskMoney(periodBookings.avg, privacyMode) : '—'}
+          />
+          <StatRow label="Total clients" value={String(clients.length)} last />
+        </View>
       </BusinessSection>
 
-      {/* ── Popular services ── */}
-      <BusinessSection title="Popular services">
+      <SectionCard title="Popular services">
         {serviceCounts.length === 0 ? (
           <Text style={styles.emptyNote}>No completed bookings yet.</Text>
         ) : (
@@ -266,10 +461,9 @@ export default function BusinessStatsScreen({ navigation }: Props) {
             />
           ))
         )}
-      </BusinessSection>
+      </SectionCard>
 
-      {/* ── Top clients ── */}
-      <BusinessSection title="Top clients">
+      <SectionCard title="Top clients">
         {topClients.length === 0 ? (
           <Text style={styles.emptyNote}>No clients yet.</Text>
         ) : (
@@ -282,13 +476,90 @@ export default function BusinessStatsScreen({ navigation }: Props) {
             />
           ))
         )}
-      </BusinessSection>
+      </SectionCard>
     </BusinessScreenLayout>
   );
 }
 
 const BASE_STYLES = {
-  /* Stat rows */
+  heroWrap: {
+    position: 'relative',
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+  },
+  heroInner: {
+    padding: 18,
+    gap: 12,
+  },
+  heroEyebrow: {
+    color: colors.accentPink,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  heroMetrics: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  metricTile: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    gap: 6,
+  },
+  metricIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricValue: {
+    color: colors.text,
+    fontFamily: fonts.number,
+    fontSize: 18,
+    letterSpacing: -0.4,
+  },
+  metricLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+
+  sectionCard: {
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 14,
+  },
+  sectionCardTitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -300,15 +571,33 @@ const BASE_STYLES = {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.cardBorder,
   },
-  rowLabel: { flex: 1, color: colors.textMuted, fontSize: 15 },
-  rowValue: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  rowLabelWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  rowLabel: { color: colors.textMuted, fontSize: 15 },
+  rowHint: { color: colors.textMuted, fontSize: 12, opacity: 0.75 },
+  rowValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: fonts.numberMedium,
+  },
 
   emptyNote: { color: colors.textMuted, fontSize: 14, paddingVertical: 4 },
 
   zeroState: {
     alignItems: 'center',
-    paddingVertical: 24,
-    gap: 8,
+    paddingVertical: 20,
+    gap: 10,
+  },
+  zeroStateIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: 'rgba(219, 39, 119, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   zeroStateTitle: {
     color: colors.text,
@@ -323,22 +612,22 @@ const BASE_STYLES = {
     lineHeight: 18,
   },
 
-  /* Big stat pair */
   bigStatRow: {
     flexDirection: 'row',
+    gap: 10,
     marginBottom: 10,
   },
   bigStat: {
     flex: 1,
-    backgroundColor: colors.card,
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 14,
     padding: 14,
   },
   bigStatValue: {
-    color: colors.text,
-    fontSize: 28,
+    fontFamily: fonts.number,
+    fontSize: 26,
     fontWeight: '700',
     letterSpacing: -0.5,
     marginBottom: 4,
@@ -349,7 +638,6 @@ const BASE_STYLES = {
     lineHeight: 16,
   },
 
-  /* Spark bar */
   barRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -363,8 +651,8 @@ const BASE_STYLES = {
   },
   sparkTrack: {
     flex: 1,
-    height: 6,
-    borderRadius: 3,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: colors.progressTrack,
     flexDirection: 'row',
     overflow: 'hidden',
@@ -372,35 +660,34 @@ const BASE_STYLES = {
   sparkFill: {
     height: '100%',
     backgroundColor: colors.accentPink,
-    borderRadius: 3,
+    borderRadius: 4,
   },
   barCount: {
     width: 34,
     textAlign: 'right',
     color: colors.textMuted,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fonts.numberMedium,
   },
 
-  /* Device bar */
   deviceBar: {
-    height: 10,
-    borderRadius: 5,
+    height: 12,
+    borderRadius: 6,
     flexDirection: 'row',
     overflow: 'hidden',
     marginBottom: 10,
   },
   deviceSeg: { height: '100%' },
-  deviceMobile:  { backgroundColor: colors.accentPink },
-  deviceTablet:  { backgroundColor: '#0891b2' },
+  deviceMobile: { backgroundColor: colors.accentPink },
+  deviceTablet: { backgroundColor: '#0891b2' },
   deviceDesktop: { backgroundColor: '#7c3aed' },
-  deviceOther:   { backgroundColor: colors.progressTrack },
+  deviceOther: { backgroundColor: colors.progressTrack },
   deviceLegend: {
     flexDirection: 'row',
     gap: 16,
     flexWrap: 'wrap',
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot:  { width: 8, height: 8, borderRadius: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { color: colors.textMuted, fontSize: 12 },
 };

@@ -50,7 +50,7 @@ const NOTIF_ANIM_MS = 300;
 
 function CyclingAppleNotifications() {
   const styles = useResponsiveStyles(BASE_STYLES);
-  const { businessType } = useBrand();
+  const { businessType, businessTypeOther } = useBrand();
   const fakeNotifs = getPaywallNotifs(businessType);
 
   const [index, setIndex] = useState(0);
@@ -185,7 +185,7 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { businessType } = useBrand();
+  const { businessType, businessTypeOther } = useBrand();
   const layout = useMemo(() => makeScaleFns(width, height), [width, height]);
   const heroHeight = Math.round(Math.min(height * 0.28, layout.rh(220))) + insets.top;
   const {
@@ -199,7 +199,10 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
     waitForEntitlement,
     forceCheckSubscriptionStatus,
   } = usePurchases();
-  const content = useMemo(() => getPaywallContent(businessType), [businessType]);
+  const content = useMemo(
+    () => getPaywallContent(businessType, businessTypeOther),
+    [businessType, businessTypeOther],
+  );
   const [selectedPlan, setSelectedPlan] = useState<Plan>('yearly');
   const [busy, setBusy] = useState(false);
 
@@ -721,7 +724,7 @@ const BASE_STYLES = {
   },
   yearlyCardSelected: {
     borderColor: colors.accentPink,
-    backgroundColor: 'rgba(252, 97, 163, 0.08)',
+    backgroundColor: colors.subtleTintBg,
     shadowColor: colors.accentPink,
     shadowOpacity: 0.25,
     shadowRadius: 12,

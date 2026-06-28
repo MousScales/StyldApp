@@ -2,17 +2,15 @@
  * client-contact-email
  *
  * Sends branded outreach emails from a salon owner to selected clients via Resend.
- * Auth required. From address uses the tenant subdomain on the Styld root domain.
- *
- * Payload: {
- *   templateId: 'book_again' | 'thank_you' | 'promo' | 'check_in' | 'custom',
- *   recipients: [{ email, name }],
- *   subject?: string,
- *   message?: string,
- * }
+ * Auth required. Supports {firstName}, {styleName}, etc. placeholders per recipient.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { jsonResponse, optionsResponse } from '../_shared/cors.ts';
+import {
+  applyMessagePlaceholders,
+  firstNameFromFull,
+  messageToHtmlParagraphs,
+} from '../_shared/message-placeholders.ts';
 import {
   loadSiteEmailBranding,
   StyldEmailBranding,
@@ -24,6 +22,7 @@ type TemplateId = 'book_again' | 'thank_you' | 'promo' | 'check_in' | 'custom';
 type Recipient = {
   email: string;
   name: string;
+  merge?: Record<string, string>;
 };
 
 function esc(s: unknown): string {
@@ -34,12 +33,6 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-function firstName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return 'there';
-  return trimmed.split(/\s+/)[0] ?? 'there';
-}
-
 function buildFromAddress(businessName: string, subdomain: string, rootDomain: string, fallback: string): string {
   const brand = businessName.trim() || 'Your stylist';
   if (subdomain) {
@@ -48,74 +41,40 @@ function buildFromAddress(businessName: string, subdomain: string, rootDomain: s
   return fallback;
 }
 
-function templateBody(
-  templateId: TemplateId,
-  opts: {
-    clientName: string;
-    businessName: string;
-    businessCity: string;
-    siteUrl: string;
-    customMessage?: string;
-  },
-): { subject: string; headline: string; paragraphs: string[]; ctaLabel: string } {
-  const { clientName, businessName, siteUrl, customMessage } = opts;
-  const greeting = firstName(clientName);
-
+function defaultTemplateCopy(templateId: TemplateId): { subject: string; message: string; ctaLabel: string } {
   switch (templateId) {
     case 'thank_you':
       return {
-        subject: `Thank you for visiting ${businessName}!`,
-        headline: `Thanks, ${greeting}!`,
-        paragraphs: [
-          `We loved having you at <strong>${esc(businessName)}</strong>. Hope you're still feeling amazing in your new look.`,
-          'If you have a moment, we would appreciate a shout-out or tag on social — it helps us grow and means the world.',
-        ],
+        subject: 'Thank you for visiting {businessName}!',
+        message: 'Hi {firstName}! Thanks for choosing us for {styleName}. We hope you loved your look!',
         ctaLabel: 'Book your next visit',
       };
     case 'promo':
       return {
-        subject: `A special offer from ${businessName} ✨`,
-        headline: `Something special for you, ${greeting}`,
-        paragraphs: [
-          customMessage?.trim()
-            ? esc(customMessage.trim()).replace(/\n/g, '<br />')
-            : `We're running a limited-time offer for our favorite clients. Book this week and mention this email at your appointment.`,
-          `Tap below to view services and grab a spot on the calendar.`,
-        ],
+        subject: 'A special offer from {businessName} ✨',
+        message:
+          'Hey {firstName}! We have something special for you this week. Book {styleName} or any service at {siteUrl}.',
         ctaLabel: 'View services & book',
       };
     case 'check_in':
       return {
-        subject: `Checking in from ${businessName}`,
-        headline: `Hey ${greeting}, just checking in`,
-        paragraphs: [
-          `Hope your style is still slaying! If you need a touch-up, retwist, or want to try something new, we're here for you.`,
-          customMessage?.trim()
-            ? esc(customMessage.trim()).replace(/\n/g, '<br />')
-            : `Book anytime on our site — we'd love to see you again.`,
-        ],
+        subject: 'Checking in from {businessName}',
+        message:
+          'Hi {firstName}! Hope your {styleName} is still slaying. Let us know if you need a touch-up or want to book again.',
         ctaLabel: 'Book an appointment',
       };
     case 'custom':
       return {
-        subject: 'A message from your stylist',
-        headline: `Hi ${greeting},`,
-        paragraphs: [
-          customMessage?.trim()
-            ? esc(customMessage.trim()).replace(/\n/g, '<br />')
-            : 'Thanks for being a valued client. We wanted to reach out and say hello!',
-        ],
+        subject: 'A message from {businessName}',
+        message: 'Hi {firstName}! Thanks for being a valued client.',
         ctaLabel: 'Visit our site',
       };
     case 'book_again':
     default:
       return {
-        subject: `Ready for your next appointment at ${businessName}?`,
-        headline: `We'd love to see you again, ${greeting}`,
-        paragraphs: [
-          `It's been a little while — your chair at <strong>${esc(businessName)}</strong> is waiting whenever you're ready.`,
-          `Book online in minutes and pick the style and time that works for you.`,
-        ],
+        subject: 'Ready for your next {styleName} at {businessName}?',
+        message:
+          'Hi {firstName}! We would love to see you again for {styleName}. Book your next visit at {siteUrl}.',
         ctaLabel: 'Book now',
       };
   }
@@ -220,8 +179,12 @@ Deno.serve(async (req) => {
     const replyEmail = String(siteContent.email ?? '').trim();
     const siteUrl = subdomain ? `https://${subdomain}.${rootDomain}` : `https://${rootDomain}`;
     const branding = await loadSiteEmailBranding(admin, userId, siteUrl);
+    const siteUrlLabel = siteUrl.replace(/^https?:\/\//, '');
 
     const fromAddress = buildFromAddress(branding.businessName, subdomain, rootDomain, resendFromFallback);
+    const defaults = defaultTemplateCopy(templateId);
+    const subjectTemplate = customSubject || defaults.subject;
+    const messageTemplate = customMessage || defaults.message;
 
     let sent = 0;
     let skipped = 0;
@@ -237,19 +200,29 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const template = templateBody(templateId, {
-        clientName: name,
-        businessName: branding.businessName,
-        businessCity: branding.businessCity,
-        siteUrl,
-        customMessage,
-      });
+      const merge = recipient.merge ?? {};
+      const context = {
+        clientName: merge.clientName ?? name,
+        firstName: merge.firstName ?? firstNameFromFull(name),
+        styleName: merge.styleName ?? 'your style',
+        businessName: merge.businessName ?? branding.businessName,
+        appointmentDate: merge.appointmentDate ?? '',
+        appointmentTime: merge.appointmentTime ?? '',
+        siteUrl: merge.siteUrl ?? siteUrlLabel,
+      };
 
-      const subject = customSubject || template.subject;
+      const subject = applyMessagePlaceholders(subjectTemplate, context);
+      const message = applyMessagePlaceholders(messageTemplate, context);
+      const headline = `Hi ${context.firstName},`;
+      const paragraphs = messageToHtmlParagraphs(message);
+      if (!paragraphs.length) {
+        paragraphs.push(`Thanks for being a client of <strong>${esc(branding.businessName)}</strong>.`);
+      }
+
       const html = buildEmailHtml(branding, {
-        headline: template.headline,
-        paragraphs: template.paragraphs,
-        ctaLabel: template.ctaLabel,
+        headline,
+        paragraphs,
+        ctaLabel: defaults.ctaLabel,
         replyEmail,
       });
 

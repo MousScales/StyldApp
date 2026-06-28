@@ -18,7 +18,9 @@ import {
   DEFAULT_STYLE_DURATION_MINUTES,
   normalizeStyleDurationMinutes,
   normalizeStyleAddons,
+  normalizeStyleVariants,
   StyleAddon,
+  StyleVariant,
   StyleCatalogMeta,
   StyleMetaEntry,
 } from '../data/siteStyles';
@@ -41,7 +43,9 @@ export type StyleUpsertInput = {
   durationMinutes?: number;
   category?: string;
   venue?: ServiceVenue;
+  defaultVariantLabel?: string;
   addons?: StyleAddon[];
+  variants?: StyleVariant[];
 };
 
 type ServiceCatalogContextValue = {
@@ -218,6 +222,14 @@ export function ServiceCatalogProvider({ children }: { children: React.ReactNode
         input.addons !== undefined
           ? normalizeStyleAddons(input.addons)
           : normalizeStyleAddons(styleMetaRef.current[id]?.addons);
+      const variants =
+        input.variants !== undefined
+          ? normalizeStyleVariants(input.variants)
+          : normalizeStyleVariants(styleMetaRef.current[id]?.variants);
+      const defaultVariantLabel =
+        input.defaultVariantLabel !== undefined
+          ? input.defaultVariantLabel.trim()
+          : (styleMetaRef.current[id]?.defaultVariantLabel ?? '').trim();
       const entry: StyleMetaEntry = {
         title,
         description: input.description.trim(),
@@ -227,6 +239,8 @@ export function ServiceCatalogProvider({ children }: { children: React.ReactNode
             styleMetaRef.current[id]?.durationMinutes ??
             DEFAULT_STYLE_DURATION_MINUTES,
         ),
+        ...(defaultVariantLabel ? { defaultVariantLabel } : {}),
+        ...(variants.length ? { variants } : {}),
         ...(addons.length ? { addons } : {}),
       };
 

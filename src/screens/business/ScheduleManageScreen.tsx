@@ -71,6 +71,8 @@ function TabBar({
   active: ScheduleTab;
   onChange: (tab: ScheduleTab) => void;
 }) {
+  const tabStyles = useResponsiveStyles(BASE_TAB_STYLES);
+
   return (
     <View style={tabStyles.wrap}>
       {TABS.map((tab) => (
@@ -93,7 +95,7 @@ function TabBar({
   );
 }
 
-const tabStyles = StyleSheet.create({
+const BASE_TAB_STYLES = {
   wrap: {
     flexDirection: 'row',
     gap: 6,
@@ -124,7 +126,7 @@ const tabStyles = StyleSheet.create({
   pillTextActive: {
     color: '#fff',
   },
-});
+};
 
 // ─── Combined schedule tab (book + block) ────────────────────────────────────
 
@@ -171,7 +173,7 @@ function ScheduleTab() {
       items.push({
         id: event.id,
         title: event.title,
-        subtitle: event.completed ? 'Completed' : 'Booked',
+        styleId: event.styleId,
         startHour: event.startHour,
         startMinute: event.startMinute,
         endHour: event.endHour,
@@ -376,6 +378,7 @@ function formatTime(hour: number, minute: number) {
 }
 
 function HoursTab() {
+  const hStyles = useResponsiveStyles(BASE_H_STYLES);
   const { linkedSite } = useSiteData();
   const [hours, setHours] = useState<BookingHours>(DEFAULT_BOOKING_HOURS);
   const [saving, setSaving] = useState(false);
@@ -597,7 +600,7 @@ function HoursTab() {
   );
 }
 
-const hStyles = StyleSheet.create({
+const BASE_H_STYLES = {
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 48, gap: 8 },
 
@@ -801,7 +804,7 @@ const hStyles = StyleSheet.create({
     elevation: 5,
   },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-});
+};
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 

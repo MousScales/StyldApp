@@ -17,6 +17,7 @@ export type TimelineOverlay = {
   id: string;
   title: string;
   subtitle?: string;
+  styleId?: string;
   startHour: number;
   startMinute: number;
   endHour: number;
@@ -121,21 +122,34 @@ export function formatTimeRange(startsAt: Date, endsAt: Date) {
   )}`;
 }
 
+export function getMinuteTop(
+  minuteOfDay: number,
+  timelineStartMinute: number,
+  hourHeight: number,
+) {
+  return ((minuteOfDay - timelineStartMinute) / 60) * hourHeight;
+}
+
 export function getOverlayTop(
   overlay: Pick<TimelineOverlay, 'startHour' | 'startMinute'>,
-  timelineStartHour = TIMELINE_START,
+  timelineStartMinute = TIMELINE_START * 60,
+  hourHeight = HOUR_HEIGHT,
 ) {
-  const startMinutes = overlay.startHour * 60 + overlay.startMinute;
-  const timelineStartMinutes = timelineStartHour * 60;
-  return ((startMinutes - timelineStartMinutes) / 60) * HOUR_HEIGHT;
+  return getMinuteTop(
+    overlay.startHour * 60 + overlay.startMinute,
+    timelineStartMinute,
+    hourHeight,
+  );
 }
 
 export function getOverlayHeight(
   overlay: Pick<TimelineOverlay, 'startHour' | 'startMinute' | 'endHour' | 'endMinute'>,
+  hourHeight = HOUR_HEIGHT,
+  minHeight = hourHeight * 0.7,
 ) {
   const startMinutes = overlay.startHour * 60 + overlay.startMinute;
   const endMinutes = overlay.endHour * 60 + overlay.endMinute;
-  return Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 40);
+  return Math.max(((endMinutes - startMinutes) / 60) * hourHeight, minHeight);
 }
 
 export function snapMinutes(

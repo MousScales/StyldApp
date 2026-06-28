@@ -109,7 +109,7 @@ export default function TextColorFieldRow({ field }: TextColorFieldRowProps) {
   );
 }
 
-const BASE_STYLES = StyleSheet.create({
+const BASE_STYLES = {
   row: {
     marginBottom: 8,
   },
@@ -168,4 +168,4 @@ const BASE_STYLES = StyleSheet.create({
     paddingHorizontal: 2,
     fontStyle: 'italic',
   },
-});
+};

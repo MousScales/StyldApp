@@ -17,6 +17,16 @@ import {
   DEFAULT_BOOKING_PAYMENT,
   normalizeBookingPayment,
 } from '../data/bookingPayment';
+import {
+  BookingPromoCode,
+  normalizeBookingPromoCodes,
+} from '../data/bookingPromoCodes';
+import {
+  ProductsSettings,
+  SiteProduct,
+  normalizeProductsSettings,
+  normalizeSiteProducts,
+} from '../data/productsCatalog';
 import { normalizeStyleMeta, StyleCatalogMeta } from '../data/siteStyles';
 import {
   createLinkedSiteClient,
@@ -30,6 +40,9 @@ export type { BookingHours } from '../data/bookingHours';
 export { DEFAULT_BOOKING_HOURS } from '../data/bookingHours';
 export type { BookingPaymentSettings } from '../data/bookingPayment';
 export { DEFAULT_BOOKING_PAYMENT } from '../data/bookingPayment';
+export type { BookingPromoCode } from '../data/bookingPromoCodes';
+export type { SiteProduct, ProductsSettings } from '../data/productsCatalog';
+export { DEFAULT_PRODUCTS_SETTINGS } from '../data/productsCatalog';
 export type { CancellationPolicySettings } from '../data/cancellationPolicy';
 export {
   DEFAULT_CANCELLATION_POLICY,
@@ -560,6 +573,156 @@ export async function saveBookingPayment(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export async function loadBookingPromoCodes(linkedSite: LinkedSite | null): Promise<BookingPromoCode[]> {
+  if (!linkedSite) return [];
+
+  const client = createLinkedSiteClient(linkedSite);
+  const tableName = getLinkedTableName(linkedSite);
+  if (!client || !tableName) return [];
+
+  const { data, error } = await client
+    .from(tableName)
+    .select('data')
+    .eq('user_id', linkedSite.user_id)
+    .eq('record_type', 'site_setting')
+    .eq('record_key', 'booking_promo_codes')
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  const value =
+    data?.data && typeof data.data === 'object' && 'value' in data.data
+      ? (data.data as { value?: unknown }).value
+      : null;
+
+  return normalizeBookingPromoCodes(value);
+}
+
+export async function saveBookingPromoCodes(
+  linkedSite: LinkedSite,
+  promos: BookingPromoCode[],
+): Promise<void> {
+  const client = createLinkedSiteClient(linkedSite);
+  const tableName = getLinkedTableName(linkedSite);
+  if (!client || !tableName) {
+    throw new Error('Missing site data configuration.');
+  }
+
+  const userId = linkedSite.user_id;
+  const normalized = normalizeBookingPromoCodes(promos);
+
+  const { data: existing, error: readError } = await client
+    .from(tableName)
+    .select('id')
+    .eq('user_id', userId)
+    .eq('record_type', 'site_setting')
+    .eq('record_key', 'booking_promo_codes')
+    .maybeSingle();
+
+  if (readError) throw new Error(readError.message);
+
+  const payload = {
+    data: { value: normalized },
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing?.id) {
+    const { error } = await client.from(tableName).update(payload).eq('id', existing.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { error } = await client.from(tableName).insert({
+    user_id: userId,
+    record_type: 'site_setting',
+    record_key: 'booking_promo_codes',
+    ...payload,
+  });
+
+  if (error) throw new Error(error.message);
+}
+
+async function loadSiteSettingValue(linkedSite: LinkedSite | null, recordKey: string): Promise<unknown> {
+  if (!linkedSite) return null;
+  const client = createLinkedSiteClient(linkedSite);
+  const tableName = getLinkedTableName(linkedSite);
+  if (!client || !tableName) return null;
+
+  const { data, error } = await client
+    .from(tableName)
+    .select('data')
+    .eq('user_id', linkedSite.user_id)
+    .eq('record_type', 'site_setting')
+    .eq('record_key', recordKey)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data?.data && typeof data.data === 'object' && 'value' in data.data
+    ? (data.data as { value?: unknown }).value
+    : null;
+}
+
+async function saveSiteSettingValue(
+  linkedSite: LinkedSite,
+  recordKey: string,
+  value: unknown,
+): Promise<void> {
+  const client = createLinkedSiteClient(linkedSite);
+  const tableName = getLinkedTableName(linkedSite);
+  if (!client || !tableName) throw new Error('Missing site data configuration.');
+
+  const userId = linkedSite.user_id;
+  const { data: existing, error: readError } = await client
+    .from(tableName)
+    .select('id')
+    .eq('user_id', userId)
+    .eq('record_type', 'site_setting')
+    .eq('record_key', recordKey)
+    .maybeSingle();
+
+  if (readError) throw new Error(readError.message);
+
+  const payload = {
+    data: { value },
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing?.id) {
+    const { error } = await client.from(tableName).update(payload).eq('id', existing.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { error } = await client.from(tableName).insert({
+    user_id: userId,
+    record_type: 'site_setting',
+    record_key: recordKey,
+    ...payload,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function loadSiteProducts(linkedSite: LinkedSite | null): Promise<SiteProduct[]> {
+  const value = await loadSiteSettingValue(linkedSite, 'products_catalog');
+  return normalizeSiteProducts(value);
+}
+
+export async function saveSiteProducts(linkedSite: LinkedSite, products: SiteProduct[]): Promise<void> {
+  await saveSiteSettingValue(linkedSite, 'products_catalog', normalizeSiteProducts(products));
+}
+
+export async function loadProductsSettings(linkedSite: LinkedSite | null): Promise<ProductsSettings> {
+  const value = await loadSiteSettingValue(linkedSite, 'products_settings');
+  return normalizeProductsSettings(value);
+}
+
+export async function saveProductsSettings(
+  linkedSite: LinkedSite,
+  settings: ProductsSettings,
+): Promise<void> {
+  await saveSiteSettingValue(linkedSite, 'products_settings', normalizeProductsSettings(settings));
 }
 
 export function resolveStyleIdFromServiceName(

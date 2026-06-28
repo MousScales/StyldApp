@@ -10,15 +10,35 @@ import {
 import {
   DEFAULT_SITE_THEME,
   HeroLayout,
+  MAX_PORTFOLIO_ITEMS,
+  MAX_CERTIFICATION_ITEMS,
   normalizeSiteTheme,
+  PortfolioMediaType,
   SiteTheme,
 } from '../data/siteTheme';
 import { DEFAULT_HERO_IMAGE_FOCUS, DEFAULT_STACK_IMAGE_FOCUS } from '../lib/heroImageFocus';
-import { uploadGalleryImageFromUri, uploadHeroImageFromUri, uploadLogoImageFromUri, uploadStackImageFromUri } from '../lib/siteAdmin';
+import {
+  uploadHeroImageFromUri,
+  uploadLogoImageFromUri,
+  uploadPortfolioMediaFromUri,
+  uploadCertificationMediaFromUri,
+  uploadStackImageFromUri,
+} from '../lib/siteAdmin';
 import { getStyleCoverImageUrl } from '../lib/siteServices';
 import { loadSiteSetting, saveSiteSetting } from '../lib/siteRecords';
 import { useAuth } from './AuthContext';
 import { useLinkedSite } from '../hooks/useLinkedSite';
+
+type PortfolioMediaPreview = {
+  url: string;
+  mediaType: PortfolioMediaType;
+};
+
+type CertificationMediaPreview = {
+  url: string;
+  mediaType: PortfolioMediaType;
+  caption: string;
+};
 
 type SiteThemeContextValue = {
   theme: SiteTheme;
@@ -27,7 +47,8 @@ type SiteThemeContextValue = {
   error: string | null;
   heroImageUrl: string | null;
   logoImageUrl: string | null;
-  galleryImageUrls: string[];
+  portfolioMediaUrls: PortfolioMediaPreview[];
+  certificationMediaUrls: CertificationMediaPreview[];
   stackImageUrls: string[];
   uploadStackImage: (fileUri: string) => Promise<void>;
   removeStackImage: (slot: number) => void;
@@ -35,8 +56,11 @@ type SiteThemeContextValue = {
   setHeroLayout: (layout: HeroLayout) => void;
   uploadHeroImage: (fileUri: string) => Promise<void>;
   uploadLogoImage: (fileUri: string) => Promise<void>;
-  uploadGalleryImage: (slot: number, fileUri: string) => Promise<void>;
-  removeGalleryImage: (slot: number) => void;
+  uploadPortfolioMedia: (fileUri: string, mimeType?: string | null, mediaType?: PortfolioMediaType) => Promise<void>;
+  removePortfolioItem: (index: number) => void;
+  uploadCertificationMedia: (fileUri: string, mimeType?: string | null) => Promise<void>;
+  removeCertificationItem: (index: number) => void;
+  updateCertificationCaption: (index: number, caption: string) => void;
   removeHeroImage: () => void;
   saveThemeNow: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -199,24 +223,49 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
     return getStyleCoverImageUrl(theme.logoImagePath, linkedSite);
   }, [linkedSite, theme.logoImagePath]);
 
-  const galleryImageUrls = useMemo(() => {
-    return (theme.galleryImagePaths ?? []).map((p) => getStyleCoverImageUrl(p, linkedSite) ?? '').filter(Boolean);
-  }, [linkedSite, theme.galleryImagePaths]);
+  const portfolioMediaUrls = useMemo(() => {
+    return (theme.portfolioItems ?? [])
+      .map((item) => {
+        const url = getStyleCoverImageUrl(item.storagePath, linkedSite);
+        if (!url) return null;
+        return { url, mediaType: item.mediaType };
+      })
+      .filter((item): item is PortfolioMediaPreview => item !== null);
+  }, [linkedSite, theme.portfolioItems]);
 
-  const uploadGalleryImage = useCallback(
-    async (slot: number, fileUri: string) => {
-      if (!linkedSite || !user?.id) throw new Error('Sign in again to upload images.');
+  const certificationMediaUrls = useMemo(() => {
+    return (theme.certificationItems ?? [])
+      .map((item) => {
+        const url = getStyleCoverImageUrl(item.storagePath, linkedSite);
+        if (!url) return null;
+        return {
+          url,
+          mediaType: item.mediaType,
+          caption: item.caption ?? '',
+        };
+      })
+      .filter((item): item is CertificationMediaPreview => item !== null);
+  }, [linkedSite, theme.certificationItems]);
+
+  const uploadPortfolioMedia = useCallback(
+    async (fileUri: string, mimeType?: string | null, mediaType: PortfolioMediaType = 'image') => {
+      if (!linkedSite || !user?.id) throw new Error('Sign in again to upload media.');
+      const currentItems = theme.portfolioItems ?? [];
+      if (currentItems.length >= MAX_PORTFOLIO_ITEMS) {
+        throw new Error(`You can add up to ${MAX_PORTFOLIO_ITEMS} photos or videos.`);
+      }
       setIsSaving(true);
       setError(null);
       try {
-        const storagePath = await uploadGalleryImageFromUri(linkedSite, slot, fileUri);
-        const paths = [...(theme.galleryImagePaths ?? [])];
-        paths[slot] = storagePath;
-        const next = { ...theme, galleryImagePaths: paths };
+        const uploaded = await uploadPortfolioMediaFromUri(linkedSite, fileUri, mimeType, mediaType);
+        const next = {
+          ...theme,
+          portfolioItems: [...currentItems, uploaded],
+        };
         setTheme(next);
         await saveSiteSetting(user.id, 'site_theme', next);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Could not upload gallery image.';
+        const message = err instanceof Error ? err.message : 'Could not upload portfolio media.';
         setError(message);
         throw err;
       } finally {
@@ -226,12 +275,58 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
     [linkedSite, theme, user],
   );
 
-  const removeGalleryImage = useCallback(
-    (slot: number) => {
-      const paths = (theme.galleryImagePaths ?? []).filter((_, i) => i !== slot);
-      updateTheme({ galleryImagePaths: paths });
+  const removePortfolioItem = useCallback(
+    (index: number) => {
+      const items = (theme.portfolioItems ?? []).filter((_, i) => i !== index);
+      updateTheme({ portfolioItems: items });
     },
-    [theme, updateTheme],
+    [theme.portfolioItems, updateTheme],
+  );
+
+  const uploadCertificationMedia = useCallback(
+    async (fileUri: string, mimeType?: string | null) => {
+      if (!linkedSite || !user?.id) throw new Error('Sign in again to upload media.');
+      const currentItems = theme.certificationItems ?? [];
+      if (currentItems.length >= MAX_CERTIFICATION_ITEMS) {
+        throw new Error(`You can add up to ${MAX_CERTIFICATION_ITEMS} certification images.`);
+      }
+      setIsSaving(true);
+      setError(null);
+      try {
+        const uploaded = await uploadCertificationMediaFromUri(linkedSite, fileUri, mimeType);
+        const next = {
+          ...theme,
+          certificationItems: [...currentItems, { ...uploaded, caption: '' }],
+        };
+        setTheme(next);
+        await saveSiteSetting(user.id, 'site_theme', next);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Could not upload certification.';
+        setError(message);
+        throw err;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [linkedSite, theme, user],
+  );
+
+  const removeCertificationItem = useCallback(
+    (index: number) => {
+      const items = (theme.certificationItems ?? []).filter((_, i) => i !== index);
+      updateTheme({ certificationItems: items });
+    },
+    [theme.certificationItems, updateTheme],
+  );
+
+  const updateCertificationCaption = useCallback(
+    (index: number, caption: string) => {
+      const items = (theme.certificationItems ?? []).map((item, i) =>
+        i === index ? { ...item, caption } : item,
+      );
+      updateTheme({ certificationItems: items });
+    },
+    [theme.certificationItems, updateTheme],
   );
 
   const stackImageUrls = useMemo(() => {
@@ -290,7 +385,8 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       error,
       heroImageUrl,
       logoImageUrl,
-      galleryImageUrls,
+      portfolioMediaUrls,
+      certificationMediaUrls,
       stackImageUrls,
       uploadStackImage,
       removeStackImage,
@@ -298,8 +394,11 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       setHeroLayout,
       uploadHeroImage,
       uploadLogoImage,
-      uploadGalleryImage,
-      removeGalleryImage,
+      uploadPortfolioMedia,
+      removePortfolioItem,
+      uploadCertificationMedia,
+      removeCertificationItem,
+      updateCertificationCaption,
       removeHeroImage,
       saveThemeNow,
       refresh,
@@ -311,7 +410,8 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       error,
       heroImageUrl,
       logoImageUrl,
-      galleryImageUrls,
+      portfolioMediaUrls,
+      certificationMediaUrls,
       stackImageUrls,
       uploadStackImage,
       removeStackImage,
@@ -319,8 +419,11 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       setHeroLayout,
       uploadHeroImage,
       uploadLogoImage,
-      uploadGalleryImage,
-      removeGalleryImage,
+      uploadPortfolioMedia,
+      removePortfolioItem,
+      uploadCertificationMedia,
+      removeCertificationItem,
+      updateCertificationCaption,
       removeHeroImage,
       saveThemeNow,
       refresh,
@@ -337,14 +440,18 @@ const SITE_THEME_FALLBACK: SiteThemeContextValue = {
   error: null,
   heroImageUrl: null,
   logoImageUrl: null,
-  galleryImageUrls: [],
+  portfolioMediaUrls: [],
+  certificationMediaUrls: [],
   stackImageUrls: [],
   updateTheme: () => {},
   setHeroLayout: () => {},
   uploadHeroImage: async () => {},
   uploadLogoImage: async () => {},
-  uploadGalleryImage: async () => {},
-  removeGalleryImage: () => {},
+  uploadPortfolioMedia: async () => {},
+  removePortfolioItem: () => {},
+  uploadCertificationMedia: async () => {},
+  removeCertificationItem: () => {},
+  updateCertificationCaption: () => {},
   uploadStackImage: async () => {},
   removeStackImage: () => {},
   removeHeroImage: () => {},

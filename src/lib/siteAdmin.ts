@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { PortfolioMediaType } from '../data/siteTheme';
 import { STYLE_COVER_BUCKET } from '../data/serviceCatalog';
 import { uploadStyleCoverImage as uploadStyleCoverBlob, uploadUserSiteImage } from './siteMedia';
 import { cancelBookingViaEdge } from './bookingCancel';
@@ -189,6 +190,50 @@ export async function uploadGalleryImageFromUri(
   return uploadUserSiteImage(linkedSite.user_id, fileUri, `gallery_${slot}`, mimeType);
 }
 
+export async function uploadPortfolioMediaFromUri(
+  linkedSite: LinkedSite,
+  fileUri: string,
+  mimeType?: string | null,
+  mediaType: PortfolioMediaType = 'image',
+): Promise<{ storagePath: string; mediaType: PortfolioMediaType }> {
+  const isVideo =
+    mediaType === 'video' ||
+    mimeType?.startsWith('video/') ||
+    /\.(mp4|mov|m4v|webm)(\?|$)/i.test(fileUri);
+  const folder = isVideo ? 'portfolio_video' : 'portfolio';
+  const storagePath = await uploadUserSiteImage(
+    linkedSite.user_id,
+    fileUri,
+    folder,
+    mimeType,
+    isVideo ? 'video' : 'image',
+  );
+  return { storagePath, mediaType: isVideo ? 'video' : 'image' };
+}
+
+export async function uploadProductImageFromUri(
+  linkedSite: LinkedSite,
+  fileUri: string,
+  mimeType?: string | null,
+): Promise<string> {
+  return uploadUserSiteImage(linkedSite.user_id, fileUri, 'products', mimeType, 'image');
+}
+
+export async function uploadCertificationMediaFromUri(
+  linkedSite: LinkedSite,
+  fileUri: string,
+  mimeType?: string | null,
+): Promise<{ storagePath: string; mediaType: PortfolioMediaType }> {
+  const storagePath = await uploadUserSiteImage(
+    linkedSite.user_id,
+    fileUri,
+    'certifications',
+    mimeType,
+    'image',
+  );
+  return { storagePath, mediaType: 'image' };
+}
+
 export async function uploadStackImageFromUri(
   linkedSite: LinkedSite,
   slot: number,
@@ -231,7 +276,151 @@ export async function createManualBooking(
   if (error) throw new Error(error.message);
 }
 
+async function readBookingRecord(linkedSite: LinkedSite, bookingId: string) {
+  const { client, tableName, userId } = getClient(linkedSite);
+
+  const { data: existing, error: readError } = await client
+    .from(tableName)
+    .select('id, data')
+    .eq('user_id', userId)
+    .eq('record_type', 'booking')
+    .eq('id', bookingId)
+    .maybeSingle();
+
+  if (readError) throw new Error(readError.message);
+  if (!existing) throw new Error('Booking not found.');
+
+  return {
+    client,
+    tableName,
+    data: (existing.data ?? {}) as Record<string, unknown>,
+  };
+}
+
+async function writeBookingData(
+  linkedSite: LinkedSite,
+  bookingId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const { client, tableName } = getClient(linkedSite);
+
+  const { error } = await client
+    .from(tableName)
+    .update({
+      data,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', bookingId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function startBookingSession(linkedSite: LinkedSite, bookingId: string): Promise<void> {
+  const { data } = await readBookingRecord(linkedSite, bookingId);
+  const status = String(data.booking_status ?? '').toLowerCase();
+  if (status === 'cancelled' || status === 'canceled' || status === 'completed') {
+    throw new Error('This booking cannot be started.');
+  }
+  if (status === 'in_progress') return;
+
+  await writeBookingData(linkedSite, bookingId, {
+    ...data,
+    booking_status: 'in_progress',
+    session_started_at: new Date().toISOString(),
+    session_ended_at: null,
+  });
+}
+
+export async function updateBookingSessionNotes(
+  linkedSite: LinkedSite,
+  bookingId: string,
+  stylistNotes: string,
+): Promise<void> {
+  const { data } = await readBookingRecord(linkedSite, bookingId);
+  await writeBookingData(linkedSite, bookingId, {
+    ...data,
+    stylist_notes: stylistNotes.trim(),
+  });
+}
+
+export async function recordBookingCashPayment(
+  linkedSite: LinkedSite,
+  bookingId: string,
+  input: { balanceAmount: number; tipAmount: number },
+): Promise<void> {
+  const { data } = await readBookingRecord(linkedSite, bookingId);
+  const balanceCents = Math.max(0, Math.round(input.balanceAmount * 100));
+  const tip = Math.max(0, input.tipAmount);
+
+  await writeBookingData(linkedSite, bookingId, {
+    ...data,
+    payment_status: 'paid',
+    payment_method_at_service: 'cash',
+    balance_collected_cents: balanceCents,
+    tip_amount: tip,
+    balance_collected_at: new Date().toISOString(),
+  });
+}
+
+export async function recordBookingInPersonPayment(
+  linkedSite: LinkedSite,
+  bookingId: string,
+  input: {
+    balanceAmountCents: number;
+    tipAmount: number;
+    paymentIntentId: string;
+    paymentMethod: 'card' | 'tap_to_pay';
+  },
+): Promise<void> {
+  const { data } = await readBookingRecord(linkedSite, bookingId);
+
+  await writeBookingData(linkedSite, bookingId, {
+    ...data,
+    payment_status: 'paid',
+    payment_method_at_service: input.paymentMethod,
+    balance_collected_cents: input.balanceAmountCents,
+    tip_amount: Math.max(0, input.tipAmount),
+    balance_collected_at: new Date().toISOString(),
+    in_person_payment_intent_id: input.paymentIntentId,
+    stripe_payment_intent_id:
+      asString(data.stripe_payment_intent_id) || input.paymentIntentId,
+  });
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
 export async function completeBooking(linkedSite: LinkedSite, bookingId: string): Promise<void> {
+  const { data } = await readBookingRecord(linkedSite, bookingId);
+
+  const reviewToken =
+    typeof data.review_token === 'string' && data.review_token.trim()
+      ? data.review_token.trim()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  const startedAt = data.session_started_at ? new Date(String(data.session_started_at)) : null;
+  const endedAt = new Date();
+  let actualDurationMinutes =
+    typeof data.actual_duration_minutes === 'number' && data.actual_duration_minutes > 0
+      ? data.actual_duration_minutes
+      : 0;
+
+  if (!actualDurationMinutes && startedAt && !Number.isNaN(startedAt.getTime())) {
+    actualDurationMinutes = Math.max(1, Math.round((endedAt.getTime() - startedAt.getTime()) / 60_000));
+  }
+
+  await writeBookingData(linkedSite, bookingId, {
+    ...data,
+    booking_status: 'completed',
+    completed_at: endedAt.toISOString(),
+    session_ended_at: endedAt.toISOString(),
+    actual_duration_minutes: actualDurationMinutes,
+    review_token: reviewToken,
+  });
+}
+
+export async function approveBooking(linkedSite: LinkedSite, bookingId: string): Promise<void> {
   const { client, tableName, userId } = getClient(linkedSite);
 
   const { data: existing, error: readError } = await client
@@ -246,25 +435,47 @@ export async function completeBooking(linkedSite: LinkedSite, bookingId: string)
   if (!existing) throw new Error('Booking not found.');
 
   const data = (existing.data ?? {}) as Record<string, unknown>;
-  const reviewToken =
-    typeof data.review_token === 'string' && data.review_token.trim()
-      ? data.review_token.trim()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  if (String(data.booking_status ?? '').toLowerCase() !== 'pending_approval') {
+    throw new Error('This booking is no longer pending approval.');
+  }
 
   const { error } = await client
     .from(tableName)
     .update({
       data: {
         ...data,
-        booking_status: 'completed',
-        completed_at: new Date().toISOString(),
-        review_token: reviewToken,
+        booking_status: 'confirmed',
+        approved_at: new Date().toISOString(),
       },
       updated_at: new Date().toISOString(),
     })
     .eq('id', bookingId);
 
   if (error) throw new Error(error.message);
+
+  const { data: subdomainRow, error: subdomainErr } = await supabase
+    .from('styld_site_subdomains')
+    .select('subdomain')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (subdomainErr) throw new Error(subdomainErr.message);
+
+  const subdomain = String(subdomainRow?.subdomain ?? '').trim();
+  if (subdomain) {
+    const { data, error: emailErr } = await supabase.functions.invoke('booking-client-email', {
+      body: { bookingId, subdomain, force: true },
+    });
+    if (emailErr) {
+      console.warn('booking-client-email after approve:', emailErr);
+    } else if (data && typeof data === 'object' && 'skipped' in data && (data as { skipped?: boolean }).skipped) {
+      console.warn('booking-client-email after approve skipped:', data);
+    }
+  }
+}
+
+export async function declinePendingBooking(linkedSite: LinkedSite, bookingId: string): Promise<void> {
+  await cancelBooking(linkedSite, bookingId);
 }
 
 export async function cancelBooking(linkedSite: LinkedSite, bookingId: string): Promise<void> {

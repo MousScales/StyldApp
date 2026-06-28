@@ -43,6 +43,25 @@ export function buildAccountOnboardingResponses(input: {
   };
 }
 
+export async function saveOnboardingSurvey(userId: string, survey: OnboardingSurvey): Promise<void> {
+  const existing = await loadAccountOnboardingResponses(userId);
+  const now = new Date().toISOString();
+
+  if (existing) {
+    await saveSiteSetting(userId, ONBOARDING_RESPONSES_KEY, {
+      ...existing,
+      survey,
+    });
+  }
+
+  await saveSiteSetting(userId, 'onboarding_state', {
+    completed: true,
+    completedAt: existing?.completedAt ?? now,
+    survey,
+    responsesSavedAt: now,
+  });
+}
+
 /** Persists full onboarding answers for analytics + marks onboarding complete. */
 export async function saveAccountOnboardingResponses(
   userId: string,

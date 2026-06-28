@@ -8,8 +8,6 @@ import ScreenGradient from '../components/ScreenGradient';
 import ServiceImage from '../components/ServiceImage';
 import { useSiteData } from '../context/SiteDataContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
-import { useSiteContent } from '../context/SiteContentContext';
-import { formatSiteAddress } from '../data/siteContent';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
 import { colors } from '../theme';
 import { maskMoney } from '../utils/money';
@@ -35,13 +33,11 @@ function DayHeader({ label, count }: { label: string; count: number }) {
 function AppointmentRow({
   appointment,
   isLast,
-  siteAddress,
   privacyMode,
   onPress,
 }: {
   appointment: AppointmentDetail;
   isLast: boolean;
-  siteAddress: string;
   privacyMode: boolean;
   onPress: () => void;
 }) {
@@ -65,10 +61,6 @@ function AppointmentRow({
       <View style={styles.apptInfo}>
         <Text style={styles.apptClient} numberOfLines={1}>{appointment.clientName}</Text>
         <Text style={styles.apptService} numberOfLines={1}>{appointment.service}</Text>
-        <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={12} color={colors.textMuted} />
-          <Text style={styles.locationText} numberOfLines={1}>{appointment.location || siteAddress || '—'}</Text>
-        </View>
       </View>
       <View style={styles.apptRight}>
         <Text style={styles.apptPrice}>{maskMoney(`$${appointment.price}`, privacyMode)}</Text>
@@ -88,8 +80,6 @@ export default function AllUpcomingScreen({ navigation }: Props) {
 
   const { getUpcomingAppointments } = useSiteData();
   const { privacyMode } = usePrivacyMode();
-  const { content: siteContent } = useSiteContent();
-  const siteAddress = formatSiteAddress(siteContent);
 
   const upcoming = getUpcomingAppointments(100);
 
@@ -131,7 +121,6 @@ export default function AllUpcomingScreen({ navigation }: Props) {
                       key={appt.id}
                       appointment={appt}
                       isLast={idx === appointments.length - 1}
-                      siteAddress={siteAddress}
                       privacyMode={privacyMode}
                       onPress={() => navigation.navigate('AppointmentDetail', { appointmentId: appt.id })}
                     />
@@ -220,8 +209,6 @@ const BASE_STYLES = {
   apptInfo: { flex: 1, minWidth: 0 },
   apptClient: { color: colors.text, fontSize: 14, fontWeight: '700', marginBottom: 2 },
   apptService: { color: colors.textMuted, fontSize: 12, fontWeight: '500', marginBottom: 3 },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  locationText: { color: colors.textMuted, fontSize: 11, fontWeight: '500', flex: 1 },
   apptRight: { alignItems: 'flex-end', gap: 4 },
   apptPrice: { color: colors.chartBlue, fontSize: 15, fontWeight: '700', letterSpacing: -0.3 },
   depositBadge: {

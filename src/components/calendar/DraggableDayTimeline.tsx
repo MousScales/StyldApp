@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import TimelineEventCard, { BOOKING_CARD_MIN_HEIGHT } from './TimelineEventCard';
 import { colors } from '../../theme';
 import { BookingHours } from '../../data/bookingHours';
 import {
@@ -208,34 +209,51 @@ export default function DraggableDayTimeline({
           ) : null}
 
           <View style={styles.eventsColumn} {...panResponder.panHandlers}>
-            {renderedOverlays.map((overlay) => (
-              <View
-                key={overlay.id}
-                style={[
-                  styles.overlayCard,
-                  overlay.variant === 'closed' && styles.overlayClosed,
-                  overlay.variant === 'block' && styles.overlayBlock,
-                  overlay.variant === 'completed' && styles.overlayCompleted,
-                  overlay.variant === 'booking' && styles.overlayBooking,
-                  {
-                    top: getOverlayTop(overlay, timelineStart),
-                    height: getOverlayHeight(overlay),
-                  },
-                ]}
-                pointerEvents="none"
-              >
-                {overlay.variant !== 'closed' ? (
-                  <Text style={styles.overlayTitle} numberOfLines={1}>
-                    {overlay.title}
-                  </Text>
-                ) : null}
-                {overlay.subtitle && overlay.variant !== 'closed' ? (
-                  <Text style={styles.overlaySubtitle} numberOfLines={1}>
-                    {overlay.subtitle}
-                  </Text>
-                ) : null}
-              </View>
-            ))}
+            {renderedOverlays.map((overlay) => {
+              if (overlay.variant === 'booking' || overlay.variant === 'completed') {
+                return (
+                  <TimelineEventCard
+                    key={overlay.id}
+                    title={overlay.title}
+                    styleId={overlay.styleId}
+                    startHour={overlay.startHour}
+                    startMinute={overlay.startMinute}
+                    endHour={overlay.endHour}
+                    endMinute={overlay.endMinute}
+                    completed={overlay.variant === 'completed'}
+                    top={getOverlayTop(overlay, timelineStart * 60)}
+                    height={getOverlayHeight(overlay, HOUR_HEIGHT, BOOKING_CARD_MIN_HEIGHT)}
+                  />
+                );
+              }
+
+              return (
+                <View
+                  key={overlay.id}
+                  style={[
+                    styles.overlayCard,
+                    overlay.variant === 'closed' && styles.overlayClosed,
+                    overlay.variant === 'block' && styles.overlayBlock,
+                    {
+                      top: getOverlayTop(overlay, timelineStart * 60),
+                      height: getOverlayHeight(overlay),
+                    },
+                  ]}
+                  pointerEvents="none"
+                >
+                  {overlay.variant !== 'closed' ? (
+                    <Text style={styles.overlayTitle} numberOfLines={1}>
+                      {overlay.title}
+                    </Text>
+                  ) : null}
+                  {overlay.subtitle && overlay.variant !== 'closed' ? (
+                    <Text style={styles.overlaySubtitle} numberOfLines={1}>
+                      {overlay.subtitle}
+                    </Text>
+                  ) : null}
+                </View>
+              );
+            })}
 
             {draftOverlay ? (
               <View
@@ -245,7 +263,7 @@ export default function DraggableDayTimeline({
                     ? styles.draftConflict
                     : draftVariant === 'appointment' ? styles.draftAppointment : styles.draftBlock,
                   {
-                    top: getOverlayTop(draftOverlay, timelineStart),
+                    top: getOverlayTop(draftOverlay, timelineStart * 60),
                     height: getOverlayHeight(draftOverlay),
                   },
                 ]}
@@ -337,14 +355,6 @@ const BASE_STYLES = {
     paddingHorizontal: 14,
     paddingVertical: 10,
     opacity: 0.92,
-  },
-  overlayBooking: {
-    backgroundColor: colors.eventPending,
-    borderWidth: 1,
-    borderColor: colors.eventPendingBorder,
-  },
-  overlayCompleted: {
-    backgroundColor: colors.eventCompleted,
   },
   overlayBlock: {
     backgroundColor: 'rgba(248, 113, 113, 0.16)',

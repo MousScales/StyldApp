@@ -1,5 +1,20 @@
-export type SiteSection = 'menu' | 'about' | 'visit' | 'aboutMe' | 'policies';
+export type SiteSection =
+  | 'menu'
+  | 'about'
+  | 'visit'
+  | 'aboutMe'
+  | 'policies'
+  | 'portfolio'
+  | 'certifications'
+  | 'products'
+  | 'faq';
 export type LocationPart = 'address' | 'map' | 'contact' | 'social';
+export type PortfolioPlacement = 'above_menu' | 'below_menu';
+
+export type SiteFaqItem = {
+  question: string;
+  answer: string;
+};
 
 export type SiteContent = {
   brandName: string;
@@ -11,8 +26,16 @@ export type SiteContent = {
   metaDescription: string;
   reelsTitle: string;
   reelsBlurb: string;
+  portfolioPlacement: PortfolioPlacement;
   menuTitle: string;
   menuBlurb: string;
+  faqTitle: string;
+  faqBlurb: string;
+  faqItems: SiteFaqItem[];
+  certificationsTitle: string;
+  certificationsBlurb: string;
+  productsTitle: string;
+  productsBlurb: string;
   aboutTitle: string;
   aboutBody: string;
   visitTitle: string;
@@ -55,11 +78,18 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
   bookingPolicy: '',
   metaDescription:
     'Your brand name — put your headline here. Swap this text, images, and booking details for your business.',
-  reelsTitle: 'Put your video or social section title here',
-  reelsBlurb:
-    'Replace this blurb with how you show work — link to your Instagram or any profile you use.',
+  reelsTitle: 'Our work',
+  reelsBlurb: 'Browse our latest styles and transformations.',
+  portfolioPlacement: 'above_menu',
   menuTitle: 'Menu',
   menuBlurb: 'Browse our services & prices — book online.',
+  faqTitle: 'FAQ',
+  faqBlurb: 'Common questions about booking and our services.',
+  faqItems: [],
+  certificationsTitle: 'Certifications',
+  certificationsBlurb: 'Licenses, credentials, and professional certifications.',
+  productsTitle: 'Shop',
+  productsBlurb: 'Hair care and styling products available for pickup or shipping.',
   aboutTitle: 'About Me',
   aboutBody:
     'Tell clients who you are, what you specialize in, and why they should book with you.',
@@ -77,11 +107,22 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
   mapEmbedUrl: '',
   footerText: 'Add footer credit here',
   timezone: 'America/New_York',
-  hiddenSections: [],
+  /** Certifications + shop stay off until the stylist turns them on in Profile settings. */
+  hiddenSections: ['certifications', 'products'],
   hiddenLocationParts: [],
 };
 
-const VALID_SECTIONS: SiteSection[] = ['menu', 'about', 'visit', 'aboutMe', 'policies'];
+const VALID_SECTIONS: SiteSection[] = [
+  'menu',
+  'about',
+  'visit',
+  'aboutMe',
+  'policies',
+  'portfolio',
+  'certifications',
+  'products',
+  'faq',
+];
 const VALID_LOCATION_PARTS: LocationPart[] = ['address', 'map', 'contact', 'social'];
 
 export function normalizeSiteContent(value: unknown): SiteContent {
@@ -107,6 +148,23 @@ export function normalizeSiteContent(value: unknown): SiteContent {
     result.hiddenLocationParts = (source.hiddenLocationParts as unknown[]).filter(
       (p): p is LocationPart => VALID_LOCATION_PARTS.includes(p as LocationPart),
     );
+  }
+
+  if (source.portfolioPlacement === 'below_menu' || source.portfolioPlacement === 'above_menu') {
+    result.portfolioPlacement = source.portfolioPlacement;
+  }
+
+  if (Array.isArray(source.faqItems)) {
+    result.faqItems = (source.faqItems as unknown[])
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const row = item as Record<string, unknown>;
+        return {
+          question: typeof row.question === 'string' ? row.question : '',
+          answer: typeof row.answer === 'string' ? row.answer : '',
+        };
+      })
+      .filter((item): item is SiteFaqItem => Boolean(item && (item.question.trim() || item.answer.trim())));
   }
 
   return result;

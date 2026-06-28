@@ -52,13 +52,20 @@ Deno.serve(async (req) => {
 
     const admin = createClient(supabaseUrl, serviceKey);
 
-    const { data: row, error: rowError } = await admin
-      .from('styld_site_records')
-      .select('id, user_id, data')
-      .eq('record_type', 'booking')
-      .eq('user_id', userData.user.id)
-      .or(`id.eq.${bookingId},data->>id.eq.${bookingId}`)
-      .maybeSingle();
+    const bookingBase = () =>
+      admin
+        .from('styld_site_records')
+        .select('id, user_id, data')
+        .eq('record_type', 'booking')
+        .eq('user_id', userData.user.id);
+
+    let { data: row, error: rowError } = await bookingBase().eq('id', bookingId).maybeSingle();
+
+    if (!row && !rowError) {
+      ({ data: row, error: rowError } = await bookingBase()
+        .filter('data->>id', 'eq', bookingId)
+        .maybeSingle());
+    }
 
     if (rowError) {
       console.error('booking lookup:', rowError);

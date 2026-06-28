@@ -212,6 +212,71 @@ export const SITE_TEXT_COLOR_FIELDS: SiteTextColorField[] = [
 
 export type SiteTextColorSources = Partial<Record<SiteTextColorKey, SiteColorSource>>;
 
+export type PortfolioMediaType = 'image' | 'video';
+
+export type PortfolioMediaItem = {
+  storagePath: string;
+  mediaType: PortfolioMediaType;
+};
+
+export type CertificationMediaItem = {
+  storagePath: string;
+  mediaType: PortfolioMediaType;
+  /** Optional subtitle shown under the image (issuer, license name, etc.) */
+  caption?: string;
+};
+
+export const MAX_PORTFOLIO_ITEMS = 24;
+export const MAX_CERTIFICATION_ITEMS = 24;
+
+export function normalizePortfolioItems(source: Record<string, unknown>): PortfolioMediaItem[] {
+  if (Array.isArray(source.portfolioItems)) {
+    return (source.portfolioItems as unknown[])
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const row = item as Record<string, unknown>;
+        if (typeof row.storagePath !== 'string' || !row.storagePath.trim()) return null;
+        return {
+          storagePath: row.storagePath.trim(),
+          mediaType: row.mediaType === 'video' ? ('video' as const) : ('image' as const),
+        };
+      })
+      .filter((item): item is PortfolioMediaItem => item !== null)
+      .slice(0, MAX_PORTFOLIO_ITEMS);
+  }
+
+  if (Array.isArray(source.galleryImagePaths)) {
+    return (source.galleryImagePaths as unknown[])
+      .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
+      .map((storagePath) => ({
+        storagePath: storagePath.trim(),
+        mediaType: 'image' as const,
+      }))
+      .slice(0, MAX_PORTFOLIO_ITEMS);
+  }
+
+  return [];
+}
+
+export function normalizeCertificationItems(source: Record<string, unknown>): CertificationMediaItem[] {
+  if (!Array.isArray(source.certificationItems)) return [];
+
+  return (source.certificationItems as unknown[])
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const row = item as Record<string, unknown>;
+      if (typeof row.storagePath !== 'string' || !row.storagePath.trim()) return null;
+      const caption = typeof row.caption === 'string' ? row.caption : '';
+      return {
+        storagePath: row.storagePath.trim(),
+        mediaType: row.mediaType === 'video' ? ('video' as const) : ('image' as const),
+        caption,
+      };
+    })
+    .filter((item): item is CertificationMediaItem => item !== null)
+    .slice(0, MAX_CERTIFICATION_ITEMS);
+}
+
 export type SiteTheme = {
   heroLayout: HeroLayout;
   heroImagePath: string | null;
@@ -237,6 +302,10 @@ export type SiteTheme = {
   textColors: SiteTextColors;
   /** Link element colors to brand palette colors so they stay in sync. */
   textColorSources: SiteTextColorSources;
+  /** Photos and videos shown in the Previous work section on the booking site. */
+  portfolioItems: PortfolioMediaItem[];
+  /** License and certification images on /certifications. */
+  certificationItems: CertificationMediaItem[];
 };
 
 export const DEFAULT_SITE_THEME: SiteTheme = {
@@ -261,6 +330,8 @@ export const DEFAULT_SITE_THEME: SiteTheme = {
   heroCoverBlur: false,
   textColors: {},
   textColorSources: {},
+  portfolioItems: [],
+  certificationItems: [],
 };
 
 export type FontFamilyOption = {
@@ -402,6 +473,8 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     heroCoverBlur: source.heroCoverBlur === true,
     textColors: normalizeSiteTextColors(source.textColors),
     textColorSources: normalizeSiteTextColorSources(source.textColorSources),
+    portfolioItems: normalizePortfolioItems(source),
+    certificationItems: normalizeCertificationItems(source),
   };
 }
 

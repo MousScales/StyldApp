@@ -18,10 +18,11 @@ import {
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { useBrand, useSetPreviewBusinessType } from '../../context/BrandContext';
+import BusinessTypePicker from '../../components/BusinessTypePicker';
+import { useBrand, useSetPreviewBusinessType, useSetPreviewBusinessTypeOther } from '../../context/BrandContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 import { useSiteContent } from '../../context/SiteContentContext';
-import { buildSiteContentFromOnboarding, BUSINESS_TYPE_OPTIONS, BusinessType, labelForBusinessType, OnboardingSurvey, specialtyForBusinessType, taglineRoleForBusinessType } from '../../data/onboarding';
+import { buildSiteContentFromOnboarding, BusinessType, isBusinessTypeStepComplete, OnboardingSurvey, resolveBusinessTypeLabel, resolveSpecialty, resolveTaglineRole } from '../../data/onboarding';
 import OnboardingConfetti from '../../components/OnboardingConfetti';
 import {
   buildAccountOnboardingResponses,
@@ -213,40 +214,6 @@ function ChoiceChips({
   );
 }
 
-function ChoiceCards({
-  options,
-  selected,
-  onSelect,
-}: {
-  options: typeof BUSINESS_TYPE_OPTIONS;
-  selected: BusinessType | '';
-  onSelect: (value: BusinessType) => void;
-}) {
-  const styles = useResponsiveStyles(BASE_STYLES);
-
-  return (
-    <View style={styles.typeCardStack}>
-      {options.map((option) => {
-        const active = selected === option.value;
-        return (
-          <Pressable
-            key={option.value}
-            style={[styles.typeCard, active && styles.typeCardActive]}
-            onPress={() => onSelect(option.value)}
-          >
-            <View style={styles.typeCardCopy}>
-              <Text style={[styles.typeCardLabel, active && styles.typeCardLabelActive]}>
-                {option.label}
-              </Text>
-              <Text style={styles.typeCardDescription}>{option.description}</Text>
-            </View>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 function toggleChip(list: string[], value: string, multi: boolean): string[] {
   if (!multi) return [value];
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -256,6 +223,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
   const styles = useResponsiveStyles(BASE_STYLES);
   const { colors, copy } = useBrand();
   const setPreviewBusinessType = useSetPreviewBusinessType();
+  const setPreviewBusinessTypeOther = useSetPreviewBusinessTypeOther();
 
   const { profile, updateProfile, user, clearNewSignUp, signOut } = useAuth();
   const { refresh: refreshOnboarding, markAccountOnboardingSaved } = useOnboarding();
@@ -276,6 +244,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
 
   const [whyStyld, setWhyStyld] = useState<string[]>([]);
   const [businessType, setBusinessType] = useState<BusinessType | ''>('');
+  const [businessTypeOther, setBusinessTypeOther] = useState('');
   const [heardFrom, setHeardFrom] = useState('');
   const [excitedAbout, setExcitedAbout] = useState<string[]>([]);
   const [dreamOutcome, setDreamOutcome] = useState('');
@@ -295,13 +264,14 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
   const survey = useMemo<OnboardingSurvey>(
     () => ({
       businessType,
+      businessTypeOther: businessType === 'other' ? businessTypeOther.trim() : '',
       whyStyld,
       heardFrom,
       excitedAbout,
       dreamOutcome,
       dreamNote: dreamNote.trim(),
     }),
-    [businessType, whyStyld, heardFrom, excitedAbout, dreamOutcome, dreamNote],
+    [businessType, businessTypeOther, whyStyld, heardFrom, excitedAbout, dreamOutcome, dreamNote],
   );
 
   const excitementLine = useMemo(() => {
@@ -311,10 +281,10 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
   }, [excitedAbout, whyStyld]);
 
   const canContinue = useMemo(() => {
-    if (step === 1) return businessType !== '';
+    if (step === 1) return isBusinessTypeStepComplete(businessType, businessTypeOther);
     if (step === 6) return businessName.trim().length > 0;
     return true;
-  }, [step, businessType, businessName]);
+  }, [step, businessType, businessTypeOther, businessName]);
 
   const animateStep = (next: number) => {
     Animated.sequence([
@@ -353,8 +323,9 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
       await ensureUserSiteSeeded(userId, businessName.trim());
       const content = buildSiteContentFromOnboarding({
         businessName: businessName.trim(),
-        specialty: businessType ? specialtyForBusinessType(businessType) : '',
+        specialty: businessType ? resolveSpecialty(businessType, businessTypeOther) : '',
         businessType: businessType || undefined,
+        businessTypeOther: businessType === 'other' ? businessTypeOther.trim() : undefined,
         phoneDisplay: phone,
         email,
         instagramHandle: instagram,
@@ -366,7 +337,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
         heroLayout: 'split',
         taglineLeft: 'Book with',
         taglineRightLine1: businessName.trim().split(' ')[0] || 'your',
-        taglineRightLine2: businessType ? taglineRoleForBusinessType(businessType) : 'stylist',
+        taglineRightLine2: businessType ? resolveTaglineRole(businessType, businessTypeOther) : 'stylist',
       });
       await saveSiteSetting(userId, 'site_content', content);
       await saveContentNow(content);
@@ -399,6 +370,8 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
         }),
       );
       markAccountOnboardingSaved(survey);
+      setPreviewBusinessType('');
+      setPreviewBusinessTypeOther('');
       await updateProfile({ business_name: businessName.trim() });
       await syncUserSiteRegistry(userId, businessName.trim());
       clearNewSignUp();
@@ -496,12 +469,20 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
                   question="What best describes you?"
                   hint="We'll tailor your site and setup to match."
                 />
-                <ChoiceCards
-                  options={BUSINESS_TYPE_OPTIONS}
+                <BusinessTypePicker
                   selected={businessType}
+                  otherLabel={businessTypeOther}
                   onSelect={(value) => {
                     setBusinessType(value);
                     setPreviewBusinessType(value);
+                    if (value !== 'other') {
+                      setBusinessTypeOther('');
+                      setPreviewBusinessTypeOther('');
+                    }
+                  }}
+                  onOtherLabelChange={(value) => {
+                    setBusinessTypeOther(value);
+                    setPreviewBusinessTypeOther(value);
                   }}
                 />
               </>
@@ -674,7 +655,9 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
                   {businessType ? (
                     <View style={styles.doneCardSection}>
                       <Text style={styles.doneCardLabel}>You're a</Text>
-                      <Text style={styles.doneCardValue}>{labelForBusinessType(businessType)}</Text>
+                      <Text style={styles.doneCardValue}>
+                        {resolveBusinessTypeLabel(businessType, businessTypeOther)}
+                      </Text>
                     </View>
                   ) : null}
                   {businessName.trim() ? (

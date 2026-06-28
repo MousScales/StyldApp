@@ -184,7 +184,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { bookingId, subdomain } = await req.json();
+    const body = await req.json();
+    const bookingId = String(body.bookingId ?? '').trim();
+    const subdomain = String(body.subdomain ?? '').trim();
+    const force = body.force === true;
     if (!bookingId || !subdomain) return json({ error: 'Missing bookingId or subdomain' }, 400);
 
     const resendKey = Deno.env.get('RESEND_API_KEY');
@@ -218,8 +221,22 @@ Deno.serve(async (req) => {
       return json({ ok: false, skipped: true, reason: 'no_email' });
     }
 
-    // Deduplicate: don't send twice
-    if (b.client_email_sent_at) return json({ ok: true, skipped: true, reason: 'already_sent' });
+    const bookingStatus = String(b.booking_status ?? '').toLowerCase();
+    const isConfirmed = bookingStatus === 'confirmed' || bookingStatus === 'completed';
+
+    // Confirmation emails only go out once the appointment is actually confirmed.
+    if (!isConfirmed) {
+      return json({ ok: true, skipped: true, reason: 'not_confirmed' });
+    }
+
+    const confirmationSentAt =
+      (typeof b.client_confirmation_email_sent_at === 'string' && b.client_confirmation_email_sent_at) ||
+      (typeof b.client_email_sent_at === 'string' && b.client_email_sent_at) ||
+      null;
+
+    if (confirmationSentAt && !force) {
+      return json({ ok: true, skipped: true, reason: 'already_sent' });
+    }
 
     const siteUrl = `https://${subdomain}.styldd.com`;
     const [branding, cancellationPolicyRow] = await Promise.all([
@@ -265,7 +282,6 @@ Deno.serve(async (req) => {
     const priceCents = Math.round(Number(b.estimated_total ?? 0) * 100);
     const depositCents = Math.round(Number(b.deposit_amount ?? 0) * 100);
     const paymentStatus = String(b.payment_status ?? '');
-    const bookingStatus = String(b.booking_status ?? '');
     const depositPaid = ['deposit_paid', 'paid'].includes(paymentStatus) ||
       ['confirmed', 'completed'].includes(bookingStatus);
     const isInPerson = paymentStatus === 'in_person' || bookingStatus === 'confirmed' && depositCents === 0;
@@ -311,7 +327,12 @@ Deno.serve(async (req) => {
     }
 
     // 8. Mark as sent so we don't resend
-    const merged = { ...b, client_email_sent_at: new Date().toISOString() };
+    const sentAt = new Date().toISOString();
+    const merged = {
+      ...b,
+      client_confirmation_email_sent_at: sentAt,
+      client_email_sent_at: sentAt,
+    };
     await supabase
       .from('styld_site_records')
       .update({ data: merged, updated_at: new Date().toISOString() })

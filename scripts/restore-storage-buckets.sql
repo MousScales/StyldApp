@@ -18,8 +18,8 @@ values (
   'style-covers',
   'style-covers',
   true,
-  5242880,
-  array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+  52428800,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'video/mp4', 'video/quicktime', 'video/webm']
 )
 on conflict (id) do update set
   public = excluded.public,

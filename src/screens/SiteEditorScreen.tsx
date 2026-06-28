@@ -22,6 +22,7 @@ import {
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import SiteDesignEditor from '../components/site/SiteDesignEditor';
+import SitePortfolioEditor from '../components/site/SitePortfolioEditor';
 import SitePreviewWebView from '../components/site/SitePreviewWebView';
 import { useServiceCatalog } from '../context/ServiceCatalogContext';
 import { useSiteContent } from '../context/SiteContentContext';
@@ -250,6 +251,9 @@ export default function SiteEditorScreen({ navigation }: Props) {
     heroImageUrl,
     logoImageUrl,
     stackImageUrls,
+    portfolioMediaUrls,
+    uploadPortfolioMedia,
+    removePortfolioItem,
     isSaving: isSavingTheme,
     saveThemeNow,
   } = useSiteTheme();
@@ -444,7 +448,7 @@ export default function SiteEditorScreen({ navigation }: Props) {
           id: service.id,
           title: meta?.title ?? service.name,
           description: meta?.description ?? service.description ?? '',
-          priceLabel: formatStylePriceRange(price, meta?.addons),
+          priceLabel: formatStylePriceRange(price, meta?.addons, meta?.variants),
           sizeLabel: service.variant !== 'STANDARD' ? service.variant : undefined,
           durationLabel: formatStyleDuration(
             meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
@@ -460,10 +464,15 @@ export default function SiteEditorScreen({ navigation }: Props) {
     () =>
       buildSitePreviewTheme(
         theme,
-        { heroImageUrl, logoImageUrl, heroStackImageUrls: stackImageUrls },
+        {
+          heroImageUrl,
+          logoImageUrl,
+          heroStackImageUrls: stackImageUrls,
+          portfolioMedia: portfolioMediaUrls,
+        },
         { zoomedOut: previewMode === 'split' },
       ),
-    [heroImageUrl, logoImageUrl, previewMode, stackImageUrls, theme],
+    [heroImageUrl, logoImageUrl, portfolioMediaUrls, previewMode, stackImageUrls, theme],
   );
 
   const fullscreenTheme = useMemo<SitePreviewTheme>(
@@ -716,6 +725,41 @@ export default function SiteEditorScreen({ navigation }: Props) {
               </>
             ) : null}
 
+            <Text style={styles.groupTitle}>Previous work</Text>
+            <Pressable
+              style={styles.toggleRow}
+              onPress={() => toggleSection('portfolio')}
+            >
+              <View style={styles.toggleRowBody}>
+                <Text style={styles.toggleRowLabel}>Show previous work on site</Text>
+                <Text style={styles.toggleRowSub}>Photos and videos from past appointments</Text>
+              </View>
+              <View style={[styles.toggleBox, isSectionVisible('portfolio') && styles.toggleBoxOn]}>
+                {isSectionVisible('portfolio') && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+            </Pressable>
+            <Field
+              label="Section title"
+              value={content.reelsTitle}
+              onChangeText={(reelsTitle) => updateContent({ reelsTitle })}
+              placeholder="Our work"
+            />
+            <Field
+              label="Section blurb"
+              value={content.reelsBlurb}
+              onChangeText={(reelsBlurb) => updateContent({ reelsBlurb })}
+              multiline
+              placeholder="Browse our latest styles and transformations."
+            />
+            <SitePortfolioEditor
+              placement={content.portfolioPlacement}
+              items={portfolioMediaUrls}
+              busy={isSavingTheme}
+              onPlacementChange={(portfolioPlacement) => updateContent({ portfolioPlacement })}
+              onAddMedia={uploadPortfolioMedia}
+              onRemoveMedia={removePortfolioItem}
+            />
+
             <Text style={styles.groupTitle}>Services menu</Text>
             <Text style={styles.helper}>Edit the heading and blurb shown above your services list.</Text>
             <Field
@@ -731,6 +775,48 @@ export default function SiteEditorScreen({ navigation }: Props) {
               multiline
               placeholder="Browse services & prices"
             />
+
+            <Text style={styles.groupTitle}>FAQ</Text>
+            <Text style={styles.helper}>Shown below your services menu, above visit & contact.</Text>
+            <Pressable
+              style={styles.toggleRow}
+              onPress={() => toggleSection('faq')}
+            >
+              <View style={styles.toggleRowBody}>
+                <Text style={styles.toggleRowLabel}>Show FAQ on site</Text>
+                <Text style={styles.toggleRowSub}>Common questions and answers for clients</Text>
+              </View>
+              <View style={[styles.toggleBox, isSectionVisible('faq') && styles.toggleBoxOn]}>
+                {isSectionVisible('faq') && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+            </Pressable>
+            <Field
+              label="Section title"
+              value={content.faqTitle}
+              onChangeText={(faqTitle) => updateContent({ faqTitle })}
+              placeholder="FAQ"
+            />
+            <Field
+              label="Section blurb"
+              value={content.faqBlurb}
+              onChangeText={(faqBlurb) => updateContent({ faqBlurb })}
+              multiline
+              placeholder="Common questions about booking and our services."
+            />
+            <Pressable style={styles.navRow} onPress={() => navigation.navigate('HeroFaq')}>
+              <View style={styles.navRowIcon}>
+                <Ionicons name="help-circle-outline" size={20} color={colors.accentPink} />
+              </View>
+              <View style={styles.navRowBody}>
+                <Text style={styles.navRowLabel}>Questions & answers</Text>
+                <Text style={styles.navRowValue} numberOfLines={1}>
+                  {content.faqItems.length > 0
+                    ? `${content.faqItems.length} question${content.faqItems.length === 1 ? '' : 's'}`
+                    : 'Not set'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </Pressable>
 
             <Text style={styles.groupTitle}>Book Now button</Text>
             <Pressable

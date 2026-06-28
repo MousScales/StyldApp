@@ -3,9 +3,12 @@ export type Booking = {
   service: string;
   styleId?: string;
   date: string;
+  time?: string;
   amount: number;
   hairType: string;
-  status: 'completed' | 'upcoming' | 'cancelled';
+  status: 'completed' | 'upcoming' | 'cancelled' | 'pending' | 'in_progress';
+  productCount?: number;
+  bookingStatus?: string;
 };
 
 export type FavoriteOrder = {
@@ -27,6 +30,8 @@ export type Client = {
   notes: string;
   favoriteOrders: FavoriteOrder[];
   pastBookings: Booking[];
+  avgSessionMinutes: number;
+  totalTips: number;
 };
 
 export function getInitials(name: string) {

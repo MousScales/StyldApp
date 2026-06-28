@@ -79,7 +79,7 @@ export default function ScheduleScreen({ navigation }: Props) {
       items.push({
         id: event.id,
         title: event.title,
-        subtitle: event.completed ? 'Completed' : 'Booked',
+        styleId: event.styleId,
         startHour: event.startHour,
         startMinute: event.startMinute,
         endHour: event.endHour,

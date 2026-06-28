@@ -117,8 +117,8 @@
         </svg>
       </div>
 
-      <h1 class="title">Thank you for your booking!</h1>
-      <p class="subtitle">
+      <h1 class="title" id="success-title">Thank you for your booking!</h1>
+      <p class="subtitle" id="success-subtitle">
         Your appointment is confirmed.<br />
         <strong>Check your email shortly</strong> — a full confirmation and receipt
         is on its way with everything you need to know.
@@ -132,9 +132,27 @@
     </div>
 
     <script>
-      // Update home link to point back to the site root cleanly
       (function () {
         try {
+          var params = new URLSearchParams(window.location.search);
+          var pending = params.get("pending_approval") === "1";
+          if (pending) {
+            var title = document.getElementById("success-title");
+            var subtitle = document.getElementById("success-subtitle");
+            if (title) title.textContent = "Request received!";
+            if (subtitle) {
+              subtitle.innerHTML =
+                "Your booking request was sent to the stylist for review.<br />" +
+                "<strong>This is not confirmed yet.</strong> You will get an email once they accept your appointment.";
+            }
+            var circle = document.querySelector(".check-circle");
+            if (circle) {
+              circle.style.background = "rgba(245, 158, 11, 0.12)";
+              circle.style.borderColor = "rgba(245, 158, 11, 0.35)";
+            }
+            var svg = document.querySelector(".check-circle svg");
+            if (svg) svg.style.color = "#f59e0b";
+          }
           var cfg = window.TENANT_BOOKING || {};
           if (cfg.subdomain) {
             var a = document.getElementById("home-link");

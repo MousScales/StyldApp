@@ -6,7 +6,7 @@ import {
   SiteContent,
   SiteSection,
 } from '../data/siteContent';
-import { DEFAULT_SITE_THEME, FontFamily, FONT_FAMILY_OPTIONS, GOOGLE_FONTS_URL, HeroLayout, SiteTextColors, SiteTextColorSources, StyleCardLayout, TemplateId, SiteTheme } from '../data/siteTheme';
+import { DEFAULT_SITE_THEME, FontFamily, FONT_FAMILY_OPTIONS, GOOGLE_FONTS_URL, HeroLayout, PortfolioMediaType, SiteTextColors, SiteTextColorSources, StyleCardLayout, TemplateId, SiteTheme } from '../data/siteTheme';
 import { buildTextColorsCssFromTheme } from './siteTextColors';
 import { focusToBackgroundPosition, HeroImageFocus } from './heroImageFocus';
 
@@ -86,6 +86,27 @@ const SITE_PREVIEW_CSS = `
 @media (max-width:768px){.section{padding:2.4rem 0}.section-head{margin-bottom:1.65rem;text-align:center}.card-grid{display:flex;flex-wrap:nowrap;gap:1rem;overflow-x:auto;scroll-snap-type:x mandatory;padding:0 .25rem .85rem;margin-inline:-.25rem;-webkit-overflow-scrolling:touch}.card-grid>*{flex:0 0 min(18.25rem,calc(100vw - 3rem));scroll-snap-align:start;max-width:min(18.25rem,calc(100vw - 3rem))}.info-cards{display:grid;grid-template-columns:1fr;gap:1rem}.location-map{height:220px}.hero-ctas--scale{flex-direction:column;align-items:stretch;width:100%;max-width:360px;margin-inline:auto}.hero-ctas--scale .hero-btn--lg{width:100%;justify-content:center}}
 .profile-nav{background:var(--nav-bg,var(--pink));border-bottom:none;padding:.875rem 0;position:sticky;top:0;z-index:100}
 .profile-nav__inner{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.profile-nav__links{display:none;align-items:center;justify-content:center;flex:1;min-width:0;margin:0 .35rem}
+.profile-nav__tabs{display:inline-flex;align-items:stretch;max-width:100%;padding:.2rem;border-radius:999px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.1);box-shadow:inset 0 1px 2px rgba(0,0,0,.06);overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.profile-nav__tabs::-webkit-scrollbar{display:none}
+.profile-nav__link,.profile-nav__drawer-link{display:inline-flex;align-items:center;padding:.45rem .95rem;border-radius:999px;font-family:var(--font-body);font-size:.875rem;font-weight:600;color:rgba(255,255,255,.88);text-decoration:none;background:transparent;border:none;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.profile-nav__link[hidden],.profile-nav__drawer-link[hidden]{display:none!important}
+.profile-nav__link:hover{background:rgba(255,255,255,.1)}
+.profile-nav__link.is-active{background:var(--text-nav-button-bg,var(--ink));color:var(--text-nav-button,var(--pink));box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.profile-nav__actions{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
+.profile-nav__menu-btn{display:inline-flex;align-items:center;justify-content:center;width:2.35rem;height:2.35rem;padding:0;border:1px solid rgba(255,255,255,.22);border-radius:10px;background:rgba(255,255,255,.08);color:var(--nav-text,#fff);cursor:pointer}
+.profile-nav__menu-icon{display:block;width:1.05rem;height:2px;background:currentColor;position:relative;border-radius:1px}
+.profile-nav__menu-icon::before,.profile-nav__menu-icon::after{content:'';position:absolute;left:0;width:100%;height:2px;background:currentColor;border-radius:1px}
+.profile-nav__menu-icon::before{top:-6px}
+.profile-nav__menu-icon::after{top:6px}
+.profile-nav__drawer{background:var(--nav-bg-solid,var(--nav-bg,var(--pink)));border-top:1px solid rgba(255,255,255,.12)}
+.profile-nav__drawer-inner{padding:.65rem 0 .85rem}
+.profile-nav__drawer-tabs{display:flex;flex-direction:column;gap:.25rem;padding:.35rem;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
+.profile-nav__drawer-link{width:100%;justify-content:flex-start;border-radius:10px}
+.profile-nav__drawer-link:hover{background:rgba(255,255,255,.1)}
+.profile-nav__drawer-link.is-active{background:rgba(255,255,255,.2);color:var(--nav-text,#fff)}
+@media(min-width:768px){.profile-nav__links:not([hidden]){display:flex}.profile-nav__menu-btn{display:none!important}.profile-nav__drawer{display:none!important}}
+@media(max-width:767px){.profile-brand{min-width:0;flex:1}.profile-brand span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .profile-brand{font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--text-nav,var(--nav-text,#fff));display:flex;align-items:center;gap:.6rem;text-decoration:none}
 .profile-brand__logo{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.2);flex-shrink:0}
 .profile-brand__logo-img{width:38px;height:38px;border-radius:10px;object-fit:cover;flex-shrink:0}
@@ -105,6 +126,35 @@ const SITE_PREVIEW_CSS = `
 .profile-about-head{font-size:1.5rem;font-weight:700;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
 .profile-policy-head{font-size:1.5rem;font-weight:700;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
 .profile-menu-section{padding:2.5rem 0;background:var(--cream,#fff);border-top:1px solid rgba(0,0,0,.06)}
+.profile-portfolio-section{padding:2.5rem 0 1.75rem;background:var(--cream,#fff);border-top:1px solid rgba(0,0,0,.06);overflow:hidden}
+.profile-portfolio-head__row{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem}
+.profile-portfolio-view-more{font-size:.875rem;font-weight:600;color:var(--pink);text-decoration:none;white-space:nowrap}
+.profile-portfolio-carousel{overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:.15rem 0 .35rem}
+.profile-portfolio-carousel::-webkit-scrollbar{display:none}
+.profile-portfolio-carousel__track{display:flex;gap:.75rem;width:max-content;padding:0 1rem}
+.profile-portfolio-carousel__slide{flex:0 0 min(68vw,260px);scroll-snap-align:start}
+.profile-portfolio-item{width:100%;aspect-ratio:3/4;border-radius:14px;overflow:hidden;background:#111;position:relative}
+.profile-portfolio-item-btn{display:block;width:100%;padding:0;margin:0;border:0;cursor:pointer;background:#111}
+.profile-portfolio-item img,.profile-portfolio-item video{width:100%;height:100%;object-fit:cover;display:block}
+.profile-portfolio-item--video{background:#111}
+.profile-portfolio-view-more-slide{display:flex;align-items:center;justify-content:center;aspect-ratio:3/4;border-radius:14px;border:1.5px dashed rgba(255,255,255,.18);text-decoration:none;color:var(--pink)}
+.profile-portfolio-lightbox{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:1rem}
+.profile-portfolio-lightbox[hidden]{display:none!important}
+.profile-portfolio-lightbox__backdrop{position:absolute;inset:0;background:rgba(0,0,0,.94)}
+.profile-portfolio-lightbox__close{position:absolute;top:.85rem;right:.85rem;z-index:2;width:2.5rem;height:2.5rem;border:0;border-radius:999px;background:rgba(255,255,255,.12);color:#fff;font-size:1.6rem;cursor:pointer}
+.profile-portfolio-lightbox__stage{position:relative;z-index:1;width:min(96vw,720px);max-height:92vh;display:grid;place-items:center}
+.profile-portfolio-lightbox__media{max-width:100%;max-height:92vh;object-fit:contain;display:block;border-radius:8px}
+.profile-faq-section{padding:2.5rem 0;background:var(--cream,#fff);border-top:1px solid rgba(0,0,0,.06)}
+.profile-faq-list{display:flex;flex-direction:column}
+.profile-faq-item{display:flex;flex-direction:column;border-bottom:1px solid var(--card-border,rgba(0,0,0,.1))}
+.profile-faq-item:last-child{border-bottom:0}
+.profile-faq-item__question{width:100%;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.15rem 0;border:0;background:transparent;font-family:var(--font-body);font-size:clamp(.95rem,2.2vw,1.05rem);font-weight:700;color:var(--ink);text-align:left;cursor:pointer}
+.profile-faq-item__question-text{flex:1;line-height:1.35;color:var(--text-service-name,var(--ink))}
+.profile-faq-item__toggle{flex-shrink:0;width:1.35rem;height:1.35rem;display:inline-flex;align-items:center;justify-content:center;color:var(--text-accent,var(--pink));font-size:1.45rem;font-weight:300;line-height:1;transition:transform .2s ease,color .15s}
+.profile-faq-item__question:hover .profile-faq-item__question-text,.profile-faq-item__question:hover .profile-faq-item__toggle{color:var(--text-accent,var(--pink))}
+.profile-faq-item__question.is-open .profile-faq-item__toggle{transform:rotate(45deg)}
+.profile-faq-item__answer{padding:0 0 1.15rem;font-size:.92rem;line-height:1.65;color:var(--text-muted,var(--muted));white-space:pre-wrap}
+.profile-faq-item__answer strong{color:var(--text-service-name,var(--ink));font-weight:700}
 .profile-menu-head{margin-bottom:1.25rem}
 .profile-menu-head h2{font-family:var(--font-display);font-size:clamp(1.5rem,3vw,2.1rem);font-weight:700;color:var(--ink);margin:0 0 .3rem;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
 .profile-menu-blurb{color:var(--muted);font-size:.9rem;margin:0}
@@ -184,10 +234,10 @@ html{scroll-behavior:smooth}
 .profile-hero-stack--tall .profile-hero-stack__img{aspect-ratio:4/9;width:min(92vw,400px);max-width:400px}
 .profile-hero--stack .profile-hero__grid{grid-template-columns:1fr;padding-top:1.5rem}
 .profile-hero--stack .profile-photo{display:none}
-.profile-about-head,.profile-policy-head,.profile-menu-head h2,.profile-location-head h2,.profile-reviews-head h2{color:var(--text-heading,var(--ink));border-bottom-color:var(--text-accent,var(--pink))}
+.profile-about-head,.profile-policy-head,.profile-menu-head h2,.profile-location-head h2,.profile-reviews-head h2,.profile-faq-head h2{color:var(--text-heading,var(--ink));border-bottom-color:var(--text-accent,var(--pink))}
 .profile-about-body,.profile-policy-body{color:var(--text-body,var(--muted))}
-.profile-menu-blurb,.profile-service-card__duration,.profile-service-card__expand-btn,.profile-service-card__desc{color:var(--text-muted,var(--muted))}
-.profile-service-card__name{color:var(--text-service-name,var(--ink))}
+.profile-menu-blurb,.profile-service-card__duration,.profile-service-card__expand-btn,.profile-service-card__desc,.profile-faq-item__answer{color:var(--text-muted,var(--muted))}
+.profile-service-card__name,.profile-faq-item__question-text{color:var(--text-service-name,var(--ink))}
 .profile-service-card__price{color:var(--text-price,var(--ink))}
 .profile-menu-filter:hover{border-color:var(--text-accent,var(--pink));color:var(--text-accent,var(--pink))}
 .profile-menu-filter--active{background:var(--text-accent,var(--pink));border-color:var(--text-accent,var(--pink))}
@@ -207,6 +257,10 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function formatFaqAnswer(value: string): string {
+  return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
 export type SitePreviewStyle = {
   id?: string;
   title: string;
@@ -216,6 +270,11 @@ export type SitePreviewStyle = {
   durationLabel?: string;
   imageUrl?: string | null;
   category?: string;
+};
+
+export type SitePreviewPortfolioMedia = {
+  url: string;
+  mediaType: PortfolioMediaType;
 };
 
 export type SitePreviewTheme = {
@@ -242,6 +301,7 @@ export type SitePreviewTheme = {
   heroCoverBlur?: boolean;
   textColors?: SiteTextColors;
   textColorSources?: SiteTextColorSources;
+  portfolioMedia?: SitePreviewPortfolioMedia[];
 };
 
 export const DEFAULT_PREVIEW_THEME: SitePreviewTheme = {
@@ -262,6 +322,7 @@ export function buildSitePreviewTheme(
     heroImageUrl?: string | null;
     logoImageUrl?: string | null;
     heroStackImageUrls?: string[];
+    portfolioMedia?: SitePreviewPortfolioMedia[];
   },
   options?: { zoomedOut?: boolean; embeddedPreview?: boolean },
 ): SitePreviewTheme {
@@ -286,6 +347,7 @@ export function buildSitePreviewTheme(
     heroCoverBlur: theme.heroCoverBlur,
     textColors: theme.textColors,
     textColorSources: theme.textColorSources,
+    portfolioMedia: assets.portfolioMedia ?? [],
     zoomedOut: options?.zoomedOut ?? false,
     embeddedPreview: options?.embeddedPreview ?? false,
   };
@@ -418,7 +480,18 @@ export const STYLD_PREVIEW_INTERACTIONS_SCRIPT = `
       return;
     }
     var btn = e.target && e.target.closest ? e.target.closest('button') : null;
-    if(btn && !btn.getAttribute('onclick')){
+    if(btn){
+      if(btn.id === 'profile-nav-menu-btn'){
+        e.preventDefault();
+        var drawer = document.getElementById('profile-nav-drawer');
+        if(drawer){
+          var opening = drawer.hidden;
+          drawer.hidden = !opening;
+          btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+        }
+        return;
+      }
+      if(!btn.getAttribute('onclick')){
       e.preventDefault();
       e.stopPropagation();
       return false;
@@ -567,6 +640,131 @@ function isSectionHidden(content: SiteContent, section: SiteSection): boolean {
 
 function isLocationPartHidden(content: SiteContent, part: LocationPart): boolean {
   return Array.isArray(content.hiddenLocationParts) && content.hiddenLocationParts.includes(part);
+}
+
+type ProfilePreviewNavOptions = {
+  brandHref?: string;
+  bookHref?: string;
+  bookPreviewAction?: string;
+  activePage?: 'certifications' | 'products' | null;
+  coverSplash?: boolean;
+};
+
+function buildProfilePreviewNavHtml(
+  content: SiteContent,
+  logoHtml: string,
+  options: ProfilePreviewNavOptions = {},
+): string {
+  const {
+    brandHref = '#',
+    bookHref = '#',
+    bookPreviewAction = '',
+    activePage = null,
+    coverSplash = false,
+  } = options;
+
+  if (coverSplash) {
+    return `<nav class="profile-nav profile-nav--cover-splash" id="profile-nav"><div class="container profile-nav__inner">
+<a class="profile-brand" href="#">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
+</div></nav>`;
+  }
+
+  const showCert = !isSectionHidden(content, 'certifications');
+  const showProd = !isSectionHidden(content, 'products');
+  const showNav = showCert || showProd;
+
+  const certLabel = escapeHtml((content.certificationsTitle || 'Certifications').trim() || 'Certifications');
+  const prodLabel = escapeHtml((content.productsTitle || 'Shop').trim() || 'Shop');
+
+  const certLink = `<a class="profile-nav__link${activePage === 'certifications' ? ' is-active' : ''}" href="#" data-nav-page="certifications"${showCert ? '' : ' hidden'}>${certLabel}</a>`;
+  const prodLink = `<a class="profile-nav__link${activePage === 'products' ? ' is-active' : ''}" href="#" data-nav-page="products"${showProd ? '' : ' hidden'}>${prodLabel}</a>`;
+  const certDrawerLink = `<a class="profile-nav__drawer-link${activePage === 'certifications' ? ' is-active' : ''}" href="#" data-nav-page="certifications"${showCert ? '' : ' hidden'}>${certLabel}</a>`;
+  const prodDrawerLink = `<a class="profile-nav__drawer-link${activePage === 'products' ? ' is-active' : ''}" href="#" data-nav-page="products"${showProd ? '' : ' hidden'}>${prodLabel}</a>`;
+
+  const linksHtml = showNav
+    ? `<div class="profile-nav__links" id="profile-nav-links"><div class="profile-nav__tabs" id="profile-nav-tabs">${certLink}${prodLink}</div></div>`
+    : '';
+
+  const menuBtnHtml = showNav
+    ? `<button class="profile-nav__menu-btn" type="button" id="profile-nav-menu-btn" aria-expanded="false" aria-controls="profile-nav-drawer" aria-label="Open menu"><span class="profile-nav__menu-icon" aria-hidden="true"></span></button>`
+    : '';
+
+  const drawerHtml = showNav
+    ? `<div class="profile-nav__drawer" id="profile-nav-drawer" hidden><div class="container profile-nav__drawer-inner"><div class="profile-nav__drawer-tabs">${certDrawerLink}${prodDrawerLink}</div></div></div>`
+    : '';
+
+  const bookActionAttr = bookPreviewAction ? ` data-styld-preview="${bookPreviewAction}"` : '';
+
+  return `<nav class="profile-nav" id="profile-nav"><div class="container profile-nav__inner">
+<a class="profile-brand" href="${brandHref}"${bookPreviewAction === 'open-splash' ? ' data-styld-preview="open-splash"' : ''}>${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
+${linksHtml}
+<div class="profile-nav__actions">${menuBtnHtml}<a class="profile-book-btn" href="${bookHref}"${bookActionAttr}>Book Now</a></div>
+</div>${drawerHtml}</nav>`;
+}
+
+function buildPortfolioSectionHtml(content: SiteContent, theme: SitePreviewTheme): string {
+  if (isSectionHidden(content, 'portfolio')) return '';
+  const items = theme.portfolioMedia ?? [];
+  if (!items.length) return '';
+  const previewItems = items.slice(0, 5);
+  const slides = previewItems
+    .map((item) => {
+      const safeUrl = escapeHtml(item.url);
+      const inner =
+        item.mediaType === 'video'
+          ? `<button type="button" class="profile-portfolio-item profile-portfolio-item--video profile-portfolio-item-btn"><video src="${safeUrl}" autoplay muted playsinline loop preload="metadata"></video></button>`
+          : `<button type="button" class="profile-portfolio-item profile-portfolio-item-btn"><img src="${safeUrl}" alt="" loading="lazy"/></button>`;
+      return `<div class="profile-portfolio-carousel__slide">${inner}</div>`;
+    })
+    .join('');
+  const viewMoreSlide =
+    items.length > 5
+      ? '<a class="profile-portfolio-carousel__slide profile-portfolio-view-more-slide" href="#"><span class="profile-portfolio-view-more-slide__label">View more</span></a>'
+      : '';
+  const blurb = content.reelsBlurb
+    ? `<p class="profile-menu-blurb">${escapeHtml(content.reelsBlurb)}</p>`
+    : '';
+  const headerViewMore =
+    items.length > 5
+      ? '<a class="profile-portfolio-view-more" href="#">View more</a>'
+      : '';
+  return `<section class="profile-portfolio-section" data-site-section="portfolio"><div class="container"><div class="profile-menu-head profile-portfolio-head"><div class="profile-portfolio-head__row"><div class="profile-portfolio-head__copy"><h2>${escapeHtml(content.reelsTitle || 'Our work')}</h2>${blurb}</div>${headerViewMore}</div></div></div><div class="profile-portfolio-carousel-wrap"><div class="profile-portfolio-carousel" aria-label="Our work preview"><div class="profile-portfolio-carousel__track">${slides}${viewMoreSlide}</div></div></div></section>`;
+}
+
+function buildFaqSectionHtml(content: SiteContent): string {
+  if (isSectionHidden(content, 'faq')) return '';
+  const items = (content.faqItems ?? []).filter(
+    (item) => item.question?.trim() && item.answer?.trim(),
+  );
+  if (!items.length) return '';
+
+  const blurb = content.faqBlurb?.trim()
+    ? `<p class="profile-menu-blurb">${escapeHtml(content.faqBlurb)}</p>`
+    : '';
+
+  const listHtml = items
+    .map(
+      (item, index) =>
+        `<div class="profile-faq-item"><button class="profile-faq-item__question" type="button" aria-expanded="false" aria-controls="preview-faq-answer-${index}" onclick="(function(btn){var answer=btn.nextElementSibling;if(!answer)return;var open=answer.hidden;answer.hidden=!open;btn.classList.toggle('is-open',open);btn.setAttribute('aria-expanded',open?'true':'false');})(this)"><span class="profile-faq-item__question-text">${escapeHtml(item.question)}</span><span class="profile-faq-item__toggle" aria-hidden="true">+</span></button><div class="profile-faq-item__answer" id="preview-faq-answer-${index}" hidden>${formatFaqAnswer(item.answer)}</div></div>`,
+    )
+    .join('');
+
+  return `<section class="profile-faq-section" data-site-section="faq"><div class="container"><div class="profile-menu-head profile-faq-head"><h2>${escapeHtml(content.faqTitle || 'FAQ')}</h2>${blurb}</div><div class="profile-faq-list">${listHtml}</div></div></section>`;
+}
+
+function orderMainSections(
+  content: SiteContent,
+  theme: SitePreviewTheme,
+  menuSection: string,
+  visitSection: string,
+): string {
+  const portfolioSection = buildPortfolioSectionHtml(content, theme);
+  const faqSection = buildFaqSectionHtml(content);
+  const placement = content.portfolioPlacement === 'below_menu' ? 'below_menu' : 'above_menu';
+  if (placement === 'below_menu') {
+    return `${menuSection}${portfolioSection}${faqSection}${visitSection}`;
+  }
+  return `${portfolioSection}${menuSection}${faqSection}${visitSection}`;
 }
 
 function buildProfileServiceCardHtml(style: SitePreviewStyle, outlined = false): string {
@@ -741,21 +939,21 @@ ${policyBlockHtml}
 
   const bookPageMainHtml =
     isCover
-      ? `<main>${menuSection}${visitSection}</main>${footerHtml}`
+      ? `<main>${orderMainSections(content, theme, menuSection, visitSection)}</main>${footerHtml}`
       : '';
 
   const belowHeroHtml = isCover
     ? ''
     : `<main>
-${menuSection}
-${visitSection}
+${orderMainSections(content, theme, menuSection, visitSection)}
 </main>
 ${footerHtml}`;
 
-  const bookPageNavHtml = `<nav class="profile-nav" id="profile-nav"><div class="container profile-nav__inner">
-<a class="profile-brand" href="#" data-styld-preview="open-splash">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
-<a class="profile-book-btn" href="#">Book Now</a>
-</div></nav>`;
+  const bookPageNavHtml = buildProfilePreviewNavHtml(content, logoHtml, {
+    brandHref: '#',
+    bookHref: '#',
+    bookPreviewAction: 'open-splash',
+  });
 
   const coverBookPageHtml = isCover
     ? `<div id="preview-cover-book" class="preview-cover-book" hidden>
@@ -775,13 +973,8 @@ ${bookPageMainHtml}
     : '<div class="preview-banner">Styld preview — this is how your booking site will look</div>';
 
   const navHtml = isCover
-    ? `<nav class="profile-nav profile-nav--cover-splash" id="profile-nav"><div class="container profile-nav__inner">
-<a class="profile-brand" href="#">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
-</div></nav>`
-    : `<nav class="profile-nav" id="profile-nav"><div class="container profile-nav__inner">
-<a class="profile-brand" href="#">${logoHtml}<span>${escapeHtml(content.brandName)}</span></a>
-<a class="profile-book-btn" href="${navBookHref}">Book Now</a>
-</div></nav>`;
+    ? buildProfilePreviewNavHtml(content, logoHtml, { coverSplash: true })
+    : buildProfilePreviewNavHtml(content, logoHtml, { bookHref: navBookHref });
 
   return `<!DOCTYPE html>
 <html lang="en">

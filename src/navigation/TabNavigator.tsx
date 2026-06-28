@@ -13,6 +13,10 @@ import ClientNavigator from './ClientNavigator';
 import DashboardNavigator, { DashboardStackParamList } from './DashboardNavigator';
 import ProfileNavigator, { ProfileStackParamList } from './ProfileNavigator';
 import SiteNavigator from './SiteNavigator';
+import TabletSceneWrapper from '../components/layout/TabletSceneWrapper';
+import TabletSidebar from '../components/layout/TabletSidebar';
+import { useDeviceLayout } from '../hooks/useDeviceLayout';
+import { shouldHideTabBar } from './tabBarVisibility';
 import { colors } from '../theme';
 
 export type TabParamList = {
@@ -24,27 +28,6 @@ export type TabParamList = {
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
-
-/** Root screen per tab — tab bar stays visible only on these. */
-const TAB_HOME_SCREENS: Record<keyof TabParamList, string> = {
-  Dashboard: 'DashboardHome',
-  Calendar: 'CalendarHome',
-  Site: 'SiteHome',
-  Client: 'ClientList',
-  Profile: 'ProfileHome',
-};
-
-function shouldHideTabBar(state: BottomTabBarProps['state']): boolean {
-  const currentRoute = state.routes[state.index ?? 0];
-  const homeScreen = TAB_HOME_SCREENS[currentRoute.name as keyof TabParamList];
-  if (!homeScreen) return false;
-
-  const nestedState = currentRoute.state;
-  if (!nestedState?.routes.length) return false;
-
-  const nestedRoute = nestedState.routes[nestedState.index ?? nestedState.routes.length - 1];
-  return nestedRoute?.name !== homeScreen;
-}
 
 const TAB_CONFIG: Record<
   keyof TabParamList,
@@ -182,9 +165,14 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function TabNavigator() {
+  const { isTablet } = useDeviceLayout('wide');
+
   return (
     <Tab.Navigator
-      tabBar={(props) => <FloatingTabBar {...props} />}
+      tabBar={(props) => (isTablet ? <TabletSidebar {...props} /> : <FloatingTabBar {...props} />)}
+      screenLayout={({ children }) => (
+        <TabletSceneWrapper wide={isTablet}>{children}</TabletSceneWrapper>
+      )}
       screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Dashboard" component={DashboardNavigator} />

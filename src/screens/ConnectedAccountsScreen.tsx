@@ -6,6 +6,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -25,6 +26,8 @@ import {
   syncStripeConnect,
   type StripeConnectSummary,
 } from '../lib/stripeConnect';
+import ConnectedAccountsTapToPayPrompt from '../components/tapToPay/ConnectedAccountsTapToPayPrompt';
+import { TAP_TO_PAY_NATIVE_ENABLED } from '../lib/tapToPayConfig';
 import { ProfileStackParamList } from '../navigation/ProfileNavigator';
 import { colors } from '../theme';
 
@@ -319,6 +322,9 @@ export default function ConnectedAccountsScreen({ navigation }: Props) {
           ) : null}
         </SafeAreaView>
       </Modal>
+      {Platform.OS === 'ios' && TAP_TO_PAY_NATIVE_ENABLED ? (
+        <ConnectedAccountsTapToPayPrompt stripeReady={isReady} navigation={navigation} />
+      ) : null}
     </>
   );
 }

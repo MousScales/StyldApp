@@ -93,6 +93,8 @@
         depositIncludedInPrice: true,
         requireCurrentHairPhoto: true,
         requireReferencePhoto: false,
+        onlinePaymentsEnabled: false,
+        requireBookingApproval: false,
       };
       if (!raw || typeof raw !== 'object') return defaults;
       var mode = raw.mode === 'full' || raw.mode === 'deposit' || raw.mode === 'in_person' ? raw.mode : defaults.mode;
@@ -119,6 +121,10 @@
         typeof raw.depositIncludedInPrice === 'boolean'
           ? raw.depositIncludedInPrice
           : defaults.depositIncludedInPrice;
+      var onlinePaymentsEnabled =
+        raw.onlinePaymentsEnabled === true ||
+        (raw.onlinePaymentsEnabled == null && (mode === 'deposit' || mode === 'full'));
+      var requireBookingApproval = raw.requireBookingApproval === true;
       return {
         mode: mode,
         depositKind: depositKind,
@@ -126,6 +132,8 @@
         depositIncludedInPrice: depositIncludedInPrice,
         requireCurrentHairPhoto: requireCurrentHairPhoto,
         requireReferencePhoto: requireReferencePhoto,
+        onlinePaymentsEnabled: onlinePaymentsEnabled,
+        requireBookingApproval: requireBookingApproval,
       };
     }
 
@@ -142,6 +150,8 @@
     window.__SALON_SITE_BOOKING = Object.assign({}, window.__SALON_SITE_BOOKING || {}, {
       payment: normalizeBookingPayment(site.bookingPayment),
       cancellationPolicy: cancellationPolicy,
+      products: Array.isArray(site.productsCatalog) ? site.productsCatalog : [],
+      productsSettings: site.productsSettings || null,
       salonTimeZone: site.content.timezone || 'America/New_York',
       salonPhoneDisplay: site.content.phoneDisplay || '',
       salonPhoneTel: site.content.phoneTel || '',
@@ -182,7 +192,7 @@
         availScript.src = '/js/booking-availability.js?v=3';
         availScript.onload = function () {
           var script = document.createElement('script');
-          script.src = '/js/booking.js?v=58';
+          script.src = '/js/booking.js?v=60';
           script.defer = true;
           document.body.appendChild(script);
         };

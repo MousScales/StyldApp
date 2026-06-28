@@ -59,25 +59,37 @@ export function buildPushForSiteRecord(record: SiteRecordRow): PushPayload | nul
     const paymentStatus = asString(data.payment_status).toLowerCase();
     const deposit = asNumber(data.deposit_amount);
     const bookingStatus = asString(data.booking_status).toLowerCase();
-
-    if (paymentStatus === 'deposit_paid' || paymentStatus === 'paid') {
-      const amount = deposit > 0 ? deposit : asNumber(data.estimated_total);
-      return {
-        title: 'Payment received',
-        body: `You received $${amount.toFixed(2)} from ${name} for ${service}.`,
-        data: {
-          type: 'payment_received',
-          recordId: record.id,
-          screen: 'AppointmentDetail',
-        },
-      };
-    }
+    const balanceCollected = asNumber(data.balance_collected_cents);
 
     if (bookingStatus === 'cancelled' || bookingStatus === 'canceled') {
       return {
         title: 'Booking cancelled',
         body: `${name} cancelled ${service}.`,
         data: { type: 'booking_cancelled', recordId: record.id, screen: 'Dashboard' },
+      };
+    }
+
+    if (bookingStatus === 'pending_approval') {
+      return {
+        title: 'New booking request',
+        body: `${name} requested ${service} for ${when}. Open the app to accept or decline.`,
+        data: {
+          type: 'booking_request',
+          recordId: record.id,
+          screen: 'AppointmentDetail',
+        },
+      };
+    }
+
+    if (balanceCollected <= 0 && (paymentStatus === 'deposit_paid' || paymentStatus === 'paid') && deposit > 0) {
+      return {
+        title: 'Deposit received',
+        body: `${name} paid a $${deposit.toFixed(2)} deposit for ${service}.`,
+        data: {
+          type: 'deposit_received',
+          recordId: record.id,
+          screen: 'AppointmentDetail',
+        },
       };
     }
 
@@ -107,6 +119,57 @@ export function buildPushForSiteRecord(record: SiteRecordRow): PushPayload | nul
       title: 'New site inquiry',
       body: `${name} sent a message from your website.`,
       data: { type: 'new_inquiry', recordId: record.id, screen: 'Dashboard' },
+    };
+  }
+
+  return null;
+}
+
+export function buildPushForBookingUpdate(
+  oldData: Record<string, unknown>,
+  newData: Record<string, unknown>,
+  recordId: string,
+): PushPayload | null {
+  const oldStatus = asString(oldData.booking_status).toLowerCase();
+  const newStatus = asString(newData.booking_status).toLowerCase();
+  const name = asString(newData.full_name, 'A client');
+  const service = asString(newData.style_name) || asString(newData.style_id, 'an appointment');
+  const tip = asNumber(newData.tip_amount);
+  const oldBalance = asNumber(oldData.balance_collected_cents);
+  const newBalance = asNumber(newData.balance_collected_cents);
+
+  if (oldStatus !== 'in_progress' && newStatus === 'in_progress') {
+    return {
+      title: 'Session started',
+      body: `${service} with ${name} is in progress.`,
+      data: { type: 'session_started', recordId, screen: 'AppointmentSession' },
+    };
+  }
+
+  if (newBalance > 0 && newBalance !== oldBalance) {
+    const amount = newBalance / 100;
+    const tipText = tip > 0 ? ` (+ $${tip.toFixed(2)} tip)` : '';
+    return {
+      title: 'Payment collected',
+      body: `$${amount.toFixed(2)} collected from ${name}${tipText}.`,
+      data: { type: 'payment_collected', recordId, screen: 'AppointmentDetail' },
+    };
+  }
+
+  if (oldStatus !== 'completed' && newStatus === 'completed') {
+    const tipText = tip > 0 ? ` · $${tip.toFixed(2)} tip` : '';
+    return {
+      title: 'Appointment complete',
+      body: `${service} with ${name} is finished${tipText}.`,
+      data: { type: 'appointment_completed', recordId, screen: 'AppointmentDetail' },
+    };
+  }
+
+  if (oldStatus === 'pending_approval' && newStatus === 'confirmed') {
+    return {
+      title: 'Booking accepted',
+      body: `${name}'s request for ${service} was confirmed.`,
+      data: { type: 'booking_accepted', recordId, screen: 'AppointmentDetail' },
     };
   }
 

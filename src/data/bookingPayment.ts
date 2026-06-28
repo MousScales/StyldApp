@@ -17,6 +17,13 @@ export type BookingPaymentSettings = {
   requireCurrentHairPhoto: boolean;
   /** Whether clients must upload a reference image */
   requireReferencePhoto: boolean;
+  /**
+   * True only after the stylist explicitly saves deposit/full payment in Form & Payments.
+   * Styld Pay setup alone never flips this — live bookings stay pay-in-person until then.
+   */
+  onlinePaymentsEnabled: boolean;
+  /** When true, new site bookings stay pending until you accept them in the app. */
+  requireBookingApproval: boolean;
 };
 
 export const DEFAULT_BOOKING_PAYMENT: BookingPaymentSettings = {
@@ -26,21 +33,36 @@ export const DEFAULT_BOOKING_PAYMENT: BookingPaymentSettings = {
   depositIncludedInPrice: true,
   requireCurrentHairPhoto: true,
   requireReferencePhoto: false,
+  onlinePaymentsEnabled: false,
+  requireBookingApproval: false,
 };
 
 export function onlinePaymentsRequired(mode: BookingPaymentMode): boolean {
   return mode === 'deposit' || mode === 'full';
 }
 
-/** When Styld Pay is not connected, online modes fall back to pay in person. */
+/** Live + editor display: online modes only when stylist opted in and Styld Pay is ready. */
 export function effectiveBookingPayment(
   payment: BookingPaymentSettings,
   onlinePaymentsReady: boolean,
 ): BookingPaymentSettings {
-  if (onlinePaymentsReady || !onlinePaymentsRequired(payment.mode)) {
+  if (!payment.onlinePaymentsEnabled || !onlinePaymentsRequired(payment.mode)) {
+    return payment.mode === 'in_person' ? payment : { ...payment, mode: 'in_person' };
+  }
+  if (onlinePaymentsReady) {
     return payment;
   }
   return { ...payment, mode: 'in_person' };
+}
+
+/** Persisted shape when saving from Form & Payments. */
+export function bookingPaymentToSave(payment: BookingPaymentSettings): BookingPaymentSettings {
+  const onlinePaymentsEnabled = onlinePaymentsRequired(payment.mode);
+  return {
+    ...payment,
+    onlinePaymentsEnabled,
+    mode: onlinePaymentsEnabled ? payment.mode : 'in_person',
+  };
 }
 
 export function computeDepositAmount(total: number, payment: BookingPaymentSettings): number {
@@ -109,6 +131,12 @@ export function normalizeBookingPayment(value: unknown): BookingPaymentSettings 
       ? source.depositIncludedInPrice
       : DEFAULT_BOOKING_PAYMENT.depositIncludedInPrice;
 
+  const onlinePaymentsEnabled =
+    source.onlinePaymentsEnabled === true ||
+    (source.onlinePaymentsEnabled == null && onlinePaymentsRequired(mode));
+
+  const requireBookingApproval = source.requireBookingApproval === true;
+
   return {
     mode,
     depositKind,
@@ -116,5 +144,7 @@ export function normalizeBookingPayment(value: unknown): BookingPaymentSettings 
     depositIncludedInPrice,
     requireCurrentHairPhoto,
     requireReferencePhoto,
+    onlinePaymentsEnabled,
+    requireBookingApproval,
   };
 }

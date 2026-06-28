@@ -38,6 +38,16 @@ verify_jwt = false
 [functions.booking-client-email]
 verify_jwt = false
 
+[functions.validate-booking-promo]
+verify_jwt = false
+
+[functions.submit-product-order]
+verify_jwt = false
+
+# Stylist app — requires logged-in JWT (default); signs private booking-photos URLs.
+[functions.booking-photos-signed]
+verify_jwt = true
+
 [functions.styld-push-notify]
 verify_jwt = false
 

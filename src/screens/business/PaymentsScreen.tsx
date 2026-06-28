@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,8 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import BusinessScreenLayout from '../../components/business/BusinessScreenLayout';
+import BookingPromoCodesSection from '../../components/business/BookingPromoCodesSection';
+import ScreenGradient from '../../components/ScreenGradient';
 import { useServiceCatalog } from '../../context/ServiceCatalogContext';
 import { useSiteData } from '../../context/SiteDataContext';
 import {
@@ -38,11 +40,15 @@ import {
   computeBalanceDue,
   computeDepositAmount,
   effectiveBookingPayment,
+  bookingPaymentToSave,
 } from '../../data/bookingPayment';
+import { BookingPromoCode } from '../../data/bookingPromoCodes';
 import {
   loadBookingPayment,
+  loadBookingPromoCodes,
   loadCancellationPolicy,
   saveBookingPayment,
+  saveBookingPromoCodes,
   saveCancellationPolicy,
 } from '../../lib/siteServices';
 import {
@@ -56,6 +62,7 @@ import {
 } from '../../lib/stripeConnect';
 import { ProfileStackParamList } from '../../navigation/ProfileNavigator';
 import { colors, fonts } from '../../theme';
+import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { resolveBankDomain } from '../../lib/institutionDomains';
 
 const LOGOKIT_TOKEN = process.env.EXPO_PUBLIC_LOGOKIT_TOKEN ?? '';
@@ -81,62 +88,58 @@ function formatMoney(amount: number) {
   return `$${amount.toFixed(2)}`;
 }
 
-// ─── Tab pill bar ─────────────────────────────────────────────────────────────
+// ─── Tab bars ─────────────────────────────────────────────────────────────────
 
-const TABS: { id: PaymentsTab; label: string; icon: string }[] = [
-  { id: 'booking', label: 'Form', icon: 'document-text-outline' },
-  { id: 'payouts', label: 'Payouts', icon: 'wallet-outline' },
+const TABS: { id: PaymentsTab; label: string }[] = [
+  { id: 'booking', label: 'Form' },
+  { id: 'payouts', label: 'Payouts' },
 ];
 
 function TabBar({ active, onChange }: { active: PaymentsTab; onChange: (t: PaymentsTab) => void }) {
+  const tabStyles = useResponsiveStyles(BASE_TAB_STYLES);
+
   return (
     <View style={tabStyles.wrap}>
-      {TABS.map((tab) => (
-        <Pressable
-          key={tab.id}
-          style={[tabStyles.pill, active === tab.id && tabStyles.pillActive]}
-          onPress={() => onChange(tab.id)}
-        >
-          <Ionicons
-            name={tab.icon as any}
-            size={14}
-            color={active === tab.id ? '#fff' : colors.textMuted}
-          />
-          <Text style={[tabStyles.pillText, active === tab.id && tabStyles.pillTextActive]}>
-            {tab.label}
-          </Text>
-        </Pressable>
-      ))}
+      {TABS.map((tab) => {
+        const isActive = active === tab.id;
+        return (
+          <Pressable
+            key={tab.id}
+            style={[tabStyles.item, isActive && tabStyles.itemActive]}
+            onPress={() => onChange(tab.id)}
+          >
+            <Text style={[tabStyles.itemText, isActive && tabStyles.itemTextActive]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
-const tabStyles = StyleSheet.create({
+const BASE_TAB_STYLES = {
   wrap: {
     flexDirection: 'row',
     gap: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    paddingTop: 4,
     paddingBottom: 12,
   },
-  pill: {
+  item: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 9,
-    borderRadius: 12,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  pillActive: {
-    backgroundColor: colors.accentPink,
-    borderColor: colors.accentPink,
+  itemActive: {
+    borderBottomColor: colors.accentPink,
   },
-  pillText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
-  pillTextActive: { color: '#fff' },
-});
+  itemText: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
+  itemTextActive: { color: colors.text },
+};
 
 // ─── Booking payments tab ─────────────────────────────────────────────────────
 
@@ -148,7 +151,16 @@ const PAYMENT_MODES: { id: BookingPaymentMode; label: string; subtitle: string; 
 
 const DEPOSIT_PRESETS_PERCENT = [10, 20, 25, 50];
 
-type FormSectionId = 'payments' | 'form' | 'policy' | 'preview';
+type BookingSubTab = 'payments' | 'form' | 'requests' | 'promos' | 'policy' | 'preview';
+
+const BOOKING_SUB_TABS: { id: BookingSubTab; label: string }[] = [
+  { id: 'payments', label: 'Payments' },
+  { id: 'form', label: 'Form' },
+  { id: 'requests', label: 'Requests' },
+  { id: 'promos', label: 'Promos' },
+  { id: 'policy', label: 'Cancellation' },
+  { id: 'preview', label: 'Preview' },
+];
 
 function paymentModeLabel(mode: BookingPaymentMode) {
   return PAYMENT_MODES.find((item) => item.id === mode)?.label ?? 'Payment';
@@ -168,83 +180,98 @@ function policyPresetLabel(policy: CancellationPolicySettings) {
   return CANCELLATION_POLICY_PRESETS.find((item) => item.id === policy.preset)?.label ?? 'Policy';
 }
 
-function FormOverviewNav({
+function FormOverviewStrip({
   payment,
   cancellationPolicy,
   previewDueNow,
-  onJump,
 }: {
   payment: BookingPaymentSettings;
   cancellationPolicy: CancellationPolicySettings;
   previewDueNow: number;
-  onJump: (id: FormSectionId) => void;
 }) {
-  const items: { id: FormSectionId; icon: string; label: string; value: string }[] = [
-    { id: 'payments', icon: 'card-outline', label: 'Payments', value: paymentModeLabel(payment.mode) },
-    { id: 'form', icon: 'images-outline', label: 'Form fields', value: formFieldsSummary(payment) },
-    { id: 'policy', icon: 'shield-checkmark-outline', label: 'Cancellation', value: policyPresetLabel(cancellationPolicy) },
+  const bStyles = useResponsiveStyles(BASE_B_STYLES);
+
+  const rows = [
+    { label: 'Payment', value: paymentModeLabel(payment.mode) },
+    { label: 'Form', value: formFieldsSummary(payment) },
     {
-      id: 'preview',
-      icon: 'eye-outline',
-      label: 'Preview',
-      value: payment.mode === 'in_person' ? 'Free to book' : `${formatMoney(previewDueNow)} due now`,
+      label: 'Requests',
+      value: payment.requireBookingApproval ? 'Manual approval' : 'Auto-confirm',
+    },
+    { label: 'Cancellation', value: policyPresetLabel(cancellationPolicy) },
+    {
+      label: 'Due at booking',
+      value: payment.mode === 'in_person' ? 'Free' : formatMoney(previewDueNow),
     },
   ];
 
   return (
-    <View style={bStyles.overviewGrid}>
-      {items.map((item) => (
-        <Pressable
-          key={item.id}
-          style={({ pressed }) => [bStyles.overviewCard, pressed && bStyles.overviewCardPressed]}
-          onPress={() => onJump(item.id)}
+    <View style={bStyles.overviewStrip}>
+      {rows.map((row, index) => (
+        <View
+          key={row.label}
+          style={[bStyles.overviewRow, index < rows.length - 1 && bStyles.overviewRowBorder]}
         >
-          <View style={bStyles.overviewIconWrap}>
-            <Ionicons name={item.icon as any} size={16} color={colors.accentPink} />
-          </View>
-          <Text style={bStyles.overviewLabel}>{item.label}</Text>
-          <Text style={bStyles.overviewValue} numberOfLines={2}>{item.value}</Text>
-        </Pressable>
+          <Text style={bStyles.overviewRowLabel}>{row.label}</Text>
+          <Text style={bStyles.overviewRowValue} numberOfLines={2}>
+            {row.value}
+          </Text>
+        </View>
       ))}
     </View>
   );
 }
 
-function FormGroup({
-  id,
-  icon,
-  title,
-  description,
-  onSectionLayout,
-  children,
+function BookingSubTabBar({
+  active,
+  onChange,
 }: {
-  id: FormSectionId;
-  icon: string;
-  title: string;
-  description: string;
-  onSectionLayout: (id: FormSectionId, y: number) => void;
-  children: ReactNode;
+  active: BookingSubTab;
+  onChange: (tab: BookingSubTab) => void;
 }) {
+  const bStyles = useResponsiveStyles(BASE_B_STYLES);
+
   return (
-    <View
-      style={bStyles.groupCard}
-      onLayout={(e) => onSectionLayout(id, e.nativeEvent.layout.y)}
-    >
-      <View style={bStyles.groupHeader}>
-        <View style={bStyles.groupIconWrap}>
-          <Ionicons name={icon as any} size={18} color={colors.accentPink} />
-        </View>
-        <View style={bStyles.groupHeaderText}>
-          <Text style={bStyles.groupTitle}>{title}</Text>
-          <Text style={bStyles.groupDesc}>{description}</Text>
-        </View>
-      </View>
+    <View style={bStyles.subTabBarWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={bStyles.subTabBar}
+      >
+        {BOOKING_SUB_TABS.map((tab) => {
+          const isActive = active === tab.id;
+          return (
+            <Pressable
+              key={tab.id}
+              style={[bStyles.subTabItem, isActive && bStyles.subTabItemActive]}
+              onPress={() => onChange(tab.id)}
+            >
+              <Text style={[bStyles.subTabText, isActive && bStyles.subTabTextActive]}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+function FormSection({ title, lead, children }: { title: string; lead?: string; children: ReactNode }) {
+  const bStyles = useResponsiveStyles(BASE_B_STYLES);
+
+  return (
+    <View style={bStyles.section}>
+      <Text style={bStyles.sectionTitle}>{title}</Text>
+      {lead ? <Text style={bStyles.sectionLead}>{lead}</Text> : null}
       {children}
     </View>
   );
 }
 
 function SubsectionTitle({ title, lead }: { title: string; lead?: string }) {
+  const bStyles = useResponsiveStyles(BASE_B_STYLES);
+
   return (
     <View style={bStyles.subsectionHead}>
       <Text style={bStyles.subsectionTitle}>{title}</Text>
@@ -273,48 +300,67 @@ function computePreview(payment: BookingPaymentSettings, total: number) {
 }
 
 function BookingTab({ onGoToPayouts }: { onGoToPayouts: () => void }) {
+  const bStyles = useResponsiveStyles(BASE_B_STYLES);
   const { linkedSite, hasLinkedSite } = useSiteData();
   const { catalogServices, getPrice, getStyleMeta } = useServiceCatalog();
+  const [subTab, setSubTab] = useState<BookingSubTab>('payments');
   const [payment, setPayment] = useState<BookingPaymentSettings>(DEFAULT_BOOKING_PAYMENT);
+  const [promoCodes, setPromoCodes] = useState<BookingPromoCode[]>([]);
   const [cancellationPolicy, setCancellationPolicy] = useState<CancellationPolicySettings>(
     DEFAULT_CANCELLATION_POLICY,
   );
-  const [isLoading, setIsLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
   const [stripeReady, setStripeReady] = useState(false);
 
-  const refresh = useCallback(async () => {
-    if (!linkedSite) return;
-    setIsLoading(true); setError(null);
+  const linkedSiteUserId = linkedSite?.user_id ?? null;
+  const linkedSiteRef = useRef(linkedSite);
+  linkedSiteRef.current = linkedSite;
+
+  const loadSettings = useCallback(async () => {
+    const site = linkedSiteRef.current;
+    if (!site) return;
+    setError(null);
     try {
-      const [pd, policyData, ss] = await Promise.all([
-        loadBookingPayment(linkedSite),
-        loadCancellationPolicy(linkedSite),
+      const [pd, promoData, policyData, ss] = await Promise.all([
+        loadBookingPayment(site),
+        loadBookingPromoCodes(site),
+        loadCancellationPolicy(site),
         fetchStripeConnectStatus().catch(() => null),
       ]);
       const stripeReadyNow = ss?.status === 'ready' || ss?.status === 'pending_review';
       setStripeReady(stripeReadyNow);
-      setPayment(effectiveBookingPayment(pd, stripeReadyNow));
+      setPayment({ ...pd, ...effectiveBookingPayment(pd, stripeReadyNow) });
+      setPromoCodes(promoData);
       setCancellationPolicy(policyData);
-      setIsDirty(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load settings.');
     } finally {
-      setIsLoading(false);
+      setInitialLoading(false);
     }
-  }, [linkedSite]);
+  }, [linkedSiteUserId]);
 
-  useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+  useEffect(() => {
+    if (!linkedSiteUserId) {
+      setInitialLoading(false);
+      return;
+    }
+    setInitialLoading(true);
+    void loadSettings();
+  }, [linkedSiteUserId, loadSettings]);
 
-  const updatePayment = (next: BookingPaymentSettings) => { setPayment(next); setSaved(false); setIsDirty(true); };
+  const updatePayment = (next: BookingPaymentSettings) => { setPayment(next); setSaved(false); };
+
+  const updatePromoCodes = (next: typeof promoCodes) => {
+    setPromoCodes(next);
+    setSaved(false);
+  };
 
   const updateCancellationPolicy = (next: CancellationPolicySettings) => {
     setCancellationPolicy(next);
     setSaved(false);
-    setIsDirty(true);
   };
 
   const handlePresetPress = (presetId: CancellationPolicyPreset) => {
@@ -369,10 +415,11 @@ function BookingTab({ onGoToPayouts }: { onGoToPayouts: () => void }) {
     setSaving(true);
     try {
       await Promise.all([
-        saveBookingPayment(linkedSite, payment),
+        saveBookingPayment(linkedSite, bookingPaymentToSave(payment)),
+        saveBookingPromoCodes(linkedSite, promoCodes),
         saveCancellationPolicy(linkedSite, cancellationPolicy),
       ]);
-      setSaved(true); setIsDirty(false);
+      setSaved(true);
       setTimeout(() => setSaved(false), 2500);
       return true;
     } catch (err) {
@@ -398,19 +445,6 @@ function BookingTab({ onGoToPayouts }: { onGoToPayouts: () => void }) {
     [payment, previewService.price],
   );
 
-  const scrollRef = useRef<ScrollView>(null);
-  const sectionOffsets = useRef<Partial<Record<FormSectionId, number>>>({});
-
-  const handleSectionLayout = useCallback((id: FormSectionId, y: number) => {
-    sectionOffsets.current[id] = y;
-  }, []);
-
-  const jumpToSection = useCallback((id: FormSectionId) => {
-    const y = sectionOffsets.current[id];
-    if (y == null) return;
-    scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
-  }, []);
-
   if (!hasLinkedSite) {
     return (
       <View style={bStyles.emptyWrap}>
@@ -419,384 +453,413 @@ function BookingTab({ onGoToPayouts }: { onGoToPayouts: () => void }) {
     );
   }
 
-  if (isLoading) return <ActivityIndicator color={colors.accentPink} style={{ marginTop: 40 }} />;
-  if (error) return <Text style={bStyles.errorText}>{error}</Text>;
+  if (error && !initialLoading) {
+    return <Text style={bStyles.errorText}>{error}</Text>;
+  }
 
   return (
-    <ScrollView
-      ref={scrollRef}
-      contentContainerStyle={bStyles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={bStyles.screenIntro}>
-        Tap a section below to jump there, or scroll through payments, form fields, policies, and preview.
-      </Text>
-
-      <FormOverviewNav
+    <View style={bStyles.tabRoot}>
+      <FormOverviewStrip
         payment={payment}
         cancellationPolicy={cancellationPolicy}
         previewDueNow={preview.dueNow}
-        onJump={jumpToSection}
       />
+      <BookingSubTabBar active={subTab} onChange={setSubTab} />
 
-      <FormGroup
-        id="payments"
-        icon="card-outline"
-        title="Payments"
-        description="When clients pay and how much is due online"
-        onSectionLayout={handleSectionLayout}
-      >
-        <SubsectionTitle title="Payment method" lead="Choose when clients pay — you can change this anytime." />
-        {!stripeReady && (
-          <View style={bStyles.gateBanner}>
-            <Ionicons name="card-outline" size={16} color={colors.accentPink} />
-            <Text style={bStyles.gateBannerText}>
-              Set up{' '}
-              <Text style={bStyles.gateBannerLink} onPress={onGoToPayouts}>Styld Pay</Text>
-              {' '}to unlock online payments.
-            </Text>
-          </View>
-        )}
-        {PAYMENT_MODES.map((option) => {
-          const locked = !stripeReady && (option.id === 'deposit' || option.id === 'full');
-          const selected = payment.mode === option.id;
-          return (
-            <Pressable
-              key={option.id}
-              style={[bStyles.modeCard, locked && bStyles.modeCardLocked]}
-              onPress={() => handleModePress(option.id)}
-            >
-              <View style={bStyles.modeBody}>
-                <View style={bStyles.modeTitleRow}>
-                  <Text style={[bStyles.modeTitle, locked && bStyles.modeTitleLocked]}>{option.label}</Text>
-                  {locked ? (
-                    <View style={bStyles.lockedBadge}>
-                      <Ionicons name="lock-closed" size={11} color={colors.textMuted} />
-                      <Text style={bStyles.lockedText}>Requires Styld Pay</Text>
+      {initialLoading ? (
+        <ActivityIndicator color={colors.accentPink} style={{ marginTop: 32 }} />
+      ) : (
+        <ScrollView
+          contentContainerStyle={bStyles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {subTab === 'payments' && (
+            <FormSection title="Payment method" lead="Choose when clients pay — you can change this anytime.">
+              {!stripeReady && (
+                <Text style={bStyles.gateBannerText}>
+                  Set up{' '}
+                  <Text style={bStyles.gateBannerLink} onPress={onGoToPayouts}>Styld Pay</Text>
+                  {' '}to unlock online payments.
+                </Text>
+              )}
+              {PAYMENT_MODES.map((option) => {
+                const locked = !stripeReady && (option.id === 'deposit' || option.id === 'full');
+                const selected = payment.mode === option.id;
+                return (
+                  <Pressable
+                    key={option.id}
+                    style={[bStyles.modeRow, locked && bStyles.modeRowLocked]}
+                    onPress={() => handleModePress(option.id)}
+                  >
+                    <View style={bStyles.modeBody}>
+                      <View style={bStyles.modeTitleRow}>
+                        <Text style={[bStyles.modeTitle, locked && bStyles.modeTitleLocked]}>
+                          {option.label}
+                        </Text>
+                        {locked ? (
+                          <Text style={bStyles.lockedText}>Requires Styld Pay</Text>
+                        ) : option.badge ? (
+                          <Text style={bStyles.popularText}>{option.badge}</Text>
+                        ) : null}
+                      </View>
+                      <Text style={[bStyles.modeSub, locked && bStyles.modeSubLocked]}>
+                        {option.subtitle}
+                      </Text>
                     </View>
-                  ) : option.badge ? (
-                    <View style={bStyles.popularBadge}><Text style={bStyles.popularText}>{option.badge}</Text></View>
-                  ) : null}
-                </View>
-                <Text style={[bStyles.modeSub, locked && bStyles.modeSubLocked]}>{option.subtitle}</Text>
-              </View>
-              {locked
-                ? <Ionicons name="lock-closed-outline" size={20} color={colors.textMuted} style={{ opacity: 0.5 }} />
-                : <View style={[bStyles.check, selected && bStyles.checkSelected]}>
-                    {selected ? <Ionicons name="checkmark" size={16} color={colors.background} /> : null}
-                  </View>
-              }
-            </Pressable>
-          );
-        })}
+                    {!locked && (
+                      <View style={[bStyles.check, selected && bStyles.checkSelected]}>
+                        {selected ? <View style={bStyles.checkDot} /> : null}
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
 
-        {payment.mode === 'deposit' && (
-          <View style={bStyles.innerBlock}>
-            <SubsectionTitle title="Deposit amount" lead="How much clients pay when they book." />
-            <Text style={bStyles.depositKindLead}>How does the deposit work?</Text>
-            <View style={bStyles.segmented}>
-              {(
-                [
-                  { included: true, label: 'Part of price', subtitle: 'Counts toward the service total' },
-                  { included: false, label: 'Additional hold', subtitle: 'On top of the full service price' },
-                ] as const
-              ).map((option) => {
-                const active = payment.depositIncludedInPrice === option.included;
+              {payment.mode === 'deposit' && (
+                <View style={bStyles.innerBlock}>
+                  <SubsectionTitle title="Deposit amount" lead="How much clients pay when they book." />
+                  <Text style={bStyles.depositKindLead}>How does the deposit work?</Text>
+                  <View style={bStyles.segmented}>
+                    {(
+                      [
+                        { included: true, label: 'Part of price', subtitle: 'Counts toward the service total' },
+                        { included: false, label: 'Additional hold', subtitle: 'On top of the full service price' },
+                      ] as const
+                    ).map((option) => {
+                      const active = payment.depositIncludedInPrice === option.included;
+                      return (
+                        <Pressable
+                          key={option.label}
+                          style={[bStyles.segment, bStyles.segmentTall, active && bStyles.segmentActive]}
+                          onPress={() => updatePayment({ ...payment, depositIncludedInPrice: option.included })}
+                        >
+                          <Text style={[bStyles.segmentText, active && bStyles.segmentTextActive]}>
+                            {option.label}
+                          </Text>
+                          <Text style={[bStyles.segmentSubtext, active && bStyles.segmentSubtextActive]}>
+                            {option.subtitle}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <View style={bStyles.segmented}>
+                    {(['percent', 'fixed'] as DepositKind[]).map((kind) => {
+                      const active = payment.depositKind === kind;
+                      return (
+                        <Pressable
+                          key={kind}
+                          style={[bStyles.segment, active && bStyles.segmentActive]}
+                          onPress={() => updatePayment({ ...payment, depositKind: kind })}
+                        >
+                          <Text style={[bStyles.segmentText, active && bStyles.segmentTextActive]}>
+                            {kind === 'percent' ? 'Percentage' : 'Fixed amount'}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {payment.depositKind === 'percent' && (
+                    <View style={bStyles.presetRow}>
+                      {DEPOSIT_PRESETS_PERCENT.map((pct) => {
+                        const active = payment.depositValue === pct;
+                        return (
+                          <Pressable
+                            key={pct}
+                            style={[bStyles.presetChip, active && bStyles.presetChipActive]}
+                            onPress={() => updatePayment({ ...payment, depositValue: pct })}
+                          >
+                            <Text style={[bStyles.presetText, active && bStyles.presetTextActive]}>
+                              {pct}%
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                  <View style={bStyles.amountRow}>
+                    {payment.depositKind === 'fixed' && <Text style={bStyles.amountPrefix}>$</Text>}
+                    <TextInput
+                      style={bStyles.amountInput}
+                      keyboardType="number-pad"
+                      value={String(payment.depositValue)}
+                      onChangeText={(t) => {
+                        const n = Number(t.replace(/[^\d]/g, ''));
+                        if (Number.isFinite(n)) updatePayment({ ...payment, depositValue: n });
+                      }}
+                    />
+                    {payment.depositKind === 'percent' && <Text style={bStyles.amountSuffix}>%</Text>}
+                  </View>
+                </View>
+              )}
+            </FormSection>
+          )}
+
+          {subTab === 'requests' && (
+            <FormSection
+              title="Booking requests"
+              lead="Review new bookings before they appear as confirmed."
+            >
+              <Pressable
+                style={bStyles.toggleRow}
+                onPress={() =>
+                  updatePayment({ ...payment, requireBookingApproval: !payment.requireBookingApproval })
+                }
+              >
+                <View style={bStyles.toggleBody}>
+                  <Text style={bStyles.toggleLabel}>Require manual approval</Text>
+                  <Text style={bStyles.toggleSub}>
+                    New bookings stay pending until you accept them from the dashboard or a notification
+                  </Text>
+                </View>
+                <View style={[bStyles.toggleBox, payment.requireBookingApproval && bStyles.toggleBoxOn]}>
+                  {payment.requireBookingApproval ? <View style={bStyles.toggleDot} /> : null}
+                </View>
+              </Pressable>
+            </FormSection>
+          )}
+
+          {subTab === 'promos' && (
+            <BookingPromoCodesSection promos={promoCodes} onChange={updatePromoCodes} />
+          )}
+
+          {subTab === 'form' && (
+            <FormSection
+              title="Required photos"
+              lead="Choose which photos clients must upload on the booking form."
+            >
+              <Pressable
+                style={bStyles.toggleRow}
+                onPress={() =>
+                  updatePayment({ ...payment, requireCurrentHairPhoto: !payment.requireCurrentHairPhoto })
+                }
+              >
+                <View style={bStyles.toggleBody}>
+                  <Text style={bStyles.toggleLabel}>Require current hair photo</Text>
+                  <Text style={bStyles.toggleSub}>Clients upload a photo of their hair before booking</Text>
+                </View>
+                <View style={[bStyles.toggleBox, payment.requireCurrentHairPhoto && bStyles.toggleBoxOn]}>
+                  {payment.requireCurrentHairPhoto ? <View style={bStyles.toggleDot} /> : null}
+                </View>
+              </Pressable>
+              <Pressable
+                style={bStyles.toggleRow}
+                onPress={() =>
+                  updatePayment({ ...payment, requireReferencePhoto: !payment.requireReferencePhoto })
+                }
+              >
+                <View style={bStyles.toggleBody}>
+                  <Text style={bStyles.toggleLabel}>Require reference photo</Text>
+                  <Text style={bStyles.toggleSub}>Clients must upload an inspiration or reference image</Text>
+                </View>
+                <View style={[bStyles.toggleBox, payment.requireReferencePhoto && bStyles.toggleBoxOn]}>
+                  {payment.requireReferencePhoto ? <View style={bStyles.toggleDot} /> : null}
+                </View>
+              </Pressable>
+            </FormSection>
+          )}
+
+          {subTab === 'policy' && (
+            <FormSection
+              title="Refund window"
+              lead="Clients can cancel anytime before the appointment. Refunds depend on how far in advance they cancel."
+            >
+              {CANCELLATION_POLICY_PRESETS.map((preset) => {
+                const selected = cancellationPolicy.preset === preset.id;
                 return (
                   <Pressable
-                    key={option.label}
-                    style={[bStyles.segment, bStyles.segmentTall, active && bStyles.segmentActive]}
-                    onPress={() => updatePayment({ ...payment, depositIncludedInPrice: option.included })}
+                    key={preset.id}
+                    style={bStyles.modeRow}
+                    onPress={() => handlePresetPress(preset.id)}
                   >
-                    <Text style={[bStyles.segmentText, active && bStyles.segmentTextActive]}>{option.label}</Text>
-                    <Text style={[bStyles.segmentSubtext, active && bStyles.segmentSubtextActive]}>
-                      {option.subtitle}
-                    </Text>
+                    <View style={bStyles.modeBody}>
+                      <Text style={bStyles.modeTitle}>{preset.label}</Text>
+                      <Text style={bStyles.modeSub}>{preset.description}</Text>
+                    </View>
+                    <View style={[bStyles.check, selected && bStyles.checkSelected]}>
+                      {selected ? <View style={bStyles.checkDot} /> : null}
+                    </View>
                   </Pressable>
                 );
               })}
-            </View>
-            <View style={bStyles.segmented}>
-              {(['percent', 'fixed'] as DepositKind[]).map((kind) => {
-                const active = payment.depositKind === kind;
-                return (
-                  <Pressable
-                    key={kind}
-                    style={[bStyles.segment, active && bStyles.segmentActive]}
-                    onPress={() => updatePayment({ ...payment, depositKind: kind })}
-                  >
-                    <Text style={[bStyles.segmentText, active && bStyles.segmentTextActive]}>
-                      {kind === 'percent' ? 'Percentage' : 'Fixed amount'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {payment.depositKind === 'percent' && (
-              <View style={bStyles.presetRow}>
-                {DEPOSIT_PRESETS_PERCENT.map((pct) => {
-                  const active = payment.depositValue === pct;
+
+              <View style={bStyles.innerBlock}>
+                <SubsectionTitle title="What gets refunded" lead="Which online payments follow your refund window." />
+                {REFUND_APPLIES_TO_OPTIONS.map((option) => {
+                  const selected = cancellationPolicy.refundAppliesTo === option.id;
                   return (
                     <Pressable
-                      key={pct}
-                      style={[bStyles.presetChip, active && bStyles.presetChipActive]}
-                      onPress={() => updatePayment({ ...payment, depositValue: pct })}
+                      key={option.id}
+                      style={bStyles.modeRow}
+                      onPress={() => handleRefundScopePress(option.id)}
                     >
-                      <Text style={[bStyles.presetText, active && bStyles.presetTextActive]}>{pct}%</Text>
+                      <View style={bStyles.modeBody}>
+                        <Text style={bStyles.modeTitle}>{option.label}</Text>
+                        <Text style={bStyles.modeSub}>{option.description}</Text>
+                      </View>
+                      <View style={[bStyles.check, selected && bStyles.checkSelected]}>
+                        {selected ? <View style={bStyles.checkDot} /> : null}
+                      </View>
                     </Pressable>
                   );
                 })}
               </View>
-            )}
-            <View style={bStyles.amountRow}>
-              {payment.depositKind === 'fixed' && <Text style={bStyles.amountPrefix}>$</Text>}
-              <TextInput
-                style={bStyles.amountInput}
-                keyboardType="number-pad"
-                value={String(payment.depositValue)}
-                onChangeText={(t) => {
-                  const n = Number(t.replace(/[^\d]/g, ''));
-                  if (Number.isFinite(n)) updatePayment({ ...payment, depositValue: n });
-                }}
-              />
-              {payment.depositKind === 'percent' && <Text style={bStyles.amountSuffix}>%</Text>}
-            </View>
-          </View>
-        )}
-      </FormGroup>
 
-      <FormGroup
-        id="form"
-        icon="images-outline"
-        title="Form fields"
-        description="Photos and info clients add when booking"
-        onSectionLayout={handleSectionLayout}
-      >
-        <SubsectionTitle title="Required photos" lead="Choose which photos clients must upload on the booking form." />
-        <Pressable
-          style={bStyles.toggleRow}
-          onPress={() => updatePayment({ ...payment, requireCurrentHairPhoto: !payment.requireCurrentHairPhoto })}
-        >
-          <View style={bStyles.toggleBody}>
-            <Text style={bStyles.toggleLabel}>Require current hair photo</Text>
-            <Text style={bStyles.toggleSub}>Clients upload a photo of their hair before booking</Text>
-          </View>
-          <View style={[bStyles.toggleBox, payment.requireCurrentHairPhoto && bStyles.toggleBoxOn]}>
-            {payment.requireCurrentHairPhoto ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
-          </View>
-        </Pressable>
-        <Pressable
-          style={bStyles.toggleRow}
-          onPress={() => updatePayment({ ...payment, requireReferencePhoto: !payment.requireReferencePhoto })}
-        >
-          <View style={bStyles.toggleBody}>
-            <Text style={bStyles.toggleLabel}>Require reference photo</Text>
-            <Text style={bStyles.toggleSub}>Clients must upload an inspiration or reference image</Text>
-          </View>
-          <View style={[bStyles.toggleBox, payment.requireReferencePhoto && bStyles.toggleBoxOn]}>
-            {payment.requireReferencePhoto ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
-          </View>
-        </Pressable>
-      </FormGroup>
-
-      <FormGroup
-        id="policy"
-        icon="shield-checkmark-outline"
-        title="Cancellation"
-        description="Refund rules when clients cancel online"
-        onSectionLayout={handleSectionLayout}
-      >
-        <SubsectionTitle
-          title="Refund window"
-          lead="Clients can cancel anytime before the appointment. Refunds depend on how far in advance they cancel."
-        />
-        {CANCELLATION_POLICY_PRESETS.map((preset) => {
-          const selected = cancellationPolicy.preset === preset.id;
-          return (
-            <Pressable
-              key={preset.id}
-              style={bStyles.modeCard}
-              onPress={() => handlePresetPress(preset.id)}
-            >
-              <View style={bStyles.modeBody}>
-                <Text style={bStyles.modeTitle}>{preset.label}</Text>
-                <Text style={bStyles.modeSub}>{preset.description}</Text>
+              <View style={bStyles.innerBlock}>
+                <SubsectionTitle title="Policy text" lead="Shown at checkout and in cancellation emails." />
+                <TextInput
+                  style={bStyles.policySummaryInput}
+                  multiline
+                  value={cancellationPolicy.policySummary}
+                  onChangeText={(text) =>
+                    updateCancellationPolicy({
+                      ...cancellationPolicy,
+                      preset: 'custom',
+                      policySummary: text,
+                    })
+                  }
+                  placeholder="Describe your cancellation and refund rules…"
+                  placeholderTextColor={colors.textMuted}
+                />
               </View>
-              <View style={[bStyles.check, selected && bStyles.checkSelected]}>
-                {selected ? <Ionicons name="checkmark" size={16} color={colors.background} /> : null}
-              </View>
-            </Pressable>
-          );
-        })}
+            </FormSection>
+          )}
 
-        <View style={bStyles.innerBlock}>
-          <SubsectionTitle title="What gets refunded" lead="Which online payments follow your refund window." />
-          {REFUND_APPLIES_TO_OPTIONS.map((option) => {
-            const selected = cancellationPolicy.refundAppliesTo === option.id;
-            return (
-              <Pressable
-                key={option.id}
-                style={bStyles.modeCard}
-                onPress={() => handleRefundScopePress(option.id)}
-              >
-                <View style={bStyles.modeBody}>
-                  <Text style={bStyles.modeTitle}>{option.label}</Text>
-                  <Text style={bStyles.modeSub}>{option.description}</Text>
+          {subTab === 'preview' && (
+            <FormSection title="Checkout preview" lead="What clients see on your booking page.">
+              <SubsectionTitle title="Sample service" lead="Pricing preview for one of your services." />
+              <View style={bStyles.previewCard}>
+                <Image source={APP_ICON} style={bStyles.previewImg} resizeMode="cover" />
+                <View style={bStyles.previewBody}>
+                  <Text style={bStyles.previewTitle}>{previewService.title}</Text>
+                  <View style={bStyles.previewMid}>
+                    <Text style={bStyles.previewMeta}>ESTIMATE</Text>
+                    <Text style={bStyles.previewPrice}>{formatMoney(previewService.price)}</Text>
+                  </View>
+                  <View style={bStyles.previewPayRow}>
+                    <Text style={bStyles.previewPayLabel}>{preview.dueNowLabel}</Text>
+                    <Text style={bStyles.previewPayAccent}>{formatMoney(preview.dueNow)}</Text>
+                  </View>
+                  {preview.dueLater > 0 && (
+                    <View style={bStyles.previewPayRow}>
+                      <Text style={bStyles.previewPayLabel}>{preview.dueLaterLabel}</Text>
+                      <Text style={bStyles.previewPayValue}>{formatMoney(preview.dueLater)}</Text>
+                    </View>
+                  )}
                 </View>
-                <View style={[bStyles.check, selected && bStyles.checkSelected]}>
-                  {selected ? <Ionicons name="checkmark" size={16} color={colors.background} /> : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={bStyles.innerBlock}>
-          <SubsectionTitle title="Policy text" lead="Shown at checkout and in cancellation emails." />
-          <TextInput
-            style={bStyles.policySummaryInput}
-            multiline
-            value={cancellationPolicy.policySummary}
-            onChangeText={(text) =>
-              updateCancellationPolicy({
-                ...cancellationPolicy,
-                preset: 'custom',
-                policySummary: text,
-              })
-            }
-            placeholder="Describe your cancellation and refund rules…"
-            placeholderTextColor={colors.textMuted}
-          />
-        </View>
-      </FormGroup>
-
-      <FormGroup
-        id="preview"
-        icon="eye-outline"
-        title="Checkout preview"
-        description="What clients see on your booking page"
-        onSectionLayout={handleSectionLayout}
-      >
-        <SubsectionTitle title="Sample service" lead="Pricing preview for one of your services." />
-        <View style={bStyles.previewCard}>
-          <Image source={APP_ICON} style={bStyles.previewImg} resizeMode="cover" />
-          <View style={bStyles.previewBody}>
-            <Text style={bStyles.previewTitle}>{previewService.title}</Text>
-            <View style={bStyles.previewMid}>
-              <Text style={bStyles.previewMeta}>ESTIMATE</Text>
-              <Text style={bStyles.previewPrice}>{formatMoney(previewService.price)}</Text>
-            </View>
-            <View style={bStyles.previewPayRow}>
-              <Text style={bStyles.previewPayLabel}>{preview.dueNowLabel}</Text>
-              <Text style={bStyles.previewPayAccent}>{formatMoney(preview.dueNow)}</Text>
-            </View>
-            {preview.dueLater > 0 && (
-              <View style={bStyles.previewPayRow}>
-                <Text style={bStyles.previewPayLabel}>{preview.dueLaterLabel}</Text>
-                <Text style={bStyles.previewPayValue}>{formatMoney(preview.dueLater)}</Text>
               </View>
-            )}
-          </View>
-        </View>
-      </FormGroup>
+            </FormSection>
+          )}
+        </ScrollView>
+      )}
 
-      <Pressable style={[bStyles.saveBtn, saving && { opacity: 0.65 }]} onPress={save} disabled={saving}>
-        <Text style={bStyles.saveBtnText}>
-          {saving ? 'Saving…' : saved ? 'Saved!' : 'Save settings'}
-        </Text>
-      </Pressable>
-    </ScrollView>
+      {!initialLoading && (
+        <View style={bStyles.saveBar}>
+          <Pressable style={[bStyles.saveBtn, saving && { opacity: 0.65 }]} onPress={save} disabled={saving}>
+            <Text style={bStyles.saveBtnText}>
+              {saving ? 'Saving…' : saved ? 'Saved!' : 'Save settings'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
   );
 }
 
-const bStyles = StyleSheet.create({
-  content: { paddingBottom: 48, paddingHorizontal: 16 },
+const BASE_B_STYLES = {
+  tabRoot: { flex: 1, backgroundColor: 'transparent' },
+  content: { paddingBottom: 24, paddingHorizontal: 20, paddingTop: 8 },
   emptyWrap: { padding: 24, alignItems: 'center' },
   emptyText: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
   errorText: { color: '#f87171', fontSize: 14, padding: 20 },
-  screenIntro: {
-    color: colors.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 14,
-    paddingHorizontal: 4,
+  overviewStrip: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
   },
-  overviewGrid: {
+  overviewRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
   },
-  overviewCard: {
-    width: '48%',
-    flexGrow: 1,
-    minWidth: '46%',
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 12,
-    gap: 6,
+  overviewRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
   },
-  overviewCardPressed: { opacity: 0.82 },
-  overviewIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    backgroundColor: colors.accentPinkMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
+  overviewRowLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '500', width: 108 },
+  overviewRowValue: { flex: 1, color: colors.text, fontSize: 13, lineHeight: 18, textAlign: 'right' },
+  subTabBarWrap: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
   },
-  overviewLabel: { color: colors.text, fontSize: 13, fontWeight: '700' },
-  overviewValue: { color: colors.textMuted, fontSize: 12, lineHeight: 16 },
-  groupCard: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 16,
-    marginBottom: 14,
-    gap: 4,
+  subTabBar: { paddingHorizontal: 16, gap: 4, paddingVertical: 0 },
+  subTabItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    marginBottom: -StyleSheet.hairlineWidth,
   },
-  groupHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
-  groupIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    backgroundColor: colors.accentPinkMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
+  subTabItemActive: {
+    borderBottomColor: colors.accentPink,
   },
-  groupHeaderText: { flex: 1, gap: 2 },
-  groupTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
-  groupDesc: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
-  subsectionHead: { marginTop: 4, marginBottom: 12 },
+  subTabText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  subTabTextActive: { color: colors.text },
+  section: { paddingTop: 4, gap: 4 },
+  sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginBottom: 2 },
+  sectionLead: { color: colors.textMuted, fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  subsectionHead: { marginTop: 8, marginBottom: 12 },
   subsectionTitle: { color: colors.text, fontSize: 14, fontWeight: '700', marginBottom: 4 },
   subsectionLead: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
   innerBlock: {
-    marginTop: 8,
-    paddingTop: 14,
+    marginTop: 16,
+    paddingTop: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.cardBorder,
   },
-  gateBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.accentPinkMuted, borderRadius: 12, padding: 12, marginBottom: 12 },
-  gateBannerText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 18 },
+  gateBannerText: { fontSize: 13, color: colors.textMuted, lineHeight: 18, marginBottom: 12 },
   gateBannerLink: { color: colors.accentPink, fontWeight: '600' },
-  modeCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, borderWidth: 1.5, borderColor: colors.cardBorder, backgroundColor: colors.background, marginBottom: 10 },
-  modeCardLocked: { opacity: 0.55, backgroundColor: colors.progressTrack },
+  modeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
+  },
+  modeRowLocked: { opacity: 0.55 },
   modeBody: { flex: 1, minWidth: 0, paddingRight: 8 },
   modeTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
-  modeTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  modeTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
   modeTitleLocked: { color: colors.textMuted },
   modeSub: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
   modeSubLocked: { opacity: 0.7 },
-  lockedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.cardBorder, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
-  lockedText: { color: colors.textMuted, fontSize: 10, fontWeight: '600' },
-  popularBadge: { backgroundColor: colors.accentPinkMuted, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  popularText: { color: colors.accentPink, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
-  check: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
+  lockedText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
+  popularText: { color: colors.accentPink, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   checkSelected: { borderColor: colors.accentPink, backgroundColor: colors.accentPink },
-  previewCard: { flexDirection: 'row', alignItems: 'stretch', gap: 14, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.background },
+  checkDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.background },
+  previewCard: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 14,
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.cardBorder,
+  },
   previewImg: { width: 88, height: 88, borderRadius: 12, backgroundColor: colors.background },
   previewBody: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 6 },
   previewTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
@@ -809,48 +872,82 @@ const bStyles = StyleSheet.create({
   previewPayValue: { color: colors.text, fontSize: 13, fontWeight: '600' },
   depositKindLead: { color: colors.textMuted, fontSize: 13, fontWeight: '600', marginBottom: 10 },
   segmented: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  segment: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.background },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.cardBorder,
+  },
   segmentTall: { paddingVertical: 10, gap: 2 },
-  segmentActive: { borderColor: colors.textMuted, backgroundColor: colors.card },
+  segmentActive: { borderColor: colors.accentPink, backgroundColor: colors.accentPinkMuted },
   segmentText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   segmentTextActive: { color: colors.text },
   segmentSubtext: { color: colors.textMuted, fontSize: 11, lineHeight: 14, textAlign: 'center', opacity: 0.85 },
   segmentSubtextActive: { color: colors.text, opacity: 0.75 },
   presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  presetChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.background },
+  presetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.cardBorder,
+  },
   presetChipActive: { borderColor: colors.accentPink, backgroundColor: colors.accentPink },
   presetText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
   presetTextActive: { color: colors.background },
-  amountRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 14, borderWidth: 1, borderColor: colors.cardBorder, paddingHorizontal: 16, marginBottom: 12 },
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.cardBorder,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
   amountPrefix: { color: colors.textMuted, fontSize: 22, fontWeight: '600', fontFamily: fonts.numberMedium, marginRight: 4 },
   amountInput: { flex: 1, color: colors.text, fontSize: 28, fontWeight: '700', fontFamily: fonts.number, paddingVertical: 14 },
   amountSuffix: { color: colors.textMuted, fontSize: 22, fontWeight: '600', fontFamily: fonts.numberMedium, marginLeft: 4 },
-  saveBtn: { alignItems: 'center', backgroundColor: colors.accentPink, borderRadius: 16, paddingVertical: 16, marginTop: 8, shadowColor: colors.accentPink, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  saveBar: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.cardBorder,
+    backgroundColor: 'transparent',
+  },
+  saveBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.accentPink,
+    borderRadius: 14,
+    paddingVertical: 15,
+    shadowColor: colors.accentPink,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
   saveBtnText: { color: colors.background, fontSize: 16, fontWeight: '700' },
   policySummaryInput: {
     minHeight: 96,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.cardBorder,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 12,
     color: colors.text,
     fontSize: 14,
     lineHeight: 20,
     textAlignVertical: 'top',
-    backgroundColor: colors.background,
     marginBottom: 8,
   },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 14,
-    paddingHorizontal: 14,
     paddingVertical: 14,
     gap: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
   },
   toggleBody: { flex: 1, gap: 2 },
   toggleLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
@@ -868,19 +965,24 @@ const bStyles = StyleSheet.create({
     backgroundColor: colors.accentPink,
     borderColor: colors.accentPink,
   },
-});
+  toggleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' },
+};
 
 // ─── Payouts tab ──────────────────────────────────────────────────────────────
 
 function PayoutsTab() {
+  const pStyles = useResponsiveStyles(BASE_P_STYLES);
   const [summary, setSummary] = useState<StripeConnectSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [connectUrl, setConnectUrl] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true);
+    else if (!hasLoadedRef.current) setInitialLoading(true);
     setRefreshError(null);
     try {
       const data = await fetchStripeConnectStatus();
@@ -889,14 +991,23 @@ function PayoutsTab() {
         setRefreshError(data.balanceError ?? 'Could not verify balance with Stripe. Showing last known amounts.');
       }
     } catch (err) {
-      setSummary(null);
+      if (!silent) setSummary(null);
       setRefreshError(err instanceof Error ? err.message : 'Could not load payout account');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
+      hasLoadedRef.current = true;
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshRef.current(hasLoadedRef.current);
+    }, []),
+  );
 
   async function handleOpenOnboarding() {
     setBusy(true);
@@ -916,10 +1027,10 @@ function PayoutsTab() {
       for (let i = 0; i < 4; i++) {
         if (i > 0) await new Promise((r) => setTimeout(r, 2500));
         const result = await syncStripeConnect();
-        if (result.status === 'ready' || result.status === 'pending_review') { await refresh(); return; }
+        if (result.status === 'ready' || result.status === 'pending_review') { await refresh(true); return; }
       }
-      await refresh();
-    } catch { await refresh(); }
+      await refresh(true);
+    } catch { await refresh(true); }
     finally { setBusy(false); }
   }
 
@@ -945,7 +1056,7 @@ function PayoutsTab() {
               setBusy(true);
               try {
                 const result = await requestStripeConnectPayout();
-                await refresh();
+                await refresh(true);
                 Alert.alert(
                   'Payout started',
                   `${formatUsdFromCents(result.amountCents)} is on its way to your bank. Usually arrives within 1–2 business days.`,
@@ -973,22 +1084,21 @@ function PayoutsTab() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={loading}
-            onRefresh={() => void refresh()}
+            refreshing={refreshing}
+            onRefresh={() => void refresh(true)}
             tintColor={colors.accentPink}
           />
         }
       >
-        {loading && !summary ? (
+        {initialLoading && !summary ? (
           <ActivityIndicator color={colors.accentPink} style={{ marginTop: 60 }} />
         ) : isReady ? (
           <>
-            {/* ── Unpaid balance hero ── */}
-            <View style={pStyles.heroCard}>
+            <View style={pStyles.heroSection}>
               <View style={pStyles.heroTopRow}>
                 <Text style={pStyles.heroLabel}>Unpaid balance</Text>
-                <Pressable onPress={() => void refresh()} hitSlop={10} disabled={loading}>
-                  <Ionicons name="refresh" size={16} color={colors.textMuted} />
+                <Pressable onPress={() => void refresh(true)} hitSlop={10} disabled={refreshing}>
+                  <Text style={pStyles.refreshLinkText}>{refreshing ? 'Updating…' : 'Refresh'}</Text>
                 </Pressable>
               </View>
               <Text style={pStyles.heroAmount}>{formatUsdFromCents(totalUnpaid)}</Text>
@@ -1039,17 +1149,13 @@ function PayoutsTab() {
               </Pressable>
             </View>
 
-            {/* How payouts work */}
             <Text style={pStyles.sectionLabel}>How payouts work</Text>
             {[
-              { icon: 'card-outline' as const, title: 'Customer pays on your site', body: 'Money goes directly to your Styld Pay account.' },
-              { icon: 'time-outline' as const, title: 'Funds become available', body: 'Usually 2–3 business days after a payment.' },
-              { icon: 'arrow-down-circle-outline' as const, title: 'Pay out to your bank', body: 'Tap "Pay out" above to send your available balance.' },
+              { title: 'Customer pays on your site', body: 'Money goes directly to your Styld Pay account.' },
+              { title: 'Funds become available', body: 'Usually 2–3 business days after a payment.' },
+              { title: 'Pay out to your bank', body: 'Use Pay out above to send your available balance.' },
             ].map((item) => (
               <View key={item.title} style={pStyles.howRow}>
-                <View style={pStyles.howIcon}>
-                  <Ionicons name={item.icon} size={18} color={colors.accentPink} />
-                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={pStyles.howTitle}>{item.title}</Text>
                   <Text style={pStyles.howBody}>{item.body}</Text>
@@ -1130,18 +1236,16 @@ function PayoutsTab() {
   );
 }
 
-const pStyles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 48 },
+const BASE_P_STYLES = {
+  content: { padding: 20, paddingBottom: 48 },
 
-  // Hero balance card
-  heroCard: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 20,
-    marginBottom: 28,
+  // Balance section
+  heroSection: {
+    paddingBottom: 24,
+    marginBottom: 8,
     gap: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
   },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroLabel: { fontSize: 12, fontWeight: '600', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.7 },
@@ -1149,7 +1253,13 @@ const pStyles = StyleSheet.create({
   balanceOk: { fontSize: 12, color: '#15803d', fontWeight: '500', marginTop: -8 },
   balanceWarn: { fontSize: 12, color: '#b45309', fontWeight: '500', marginTop: -8, lineHeight: 17 },
 
-  splitRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 12, paddingVertical: 12 },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.cardBorder,
+  },
   splitItem: { flex: 1, alignItems: 'center' },
   splitAmt: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 2 },
   splitLbl: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
@@ -1160,12 +1270,7 @@ const pStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
-    backgroundColor: colors.background,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   bankTagLogo: { width: 16, height: 16, borderRadius: 3 },
   bankTagText: { fontSize: 13, fontWeight: '500', color: colors.textMuted },
@@ -1202,11 +1307,12 @@ const pStyles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.cardBorder },
   modalTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
   modalDone: { color: colors.accentPink, fontSize: 16, fontWeight: '600' },
-});
+};
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function PaymentsScreen({ navigation, route }: Props) {
+  const screenStyles = useResponsiveStyles(BASE_SCREEN_STYLES);
   const { hasLinkedSite } = useSiteData();
   const [activeTab, setActiveTab] = useState<PaymentsTab>(route.params?.tab ?? 'booking');
 
@@ -1216,17 +1322,28 @@ export default function PaymentsScreen({ navigation, route }: Props) {
   };
 
   return (
-    <BusinessScreenLayout
-      title={titleMap[activeTab]}
-      onBack={() => navigation.goBack()}
-      hasLinkedSite={activeTab === 'payouts' ? true : hasLinkedSite}
-      linkMessage="Link your site to configure booking payments."
-      scroll={false}
-      contentStyle={{ flex: 1 }}
-    >
-      <TabBar active={activeTab} onChange={setActiveTab} />
-      {activeTab === 'booking' && <BookingTab onGoToPayouts={() => setActiveTab('payouts')} />}
-      {activeTab === 'payouts' && <PayoutsTab />}
-    </BusinessScreenLayout>
+    <View style={screenStyles.root}>
+      <ScreenGradient />
+      <BusinessScreenLayout
+        title={titleMap[activeTab]}
+        onBack={() => navigation.goBack()}
+        hasLinkedSite={activeTab === 'payouts' ? true : hasLinkedSite}
+        linkMessage="Link your site to configure booking payments."
+        scroll={false}
+        transparentBackground
+        contentStyle={{ flex: 1, paddingHorizontal: 0 }}
+      >
+        <TabBar active={activeTab} onChange={setActiveTab} />
+        {activeTab === 'booking' && <BookingTab onGoToPayouts={() => setActiveTab('payouts')} />}
+        {activeTab === 'payouts' && <PayoutsTab />}
+      </BusinessScreenLayout>
+    </View>
   );
 }
+
+const BASE_SCREEN_STYLES = {
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+};

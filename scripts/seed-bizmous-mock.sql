@@ -71,7 +71,7 @@ BEGIN
 
   (v_uid, 'site_setting', 'booking_hours', '{"value":{"hoursInAdvance":72,"days":{"0":{"closed":true},"1":{"open":"09:00","close":"18:00","slots":["9:00 AM","1:00 PM","4:00 PM"]},"2":{"open":"09:00","close":"18:00","slots":["9:00 AM","1:00 PM","4:00 PM"]},"3":{"open":"09:00","close":"18:00","slots":["9:00 AM","1:00 PM","4:00 PM"]},"4":{"open":"09:00","close":"18:00","slots":["9:00 AM","1:00 PM","4:00 PM"]},"5":{"open":"09:00","close":"18:00","slots":["9:00 AM","1:00 PM","4:00 PM"]},"6":{"closed":true}}}}'::jsonb),
 
-  (v_uid, 'site_setting', 'booking_payment', '{"value":{"mode":"deposit","depositMode":"percent","depositPercent":25}}'::jsonb),
+  (v_uid, 'site_setting', 'booking_payment', '{"value":{"mode":"in_person","depositKind":"percent","depositValue":25,"depositIncludedInPrice":true,"requireCurrentHairPhoto":true,"requireReferencePhoto":false,"onlinePaymentsEnabled":false}}'::jsonb),
 
   (v_uid, 'site_setting', 'style_price_overrides', '{"value":{"studio-knotless-sm":160,"studio-knotless-md":200,"studio-knotless-lg":240,"studio-boho-sm":220,"studio-boho-md":260,"studio-boho-lg":300,"studio-passion-sm":180,"studio-passion-md":220,"studio-fulani-one":200,"studio-locs-starter":350,"studio-locs-retwist":100,"studio-feedin-10plus":120,"studio-wig-install":150}}'::jsonb),
 

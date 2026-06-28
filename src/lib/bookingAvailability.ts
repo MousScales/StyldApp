@@ -53,6 +53,42 @@ export function getTimelineBounds(hours: BookingHours) {
   };
 }
 
+export function getDayOpenCloseBoundaries(
+  date: Date,
+  hours: BookingHours,
+): { openMinute: number; closeMinute: number } | null {
+  const window = getDayWindowMinutes(hours, date.getDay());
+  if (!window) return null;
+  return { openMinute: window.start, closeMinute: window.end };
+}
+
+export function getTimelineBoundsForWeek(
+  weekDays: Date[],
+  hours: BookingHours,
+): { startMinute: number; endMinute: number } {
+  let minStart = 24 * 60;
+  let maxEnd = 0;
+
+  for (const day of weekDays) {
+    const window = getDayWindowMinutes(hours, day.getDay());
+    if (!window) continue;
+    minStart = Math.min(minStart, window.start);
+    maxEnd = Math.max(maxEnd, window.end);
+  }
+
+  if (maxEnd <= minStart) {
+    minStart = hours.slotDayStartHour * 60 + hours.slotDayStartMinute;
+    maxEnd = hours.slotDayEndHour * 60 + hours.slotDayEndMinute;
+  }
+
+  if (maxEnd <= minStart) {
+    minStart = 8 * 60;
+    maxEnd = 19 * 60 + 30;
+  }
+
+  return { startMinute: minStart, endMinute: maxEnd };
+}
+
 export function getTimelineBoundsForDate(hours: BookingHours, date: Date) {
   const window = getDayWindowMinutes(hours, date.getDay());
   if (!window) {

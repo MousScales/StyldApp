@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AppointmentDetailScreen from '../screens/AppointmentDetailScreen';
+import AppointmentSessionScreen from '../screens/AppointmentSessionScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import EarningDetailsScreen from '../screens/EarningDetailsScreen';
 import AllUpcomingScreen from '../screens/AllUpcomingScreen';
@@ -10,6 +11,7 @@ export type DashboardStackParamList = {
   DashboardHome: undefined;
   EarningDetails: undefined;
   AppointmentDetail: { appointmentId: string };
+  AppointmentSession: { appointmentId: string };
   AllUpcoming: undefined;
   AllBookings: undefined;
   BookingDetail: { bookingId: string };
@@ -23,6 +25,11 @@ export default function DashboardNavigator() {
       <Stack.Screen name="DashboardHome" component={DashboardScreen} />
       <Stack.Screen name="EarningDetails" component={EarningDetailsScreen} />
       <Stack.Screen name="AppointmentDetail" component={AppointmentDetailScreen} />
+      <Stack.Screen
+        name="AppointmentSession"
+        component={AppointmentSessionScreen}
+        options={{ animation: 'fade_from_bottom', gestureEnabled: false }}
+      />
       <Stack.Screen name="AllUpcoming" component={AllUpcomingScreen} />
       <Stack.Screen name="AllBookings" component={AllBookingsScreen} />
       <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />

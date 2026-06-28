@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Order product</title>
+    <link rel="stylesheet" href="/css/styles.css?v=51" />
+    <script src="/js/styld-tenant-config.js"></script>
+  </head>
+  <body class="tpl-profile page-products-order">
+    <main class="container lookup-wrap" style="padding: 2rem 1rem 4rem; max-width: 520px">
+      <a href="/products" class="profile-portfolio-back">&larr; Back to shop</a>
+      <h1 style="margin: 1rem 0 0.5rem">Place your order</h1>
+      <p id="order-product-summary" class="deposit-note"></p>
+
+      <form id="product-order-form" class="lookup-form" style="margin-top: 1.25rem">
+        <label>Full name <input type="text" id="order-full-name" required /></label>
+        <label>Email <input type="email" id="order-email" required /></label>
+        <label>Phone <input type="tel" id="order-phone" required /></label>
+
+        <fieldset id="order-fulfillment-fieldset" style="border: 0; padding: 0; margin: 0">
+          <legend style="font-weight: 600; margin-bottom: 0.5rem">How would you like to receive it?</legend>
+          <label><input type="radio" name="fulfillment" value="pickup" checked /> Pickup</label>
+          <label id="order-shipping-option" hidden><input type="radio" name="fulfillment" value="shipping" /> Ship to me</label>
+        </fieldset>
+
+        <div id="order-shipping-fields" hidden>
+          <label>Street <input type="text" id="order-ship-street" /></label>
+          <label>City <input type="text" id="order-ship-city" /></label>
+          <label>State <input type="text" id="order-ship-state" maxlength="2" /></label>
+          <label>ZIP <input type="text" id="order-ship-zip" /></label>
+        </div>
+
+        <p id="order-total-line" style="font-weight: 700"></p>
+        <p id="order-fulfillment-note" class="deposit-note"></p>
+        <div id="order-feedback" class="booking-feedback" hidden></div>
+        <button type="submit" class="btn btn-primary" style="width: 100%">Submit order</button>
+      </form>
+    </main>
+    <script src="/js/styld-tenant-shared.js?v=41"></script>
+    <script src="/js/products-order.js?v=1"></script>
+  </body>
+</html>

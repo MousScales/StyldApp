@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLoginLayout } from '../hooks/useLoginLayout';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import {
   ActivityIndicator,
@@ -10,25 +11,23 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, {
-  Defs,
-  LinearGradient,
-  RadialGradient,
-  Rect,
-  Stop,
-} from 'react-native-svg';
 import { Image as ExpoImage } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import LoginBackground from '../components/auth/LoginBackground';
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
 
 type AuthMode = 'signIn' | 'signUp';
 
 export default function LoginScreen() {
+  const { isTablet, isSplitTablet, loginMaxWidth, formWidth, previewSize } = useLoginLayout();
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const styles = useResponsiveStyles(BASE_STYLES);
 
   const { signIn, signUp, signInWithApple } = useAuth();
@@ -76,11 +75,16 @@ export default function LoginScreen() {
     if (mode === 'signIn') {
       const result = await signIn(trimmedEmail, trimmedPassword);
       setLoading(false);
+      if (result.suggestSignUp) {
+        setMode('signUp');
+        setError(null);
+        setMessage('No account found for this email. Enter your name to create one.');
+        return;
+      }
       if (result.error) setError(result.error);
       return;
     }
 
-    // Sign up — then immediately sign in so no email confirmation step is needed
     const signUpResult = await signUp(trimmedEmail, trimmedPassword, fullName);
     if (signUpResult.error) {
       setLoading(false);
@@ -94,191 +98,178 @@ export default function LoginScreen() {
       setError('Account created but could not sign in automatically. Please sign in below.');
       setMode('signIn');
     }
-    // On success the auth state change triggers automatically — no action needed
   };
+
+  const formArea = (
+    <View style={[styles.formArea, isSplitTablet && { width: formWidth, maxWidth: '100%' as const }]}>
+      <Text style={styles.cardHeading}>
+        {mode === 'signIn' ? 'Sign in to your account' : 'Create your account'}
+      </Text>
+
+      {mode === 'signUp' ? (
+        <View style={styles.field}>
+          <Text style={styles.label}>Full name</Text>
+          <TextInput
+            value={fullName}
+            onChangeText={setFullName}
+            placeholder="Your name"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="words"
+            style={styles.input}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Email</Text>
+        <TextInput
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@example.com"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          textContentType="emailAddress"
+          style={styles.input}
+        />
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Password</Text>
+        <TextInput
+          value={password}
+          onChangeText={setPassword}
+          placeholder="••••••••"
+          placeholderTextColor={colors.textMuted}
+          secureTextEntry
+          textContentType={mode === 'signIn' ? 'password' : 'newPassword'}
+          style={styles.input}
+        />
+      </View>
+
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {message ? <Text style={styles.messageText}>{message}</Text> : null}
+
+      <Pressable
+        style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+        onPress={() => void handleSubmit()}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#0a0a0a" />
+        ) : (
+          <Text style={styles.primaryButtonText}>
+            {mode === 'signIn' ? 'Sign in' : 'Create account'}
+          </Text>
+        )}
+      </Pressable>
+
+      {appleAvailable ? (
+        <>
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+          <Pressable
+            style={[styles.appleButton, (loading || appleLoading) && styles.primaryButtonDisabled]}
+            disabled={loading || appleLoading}
+            onPress={async () => {
+              setError(null);
+              setAppleLoading(true);
+              const result = await signInWithApple();
+              setAppleLoading(false);
+              if (result.error) setError(result.error);
+            }}
+          >
+            {appleLoading ? (
+              <ActivityIndicator color="#0a0a0a" />
+            ) : (
+              <>
+                <Ionicons name="logo-apple" size={18} color="#0a0a0a" />
+                <Text style={styles.appleButtonText}>Sign in with Apple</Text>
+              </>
+            )}
+          </Pressable>
+        </>
+      ) : null}
+
+      <Pressable style={styles.secondaryButton} onPress={toggleMode}>
+        <Text style={styles.secondaryButtonText}>
+          {mode === 'signIn'
+            ? "Don't have an account? Sign up"
+            : 'Already have an account? Sign in'}
+        </Text>
+      </Pressable>
+    </View>
+  );
+
+  const heroColumn = (
+    <View style={[styles.heroColumn, isSplitTablet && styles.heroColumnSplit]}>
+      <View style={styles.brandLockup}>
+        <Image source={require('../../assets/icon.png')} style={styles.brandIcon} resizeMode="cover" />
+        <Text style={styles.brandName}>Styld</Text>
+      </View>
+
+      <View style={styles.heroCopy}>
+        <Text style={styles.heroTitle}>
+          {'Run your '}
+          <Text style={styles.heroTitleAccent}>business</Text>
+          {'\nfrom one place.'}
+        </Text>
+      </View>
+
+      <ExpoImage
+        source={require('../../HeroVid.gif')}
+        style={{ width: previewSize, height: previewSize, alignSelf: 'center' }}
+        contentFit="contain"
+        autoplay
+      />
+    </View>
+  );
+
+  const mainContent = isSplitTablet ? (
+    <View style={styles.splitRow}>
+      <View style={styles.heroPane}>{heroColumn}</View>
+      <View style={[styles.formPane, { width: formWidth }]}>{formArea}</View>
+    </View>
+  ) : (
+    <View style={styles.stackedBody}>
+      {heroColumn}
+      {formArea}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* Dark bg */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {/* Vertical grid lines */}
-        <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%">
-          <Defs>
-            <LinearGradient id="gridFade" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#ffffff" stopOpacity="1" />
-              <Stop offset="0.55" stopColor="#ffffff" stopOpacity="1" />
-              <Stop offset="0.92" stopColor="#ffffff" stopOpacity="0" />
-            </LinearGradient>
-          </Defs>
-          {/* 8 vertical lines at 12.5% intervals */}
-          {[0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875].map((x) => (
-            <Rect
-              key={x}
-              x={`${x * 100}%`}
-              y="0"
-              width="1"
-              height="100%"
-              fill="rgba(255,255,255,0.035)"
-            />
-          ))}
-        </Svg>
-
-        {/* Pink glow — bottom of hero area */}
-        <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%">
-          <Defs>
-            <RadialGradient id="heroGlow" cx="50%" cy="45%" r="55%">
-              <Stop offset="0" stopColor={colors.accentPink} stopOpacity="0.22" />
-              <Stop offset="1" stopColor={colors.accentPink} stopOpacity="0" />
-            </RadialGradient>
-          </Defs>
-          <Rect width="100%" height="60%" fill="url(#heroGlow)" />
-        </Svg>
-      </View>
+      <LoginBackground />
 
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            isTablet && styles.contentTablet,
+            {
+              width: '100%',
+              maxWidth: loginMaxWidth,
+              alignSelf: 'center',
+              minHeight: isTablet ? windowHeight - insets.top - insets.bottom - 32 : undefined,
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Brand lockup */}
-          <View style={styles.brandLockup}>
-            <Image
-              source={require('../../assets/icon.png')}
-              style={styles.brandIcon}
-              resizeMode="cover"
-            />
-            <Text style={styles.brandName}>Styld</Text>
-          </View>
+          <View style={isTablet ? styles.tabletMain : undefined}>{mainContent}</View>
 
-          {/* Hero headline */}
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroTitle}>
-              {'Run your '}
-              <Text style={styles.heroTitleAccent}>business</Text>
-              {'\nfrom one place.'}
-            </Text>
-          </View>
-
-          {/* App preview GIF */}
-          <ExpoImage
-            source={require('../../HeroVid.gif')}
-            style={styles.phoneGif}
-            contentFit="contain"
-            autoplay
-          />
-
-          {/* Auth fields */}
-          <View style={styles.formArea}>
-            <Text style={styles.cardHeading}>
-              {mode === 'signIn' ? 'Sign in to your account' : 'Create your account'}
-            </Text>
-
-            {mode === 'signUp' ? (
-              <View style={styles.field}>
-                <Text style={styles.label}>Full name</Text>
-                <TextInput
-                  value={fullName}
-                  onChangeText={setFullName}
-                  placeholder="Your name"
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="words"
-                  style={styles.input}
-                />
-              </View>
-            ) : null}
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                textContentType="emailAddress"
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor={colors.textMuted}
-                secureTextEntry
-                textContentType={mode === 'signIn' ? 'password' : 'newPassword'}
-                style={styles.input}
-              />
-            </View>
-
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            {message ? <Text style={styles.messageText}>{message}</Text> : null}
-
-            <Pressable
-              style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#0a0a0a" />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {mode === 'signIn' ? 'Sign in' : 'Create account'}
-                </Text>
-              )}
-            </Pressable>
-
-            {appleAvailable ? (
-              <>
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-                <Pressable
-                  style={[styles.appleButton, (loading || appleLoading) && styles.primaryButtonDisabled]}
-                  disabled={loading || appleLoading}
-                  onPress={async () => {
-                    setError(null);
-                    setAppleLoading(true);
-                    const result = await signInWithApple();
-                    setAppleLoading(false);
-                    if (result.error) setError(result.error);
-                  }}
-                >
-                  {appleLoading ? (
-                    <ActivityIndicator color="#0a0a0a" />
-                  ) : (
-                    <>
-                      <Ionicons name="logo-apple" size={18} color="#0a0a0a" />
-                      <Text style={styles.appleButtonText}>Sign in with Apple</Text>
-                    </>
-                  )}
-                </Pressable>
-              </>
-            ) : null}
-
-            <Pressable style={styles.secondaryButton} onPress={toggleMode}>
-              <Text style={styles.secondaryButtonText}>
-                {mode === 'signIn'
-                  ? "Don't have an account? Sign up"
-                  : 'Already have an account? Sign in'}
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Marquee ticker */}
           <View style={styles.marquee} pointerEvents="none">
-            <Text style={styles.marqueeText} numberOfLines={1}>
-              {'Salons & Braiders · Bookings · Client CRM · Online Payments · Your Booking Site · Salons & Braiders · Bookings · Client CRM · Online Payments · Your Booking Site'}
+            <Text style={styles.marqueeText} numberOfLines={isTablet ? 2 : 1}>
+              {isTablet
+                ? 'Salons & Braiders · Bookings · Client CRM · Online Payments · Your Booking Site'
+                : 'Salons & Braiders · Bookings · Client CRM · Online Payments · Your Booking Site · Salons & Braiders · Bookings · Client CRM · Online Payments · Your Booking Site'}
             </Text>
           </View>
         </ScrollView>
@@ -302,8 +293,45 @@ const BASE_STYLES = {
     paddingBottom: 16,
     gap: 16,
   },
-
-  /* Brand lockup: icon + "Styld" */
+  contentTablet: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    gap: 20,
+  },
+  tabletMain: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 32,
+    width: '100%',
+  },
+  heroPane: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  formPane: {
+    flexShrink: 0,
+    justifyContent: 'center',
+  },
+  stackedBody: {
+    gap: 16,
+    width: '100%',
+  },
+  heroColumn: {
+    gap: 16,
+  },
+  heroColumnSplit: {
+    gap: 16,
+    paddingRight: 8,
+  },
   brandLockup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -321,8 +349,6 @@ const BASE_STYLES = {
     letterSpacing: -0.9,
     fontFamily: 'SpaceGrotesk_700Bold',
   },
-
-  /* Hero copy */
   heroCopy: {
     gap: 6,
   },
@@ -334,18 +360,9 @@ const BASE_STYLES = {
     lineHeight: 32,
     fontFamily: 'SpaceGrotesk_700Bold',
   },
-  heroTitleAccent: {
-    color: colors.accentPink,
-  },
-  phoneGif: {
-    width: 350,
-    height: 350,
-    alignSelf: 'center',
-  },
-
-  /* Auth fields sit directly on background */
   formArea: {
     gap: 12,
+    width: '100%',
   },
   cardHeading: {
     color: colors.text,
@@ -411,6 +428,7 @@ const BASE_STYLES = {
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: '500',
+    textAlign: 'center',
   },
   dividerRow: {
     flexDirection: 'row',
@@ -444,13 +462,12 @@ const BASE_STYLES = {
     fontWeight: '700',
     letterSpacing: -0.2,
   },
-
-  /* Marquee */
   marquee: {
     overflow: 'hidden',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
     paddingTop: 16,
+    width: '100%',
   },
   marqueeText: {
     color: 'rgba(255, 255, 255, 0.2)',
@@ -458,5 +475,6 @@ const BASE_STYLES = {
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
+    textAlign: 'center',
   },
 };

@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700&family=Inter:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Source+Sans+3:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/css/styles.css?v=46" />
+    <link rel="stylesheet" href="/css/styles.css?v=49" />
     <style>
       #tenant-status {
         position: fixed;
@@ -42,7 +42,26 @@
           <div class="profile-brand__logo" id="profile-logo-placeholder" aria-hidden="true"></div>
           <span id="profile-brand-name">Your Brand</span>
         </a>
-        <a class="profile-book-btn" href="/booking">Book Now</a>
+        <div class="profile-nav__links" id="profile-nav-links" hidden>
+          <div class="profile-nav__tabs" id="profile-nav-tabs" hidden>
+            <a class="profile-nav__link" href="/certifications" data-nav-page="certifications">Certifications</a>
+            <a class="profile-nav__link" href="/products" data-nav-page="products">Shop</a>
+          </div>
+        </div>
+        <div class="profile-nav__actions">
+          <button class="profile-nav__menu-btn" type="button" id="profile-nav-menu-btn" aria-expanded="false" aria-controls="profile-nav-drawer" aria-label="Open menu" hidden>
+            <span class="profile-nav__menu-icon" aria-hidden="true"></span>
+          </button>
+          <a class="profile-book-btn" href="/booking">Book Now</a>
+        </div>
+      </div>
+      <div class="profile-nav__drawer" id="profile-nav-drawer" hidden>
+        <div class="container profile-nav__drawer-inner">
+          <div class="profile-nav__drawer-tabs">
+            <a class="profile-nav__drawer-link" href="/certifications" data-nav-page="certifications">Certifications</a>
+            <a class="profile-nav__drawer-link" href="/products" data-nav-page="products">Shop</a>
+          </div>
+        </div>
       </div>
     </nav>
 
@@ -86,6 +105,32 @@
         </div>
       </div>
 
+      <div class="profile-portfolio-lightbox" id="profile-portfolio-lightbox" hidden>
+        <div class="profile-portfolio-lightbox__backdrop" data-portfolio-lightbox-close></div>
+        <button class="profile-portfolio-lightbox__close" type="button" data-portfolio-lightbox-close aria-label="Close">&times;</button>
+        <div class="profile-portfolio-lightbox__stage" id="profile-portfolio-lightbox-stage"></div>
+      </div>
+
+      <!-- Previous work carousel -->
+      <section class="profile-portfolio-section" id="profile-portfolio-section" data-site-section="portfolio" hidden>
+        <div class="container">
+          <div class="profile-menu-head profile-portfolio-head">
+            <div class="profile-portfolio-head__row">
+              <div class="profile-portfolio-head__copy">
+                <h2 id="profile-portfolio-title">Our work</h2>
+                <p class="profile-menu-blurb" id="profile-portfolio-blurb"></p>
+              </div>
+              <a class="profile-portfolio-view-more" id="profile-portfolio-view-more" href="/portfolio" hidden>View more</a>
+            </div>
+          </div>
+        </div>
+        <div class="profile-portfolio-carousel-wrap">
+          <div class="profile-portfolio-carousel" id="profile-portfolio-carousel" aria-label="Our work preview">
+            <div class="profile-portfolio-carousel__track" id="profile-portfolio-carousel-track"></div>
+          </div>
+        </div>
+      </section>
+
       <!-- Menu -->
       <section class="profile-menu-section" id="profile-menu-section" data-site-section="menu">
         <div class="container">
@@ -97,6 +142,17 @@
           <div id="profile-service-grid" class="profile-service-grid">
             <!-- populated by profile-content.js -->
           </div>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="profile-faq-section" id="profile-faq-section" data-site-section="faq" hidden>
+        <div class="container">
+          <div class="profile-menu-head profile-faq-head">
+            <h2 id="profile-faq-title">FAQ</h2>
+            <p class="profile-menu-blurb" id="profile-faq-blurb"></p>
+          </div>
+          <div class="profile-faq-list" id="profile-faq-list"></div>
         </div>
       </section>
 
@@ -152,7 +208,7 @@
     <script src="/js/styld-tenant-config.local.js?v=35"></script>
     <script src="/js/styld-tenant-shared.js?v=40"></script>
     <script src="/js/styld-analytics.js?v=1"></script>
-    <script src="/js/profile-content.js?v=7"></script>
+    <script src="/js/profile-content.js?v=10"></script>
     <script src="/js/tenant-site.js?v=39"></script>
   </body>
 </html>

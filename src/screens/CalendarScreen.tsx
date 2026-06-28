@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
+import { useDeviceLayout } from '../hooks/useDeviceLayout';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -8,13 +9,14 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import TimelineClosedLayers from '../components/calendar/TimelineClosedLayers';
 import { CalendarStackParamList } from '../navigation/CalendarNavigator';
 import { useSiteData } from '../context/SiteDataContext';
-import { isWeekdayClosed } from '../lib/bookingAvailability';
+import { isWeekdayClosed, getTimelineBoundsForWeek } from '../lib/bookingAvailability';
 import { BlockedInterval, loadBlockedIntervals } from '../lib/siteAdmin';
 import { toDateKey } from '../lib/siteData';
 import {
@@ -22,6 +24,7 @@ import {
   DEFAULT_BOOKING_HOURS,
   loadBookingHours,
 } from '../lib/siteServices';
+import { getCalendarEventColors } from '../lib/styleEventColors';
 import { colors } from '../theme';
 
 type Props = NativeStackScreenProps<CalendarStackParamList, 'CalendarHome'>;
@@ -35,9 +38,10 @@ const TIMELINE_END = 23;
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 // ─── week-view constants ──────────────────────────────────────────────────────
-const WEEK_HOUR_HEIGHT = 28;
-const WEEK_TIMELINE_START = 7;   // start at 7 AM to keep the view compact
-const WEEK_TIMELINE_END = 21;
+const WEEK_DAY_HEADER_HEIGHT = 48;
+const WEEK_MIN_HOUR_HEIGHT = 22;
+/** Floating tab bar height + gap above it (matches dashboard scroll padding). */
+const WEEK_TAB_BAR_CLEARANCE = 156;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 function addDays(date: Date, days: number) {
@@ -66,10 +70,6 @@ function getMonthStart(date: Date) {
 
 function isSameDay(a: Date, b: Date) {
   return toDateKey(a) === toDateKey(b);
-}
-
-function isSameMonth(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 }
 
 function formatWeekRange(weekStart: Date) {
@@ -121,16 +121,36 @@ function formatHourLabel(hour: number) {
 }
 
 // ─── week-view helpers ────────────────────────────────────────────────────────
-function getWeekEventTop(event: CalendarEvent) {
-  const startMinutes = event.startHour * 60 + event.startMinute;
-  const timelineStartMinutes = WEEK_TIMELINE_START * 60;
-  return Math.max(0, ((startMinutes - timelineStartMinutes) / 60) * WEEK_HOUR_HEIGHT);
+function weekMinuteToTop(minute: number, timelineStartMinute: number, hourHeight: number) {
+  return ((minute - timelineStartMinute) / 60) * hourHeight;
 }
 
-function getWeekEventHeight(event: CalendarEvent) {
-  const startMinutes = Math.max(event.startHour * 60 + event.startMinute, WEEK_TIMELINE_START * 60);
-  const endMinutes = Math.min(event.endHour * 60 + event.endMinute, (WEEK_TIMELINE_END + 1) * 60);
-  return Math.max(((endMinutes - startMinutes) / 60) * WEEK_HOUR_HEIGHT, 16);
+function getWeekHourLines(startMinute: number, endMinute: number) {
+  const lines: number[] = [];
+  for (let minute = Math.ceil(startMinute / 60) * 60; minute < endMinute; minute += 60) {
+    lines.push(minute);
+  }
+  return lines;
+}
+
+function getWeekEventTop(
+  event: CalendarEvent,
+  hourHeight: number,
+  timelineStartMinute: number,
+) {
+  const startMinutes = event.startHour * 60 + event.startMinute;
+  return Math.max(0, weekMinuteToTop(startMinutes, timelineStartMinute, hourHeight));
+}
+
+function getWeekEventHeight(
+  event: CalendarEvent,
+  hourHeight: number,
+  timelineStartMinute: number,
+  timelineEndMinute: number,
+) {
+  const startMinutes = Math.max(event.startHour * 60 + event.startMinute, timelineStartMinute);
+  const endMinutes = Math.min(event.endHour * 60 + event.endMinute, timelineEndMinute);
+  return Math.max(weekMinuteToTop(endMinutes, timelineStartMinute, hourHeight) - weekMinuteToTop(startMinutes, timelineStartMinute, hourHeight), 16);
 }
 
 // ─── WeekView ─────────────────────────────────────────────────────────────────
@@ -143,6 +163,7 @@ function WeekView({
   getEvents,
   onEventPress,
   onDayPress,
+  headerHeight,
 }: {
   weekDays: Date[];
   today: Date;
@@ -152,21 +173,40 @@ function WeekView({
   getEvents: (key: string) => CalendarEvent[];
   onEventPress: (id: string) => void;
   onDayPress: (day: Date) => void;
+  headerHeight: number;
 }) {
-  const timelineHeight = (WEEK_TIMELINE_END - WEEK_TIMELINE_START + 1) * WEEK_HOUR_HEIGHT;
-  const hours = Array.from(
-    { length: WEEK_TIMELINE_END - WEEK_TIMELINE_START + 1 },
-    (_, i) => WEEK_TIMELINE_START + i,
+  const wkStyles = useResponsiveStyles(BASE_WK_STYLES);
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { isTablet, scrollBottomPadding } = useDeviceLayout('wide');
+  const tabBarClearance = isTablet ? scrollBottomPadding : WEEK_TAB_BAR_CLEARANCE;
+  const { startMinute: timelineStartMinute, endMinute: timelineEndMinute } = useMemo(
+    () => getTimelineBoundsForWeek(weekDays, bookingHours),
+    [bookingHours, weekDays],
   );
-  const currentHour = new Date().getHours();
+  const spanMinutes = Math.max(60, timelineEndMinute - timelineStartMinute);
+  const spanHours = spanMinutes / 60;
+  const hourLines = useMemo(
+    () => getWeekHourLines(timelineStartMinute, timelineEndMinute),
+    [timelineEndMinute, timelineStartMinute],
+  );
+  const currentMinuteOfDay = new Date().getHours() * 60 + new Date().getMinutes();
+
+  const { hourHeight, timelineHeight } = useMemo(() => {
+    const bottomChrome = Math.max(insets.bottom, 16) + tabBarClearance;
+    const chromeHeight = Math.max(headerHeight, 108) + WEEK_DAY_HEADER_HEIGHT;
+    const availableGridHeight = Math.max(
+      spanHours * WEEK_MIN_HOUR_HEIGHT,
+      windowHeight - chromeHeight - bottomChrome,
+    );
+    return {
+      hourHeight: availableGridHeight / spanHours,
+      timelineHeight: availableGridHeight,
+    };
+  }, [headerHeight, insets.bottom, spanHours, tabBarClearance, windowHeight]);
 
   return (
-    <ScrollView
-      style={wkStyles.scroll}
-      contentContainerStyle={wkStyles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Day header row */}
+    <View style={wkStyles.wrapper}>
       <View style={wkStyles.dayHeaderRow}>
         <View style={wkStyles.timeGutter} />
         {weekDays.map((day, i) => {
@@ -207,13 +247,29 @@ function WeekView({
       {/* Timeline grid */}
       <View style={[wkStyles.grid, { height: timelineHeight }]}>
         {/* Time gutter */}
-        <View style={wkStyles.timeGutter}>
-          {hours.map((hour) => (
+        <View style={wkStyles.timeGutterGrid}>
+          <View
+            style={[
+              wkStyles.hourGutterCell,
+              { top: 0 },
+            ]}
+          >
+            <Text style={wkStyles.hourGutterText}>
+              {formatEventTime(
+                Math.floor(timelineStartMinute / 60),
+                timelineStartMinute % 60,
+              )}
+            </Text>
+          </View>
+          {hourLines.map((minute) => (
             <View
-              key={hour}
-              style={[wkStyles.hourGutterCell, { top: (hour - WEEK_TIMELINE_START) * WEEK_HOUR_HEIGHT }]}
+              key={minute}
+              style={[
+                wkStyles.hourGutterCell,
+                { top: weekMinuteToTop(minute, timelineStartMinute, hourHeight) },
+              ]}
             >
-              <Text style={wkStyles.hourGutterText}>{formatHourLabel(hour)}</Text>
+              <Text style={wkStyles.hourGutterText}>{formatHourLabel(minute / 60)}</Text>
             </View>
           ))}
         </View>
@@ -228,38 +284,50 @@ function WeekView({
                 selectedDate={day}
                 bookingHours={bookingHours}
                 blocks={blocks}
-                timelineStartHour={WEEK_TIMELINE_START}
-                hourHeight={WEEK_HOUR_HEIGHT}
+                timelineStartMinute={timelineStartMinute}
+                hourHeight={hourHeight}
               />
               {/* Hour lines */}
-              {hours.map((hour) => (
+              {hourLines.map((minute) => (
                 <View
-                  key={hour}
+                  key={minute}
                   style={[
                     wkStyles.hourLine,
-                    { top: (hour - WEEK_TIMELINE_START) * WEEK_HOUR_HEIGHT },
+                    { top: weekMinuteToTop(minute, timelineStartMinute, hourHeight) },
                   ]}
                 />
               ))}
               {/* Current time indicator */}
-              {isCurrentDay && currentHour >= WEEK_TIMELINE_START && currentHour <= WEEK_TIMELINE_END ? (
+              {isCurrentDay &&
+              currentMinuteOfDay >= timelineStartMinute &&
+              currentMinuteOfDay <= timelineEndMinute ? (
                 <View
                   style={[
                     wkStyles.nowLine,
-                    { top: (currentHour - WEEK_TIMELINE_START) * WEEK_HOUR_HEIGHT + WEEK_HOUR_HEIGHT / 2 },
+                    {
+                      top: weekMinuteToTop(currentMinuteOfDay, timelineStartMinute, hourHeight),
+                    },
                   ]}
                 />
               ) : null}
               {/* Events */}
-              {events.map((event) => (
+              {events.map((event) => {
+                const eventColors = getCalendarEventColors(event);
+                return (
                 <Pressable
                   key={event.id}
                   style={[
                     wkStyles.eventBlock,
-                    event.completed ? wkStyles.eventBlockCompleted : wkStyles.eventBlockPending,
                     {
-                      top: getWeekEventTop(event),
-                      height: getWeekEventHeight(event),
+                      backgroundColor: eventColors.backgroundColor,
+                      borderColor: eventColors.borderColor,
+                      top: getWeekEventTop(event, hourHeight, timelineStartMinute),
+                      height: getWeekEventHeight(
+                        event,
+                        hourHeight,
+                        timelineStartMinute,
+                        timelineEndMinute,
+                      ),
                     },
                   ]}
                   onPress={() => onEventPress(event.appointmentId)}
@@ -268,13 +336,24 @@ function WeekView({
                     {event.title}
                   </Text>
                 </Pressable>
-              ))}
+                );
+              })}
             </View>
           );
         })}
       </View>
-    </ScrollView>
+    </View>
   );
+}
+
+// ─── month-view constants ───────────────────────────────────────────────────
+const MONTH_TAB_BAR_CLEARANCE = 156;
+const MONTH_COL_HEADER_HEIGHT = 34;
+const MONTH_PREVIEW_SLOT = 15;
+
+function getMonthPreviewLimit(weekRowHeight: number) {
+  const reserved = 30;
+  return Math.max(1, Math.min(4, Math.floor((weekRowHeight - reserved) / MONTH_PREVIEW_SLOT)));
 }
 
 // ─── MonthView ────────────────────────────────────────────────────────────────
@@ -284,13 +363,19 @@ function MonthView({
   bookingHours,
   getEvents,
   onDayPress,
+  headerHeight,
 }: {
   selectedDate: Date;
   today: Date;
   bookingHours: BookingHours;
   getEvents: (key: string) => CalendarEvent[];
   onDayPress: (day: Date) => void;
+  headerHeight: number;
 }) {
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { isTablet, scrollBottomPadding } = useDeviceLayout('wide');
+  const tabBarClearance = isTablet ? scrollBottomPadding : MONTH_TAB_BAR_CLEARANCE;
   const moStyles = useResponsiveStyles(BASE_MO_STYLES);
   const monthStart = getMonthStart(selectedDate);
   const startPadding = monthStart.getDay();
@@ -298,9 +383,17 @@ function MonthView({
   const totalCells = Math.ceil((startPadding + daysInMonth) / 7) * 7;
   const weeks = totalCells / 7;
 
+  const weekRowHeight = useMemo(() => {
+    const chromeHeight =
+      Math.max(headerHeight, 108) + MONTH_COL_HEADER_HEIGHT + tabBarClearance;
+    const availableHeight = Math.max(weeks * 72, windowHeight - chromeHeight - Math.max(insets.bottom, 16));
+    return availableHeight / weeks;
+  }, [headerHeight, insets.bottom, tabBarClearance, weeks, windowHeight]);
+
+  const previewLimit = getMonthPreviewLimit(weekRowHeight);
+
   return (
     <View style={moStyles.container}>
-      {/* Column headers */}
       <View style={moStyles.colHeaders}>
         {DAY_LABELS.map((label, i) => (
           <View key={i} style={moStyles.colHeaderCell}>
@@ -309,66 +402,85 @@ function MonthView({
         ))}
       </View>
 
-      {/* Weeks */}
-      {Array.from({ length: weeks }, (_, weekIndex) => (
-        <View key={weekIndex} style={moStyles.weekRow}>
-          {Array.from({ length: 7 }, (_, dayIndex) => {
-            const cellIndex = weekIndex * 7 + dayIndex;
-            const dayOffset = cellIndex - startPadding;
-            const date = dayOffset >= 0 && dayOffset < daysInMonth
-              ? addDays(monthStart, dayOffset)
-              : null;
+      <View style={moStyles.weeksGrid}>
+        {Array.from({ length: weeks }, (_, weekIndex) => (
+          <View key={weekIndex} style={[moStyles.weekRow, { height: weekRowHeight }]}>
+            {Array.from({ length: 7 }, (_, dayIndex) => {
+              const cellIndex = weekIndex * 7 + dayIndex;
+              const dayOffset = cellIndex - startPadding;
+              const date =
+                dayOffset >= 0 && dayOffset < daysInMonth
+                  ? addDays(monthStart, dayOffset)
+                  : null;
 
-            const isToday = date ? isSameDay(date, today) : false;
-            const isSelected = date ? isSameDay(date, selectedDate) : false;
-            const isClosed = date ? isWeekdayClosed(date, bookingHours) : false;
-            const events = date ? getEvents(toDateKey(date)) : [];
-            const dotColors = events.slice(0, 3).map((e) =>
-              e.completed ? colors.eventCompletedBadge : colors.accentPink,
-            );
+              const isToday = date ? isSameDay(date, today) : false;
+              const isSelected = date ? isSameDay(date, selectedDate) : false;
+              const isClosed = date ? isWeekdayClosed(date, bookingHours) : false;
+              const events = date ? getEvents(toDateKey(date)) : [];
+              const previewEvents = events.slice(0, previewLimit);
+              const overflowCount = Math.max(0, events.length - previewEvents.length);
 
-            return (
-              <Pressable
-                key={dayIndex}
-                style={moStyles.dayCell}
-                onPress={() => date && onDayPress(date)}
-                disabled={!date}
-              >
-                {date ? (
-                  <>
-                    <View
-                      style={[
-                        moStyles.dayNum,
-                        isToday && moStyles.dayNumToday,
-                        isSelected && !isToday && moStyles.dayNumSelected,
-                      ]}
-                    >
-                      <Text
+              return (
+                <Pressable
+                  key={dayIndex}
+                  style={[
+                    moStyles.dayCell,
+                    dayIndex === 6 && moStyles.dayCellLast,
+                    isSelected && !isToday && moStyles.dayCellSelected,
+                  ]}
+                  onPress={() => date && onDayPress(date)}
+                  disabled={!date}
+                >
+                  {date ? (
+                    <>
+                      <View
                         style={[
-                          moStyles.dayNumText,
-                          !isSameMonth(date, selectedDate) && moStyles.dayNumOtherMonth,
-                          isToday && moStyles.dayNumTextToday,
-                          isSelected && !isToday && moStyles.dayNumTextSelected,
-                          isClosed && !isToday && !isSelected && moStyles.dayNumClosed,
+                          moStyles.dayNum,
+                          isToday && moStyles.dayNumToday,
+                          isSelected && !isToday && moStyles.dayNumSelected,
                         ]}
                       >
-                        {date.getDate()}
-                      </Text>
-                    </View>
-                    {dotColors.length > 0 ? (
-                      <View style={moStyles.dotsRow}>
-                        {dotColors.map((c, i) => (
-                          <View key={i} style={[moStyles.dot, { backgroundColor: c }]} />
-                        ))}
+                        <Text
+                          style={[
+                            moStyles.dayNumText,
+                            isToday && moStyles.dayNumTextToday,
+                            isSelected && !isToday && moStyles.dayNumTextSelected,
+                            isClosed && !isToday && !isSelected && moStyles.dayNumClosed,
+                          ]}
+                        >
+                          {date.getDate()}
+                        </Text>
                       </View>
-                    ) : null}
-                  </>
-                ) : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      ))}
+
+                      <View style={moStyles.previews}>
+                        {previewEvents.map((event) => {
+                          const eventColors = getCalendarEventColors(event);
+                          return (
+                            <View
+                              key={event.id}
+                              style={[
+                                moStyles.previewPill,
+                                { backgroundColor: eventColors.backgroundColor },
+                              ]}
+                            >
+                              <Text style={moStyles.previewText} numberOfLines={1}>
+                                {event.title}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                        {overflowCount > 0 ? (
+                          <Text style={moStyles.moreText}>{overflowCount} more</Text>
+                        ) : null}
+                      </View>
+                    </>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -408,6 +520,7 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [calendarHeaderHeight, setCalendarHeaderHeight] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const weekStart = useMemo(() => getWeekStart(selectedDate), [selectedDate]);
 
@@ -453,8 +566,6 @@ export default function CalendarScreen({ navigation }: Props) {
   }
 
   function handleMonthDayPress(day: Date) {
-  const styles = useResponsiveStyles(BASE_STYLES);
-
     setSelectedDate(day);
     setViewMode('day');
   }
@@ -466,7 +577,10 @@ export default function CalendarScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ── Header ── */}
-      <View style={styles.header}>
+      <View
+        style={styles.header}
+        onLayout={(event) => setCalendarHeaderHeight(event.nativeEvent.layout.height)}
+      >
         <View style={styles.weekNav}>
           <Pressable style={styles.navButton} onPress={goBack}>
             <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
@@ -544,7 +658,7 @@ export default function CalendarScreen({ navigation }: Props) {
         ) : null}
 
         {viewMode === 'day' ? (
-          <Text style={styles.hoursLegend}>Grey = closed hours · Red tint = blocked time</Text>
+          <Text style={styles.hoursLegend}>Lines = business hours · Red tint = blocked time</Text>
         ) : null}
 
         {viewMode === 'day' && isWeekdayClosed(selectedDate, bookingHours) ? (
@@ -607,22 +721,25 @@ export default function CalendarScreen({ navigation }: Props) {
                   <Text style={styles.emptyStateText}>
                     {!hasLinkedSite
                       ? 'Connect your site table from the Site tab.'
-                      : 'Grey = closed hours · Pink = blocked time'}
+                      : 'Red tint = blocked time'}
                   </Text>
                 </View>
               ) : null}
 
-              {dayEvents.map((event) => (
+              {dayEvents.map((event) => {
+                const eventColors = getCalendarEventColors(event);
+                return (
                   <Pressable
                     key={event.id}
                     style={({ pressed }) => [
                       styles.eventCard,
-                      event.completed ? styles.eventCompleted : styles.eventPending,
-                      pressed && styles.eventCardPressed,
                       {
+                        backgroundColor: eventColors.backgroundColor,
+                        borderColor: eventColors.borderColor,
                         top: getEventTop(event),
                         height: getEventHeight(event),
                       },
+                      pressed && styles.eventCardPressed,
                     ]}
                     onPress={() =>
                       navigation.navigate('AppointmentDetail', {
@@ -640,7 +757,8 @@ export default function CalendarScreen({ navigation }: Props) {
                       </View>
                     ) : null}
                   </Pressable>
-                ))}
+                );
+              })}
             </View>
           </View>
         </ScrollView>
@@ -655,6 +773,7 @@ export default function CalendarScreen({ navigation }: Props) {
           bookingHours={bookingHours}
           blocks={blocks}
           getEvents={getCalendarEventsForDateKey}
+          headerHeight={calendarHeaderHeight}
           onEventPress={(id) => navigation.navigate('AppointmentDetail', { appointmentId: id })}
           onDayPress={(day) => {
             setSelectedDate(day);
@@ -665,19 +784,14 @@ export default function CalendarScreen({ navigation }: Props) {
 
       {/* ── Month view ── */}
       {viewMode === 'month' ? (
-        <ScrollView
-          style={styles.timelineScroll}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <MonthView
-            selectedDate={selectedDate}
-            today={today}
-            bookingHours={bookingHours}
-            getEvents={getCalendarEventsForDateKey}
-            onDayPress={handleMonthDayPress}
-          />
-        </ScrollView>
+        <MonthView
+          selectedDate={selectedDate}
+          today={today}
+          bookingHours={bookingHours}
+          getEvents={getCalendarEventsForDateKey}
+          onDayPress={handleMonthDayPress}
+          headerHeight={calendarHeaderHeight}
+        />
       ) : null}
     </SafeAreaView>
   );
@@ -714,7 +828,7 @@ const BASE_STYLES = {
   viewToggle: {
     flexDirection: 'row',
     backgroundColor: colors.card,
-    borderRadius: 10,
+    borderRadius: 4,
     padding: 3,
     marginBottom: 14,
     alignSelf: 'center',
@@ -723,7 +837,7 @@ const BASE_STYLES = {
   toggleBtn: {
     paddingHorizontal: 18,
     paddingVertical: 7,
-    borderRadius: 8,
+    borderRadius: 2,
   },
   toggleBtnActive: {
     backgroundColor: colors.calendarSelectedDay,
@@ -749,7 +863,7 @@ const BASE_STYLES = {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 23,
+    borderRadius: 4,
   },
   dayPillSelected: {
     backgroundColor: colors.calendarSelectedDay,
@@ -801,7 +915,7 @@ const BASE_STYLES = {
     marginTop: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 4,
     backgroundColor: 'rgba(148, 163, 184, 0.14)',
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.24)',
@@ -890,20 +1004,13 @@ const BASE_STYLES = {
     left: 0,
     right: 0,
     zIndex: 2,
-    borderRadius: 18,
+    borderRadius: 4,
+    borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-  },
-  eventCompleted: {
-    backgroundColor: colors.eventCompleted,
-  },
-  eventPending: {
-    backgroundColor: colors.eventPending,
-    borderWidth: 1,
-    borderColor: colors.eventPendingBorder,
   },
   eventCardPressed: {
     opacity: 0.82,
@@ -925,7 +1032,7 @@ const BASE_STYLES = {
   },
   completedBadge: {
     backgroundColor: colors.eventCompletedBadge,
-    borderRadius: 999,
+    borderRadius: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
     marginTop: 2,
@@ -938,12 +1045,9 @@ const BASE_STYLES = {
 };
 
 // ─── Week-view styles ─────────────────────────────────────────────────────────
-const wkStyles = StyleSheet.create({
-  scroll: {
+const BASE_WK_STYLES = {
+  wrapper: {
     flex: 1,
-  },
-  content: {
-    paddingBottom: 40,
   },
   dayHeaderRow: {
     flexDirection: 'row',
@@ -975,7 +1079,7 @@ const wkStyles = StyleSheet.create({
   dayHeaderNum: {
     width: 26,
     height: 26,
-    borderRadius: 13,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -994,10 +1098,18 @@ const wkStyles = StyleSheet.create({
     color: colors.text,
   },
   grid: {
+    flex: 1,
     flexDirection: 'row',
+    alignItems: 'stretch',
     paddingHorizontal: 12,
     position: 'relative',
     marginTop: 4,
+    overflow: 'hidden',
+  },
+  timeGutterGrid: {
+    width: 44,
+    alignSelf: 'stretch',
+    position: 'relative',
   },
   hourGutterCell: {
     position: 'absolute',
@@ -1014,6 +1126,8 @@ const wkStyles = StyleSheet.create({
   dayCol: {
     flex: 1,
     position: 'relative',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: colors.calendarGridLine,
   },
@@ -1038,18 +1152,11 @@ const wkStyles = StyleSheet.create({
     left: 1,
     right: 1,
     zIndex: 2,
-    borderRadius: 6,
+    borderRadius: 2,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 4,
     paddingVertical: 3,
     overflow: 'hidden',
-  },
-  eventBlockPending: {
-    backgroundColor: colors.eventPending,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.eventPendingBorder,
-  },
-  eventBlockCompleted: {
-    backgroundColor: colors.eventCompleted,
   },
   eventBlockTitle: {
     color: colors.text,
@@ -1057,44 +1164,61 @@ const wkStyles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 13,
   },
-});
+};
 
 // ─── Month-view styles ────────────────────────────────────────────────────────
 const BASE_MO_STYLES = {
   container: {
-    paddingHorizontal: 12,
-    paddingTop: 4,
+    flex: 1,
+    paddingHorizontal: 0,
   },
   colHeaders: {
     flexDirection: 'row',
-    marginBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.calendarGridLine,
+    height: MONTH_COL_HEADER_HEIGHT,
   },
   colHeaderCell: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 6,
+    justifyContent: 'center',
   },
   colHeaderText: {
     color: colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
+  },
+  weeksGrid: {
+    flex: 1,
   },
   weekRow: {
     flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.calendarGridLine,
   },
   dayCell: {
     flex: 1,
-    alignItems: 'center',
-    paddingVertical: 6,
-    minHeight: 56,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: colors.calendarGridLine,
+    paddingHorizontal: 3,
+    paddingTop: 3,
+    paddingBottom: 2,
+    overflow: 'hidden',
+  },
+  dayCellLast: {
+    borderRightWidth: 0,
+  },
+  dayCellSelected: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
   },
   dayNum: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 3,
+    alignSelf: 'flex-start',
+    marginBottom: 2,
   },
   dayNumToday: {
     backgroundColor: colors.accentPink,
@@ -1104,7 +1228,7 @@ const BASE_MO_STYLES = {
   },
   dayNumText: {
     color: colors.text,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
   },
   dayNumTextToday: {
@@ -1114,22 +1238,32 @@ const BASE_MO_STYLES = {
   dayNumTextSelected: {
     color: colors.text,
   },
-  dayNumOtherMonth: {
-    color: colors.textMuted,
-    opacity: 0.4,
-  },
   dayNumClosed: {
     textDecorationLine: 'line-through',
     opacity: 0.45,
   },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 3,
-    alignItems: 'center',
+  previews: {
+    flex: 1,
+    gap: 2,
   },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+  previewPill: {
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    minHeight: 13,
+    justifyContent: 'center',
+  },
+  previewText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '600',
+    lineHeight: 11,
+  },
+  moreText: {
+    color: colors.textMuted,
+    fontSize: 9,
+    fontWeight: '600',
+    paddingHorizontal: 4,
+    marginTop: 1,
   },
 } as const;

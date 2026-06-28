@@ -10,6 +10,8 @@ type HeroLayoutPickerProps = {
 };
 
 function LayoutPreview({ layout }: { layout: HeroLayout }) {
+  const previewStyles = useResponsiveStyles(BASE_PREVIEW_STYLES);
+
   if (layout === 'split') {
     return (
       <View style={previewStyles.splitRow}>
@@ -79,7 +81,7 @@ export default function HeroLayoutPicker({ value, onChange }: HeroLayoutPickerPr
   );
 }
 
-const previewStyles = StyleSheet.create({
+const BASE_PREVIEW_STYLES = {
   splitRow: {
     flexDirection: 'row',
     gap: 4,
@@ -129,7 +131,7 @@ const previewStyles = StyleSheet.create({
     backgroundColor: colors.accentPinkSoft,
     borderRadius: 4,
   },
-});
+};
 
 const BASE_STYLES = {
   list: {

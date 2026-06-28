@@ -24,13 +24,18 @@ import {
   formatStyleDuration,
   formatStylePriceRange,
   getIncompleteStyleAddons,
+  getIncompleteStyleVariants,
+  hasExtraStyleVariants,
   normalizeStyleAddons,
+  normalizeStyleVariants,
   STYLE_DURATION_PRESETS,
   StyleAddon,
+  StyleVariant,
 } from '../../data/siteStyles';
 import { pickSiteImageFromLibrary } from '../../lib/pickSiteImage';
 import { colors } from '../../theme';
 import StyleAddonsEditor from './StyleAddonsEditor';
+import StyleVariantsEditor from './StyleVariantsEditor';
 
 type StyleEditorCardProps = {
   service: CatalogService;
@@ -68,6 +73,7 @@ function StylePill({
   const price = getPrice(service.id);
   const durationMinutes = meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES;
   const addons = meta?.addons ?? [];
+  const variants = meta?.variants ?? [];
 
   return (
     <Pressable
@@ -84,7 +90,7 @@ function StylePill({
           {title}
         </Text>
         <Text style={styles.stylePillMeta} numberOfLines={1}>
-          {formatStyleDuration(durationMinutes)} · {formatStylePriceRange(price, addons)}
+          {formatStyleDuration(durationMinutes)} · {formatStylePriceRange(price, addons, variants)}
         </Text>
       </View>
     </Pressable>
@@ -232,6 +238,8 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
     meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
   );
   const [addons, setAddons] = useState<StyleAddon[]>(meta?.addons ?? []);
+  const [variants, setVariants] = useState<StyleVariant[]>(meta?.variants ?? []);
+  const [defaultVariantLabel, setDefaultVariantLabel] = useState(meta?.defaultVariantLabel ?? '');
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -243,7 +251,8 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
   const priceRef = useRef<View>(null);
 
   const normalizedAddons = normalizeStyleAddons(addons);
-  const snapshot = `${title}|${description}|${price}|${durationMinutes}|${normalizedAddons.map((a) => `${a.id}:${a.name}:${a.price}`).join(';')}`;
+  const normalizedVariants = normalizeStyleVariants(variants);
+  const snapshot = `${title}|${description}|${price}|${durationMinutes}|${defaultVariantLabel}|${normalizedVariants.map((v) => `${v.id}:${v.label}:${v.price}`).join(';')}|${normalizedAddons.map((a) => `${a.id}:${a.name}:${a.price}`).join(';')}`;
   const parsedPrice = Number(price.replace(/[^0-9.]/g, '')) || 0;
 
   useEffect(() => {
@@ -253,15 +262,18 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
     setPrice(String(getPrice(service.id) || ''));
     setDurationMinutes(nextMeta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES);
     setAddons(nextMeta?.addons ?? []);
+    setVariants(nextMeta?.variants ?? []);
+    setDefaultVariantLabel(nextMeta?.defaultVariantLabel ?? '');
     setLocalImageUri(null);
     skipNextSave.current = true;
-    lastSavedSnapshot.current = `${nextMeta?.title ?? service.name}|${nextMeta?.description ?? service.description ?? ''}|${getPrice(service.id) || ''}|${nextMeta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES}|${normalizeStyleAddons(nextMeta?.addons).map((a) => `${a.id}:${a.name}:${a.price}`).join(';')}`;
+    lastSavedSnapshot.current = `${nextMeta?.title ?? service.name}|${nextMeta?.description ?? service.description ?? ''}|${getPrice(service.id) || ''}|${nextMeta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES}|${nextMeta?.defaultVariantLabel ?? ''}|${normalizeStyleVariants(nextMeta?.variants).map((v) => `${v.id}:${v.label}:${v.price}`).join(';')}|${normalizeStyleAddons(nextMeta?.addons).map((a) => `${a.id}:${a.name}:${a.price}`).join(';')}`;
     // Only reset when switching styles — not after every auto-save.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [service.id]);
 
   const saveStyle = useCallback(async () => {
     if (getIncompleteStyleAddons(addons).length > 0) return;
+    if (getIncompleteStyleVariants(variants).length > 0) return;
     onBusyChange(service.id);
     try {
       await upsertStyle({
@@ -270,6 +282,8 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
         description,
         price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
         durationMinutes,
+        defaultVariantLabel: defaultVariantLabel.trim(),
+        variants: normalizedVariants,
         addons: normalizedAddons,
         category: meta?.category ?? service.category,
         venue: service.venue,
@@ -284,10 +298,13 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
     }
   }, [
     addons,
+    variants,
+    defaultVariantLabel,
     description,
     durationMinutes,
     meta?.category,
     normalizedAddons,
+    normalizedVariants,
     onBusyChange,
     parsedPrice,
     service.category,
@@ -404,7 +421,7 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
             onFocus={() => onFieldFocus(descriptionRef.current)}
           />
           <Field
-            label="Price"
+            label={hasExtraStyleVariants(variants) ? 'Price (version 1)' : 'Price'}
             value={price}
             onChangeText={setPrice}
             placeholder="150"
@@ -415,6 +432,14 @@ function StyleEditorPanel({ service, busy, onBusyChange, onFieldFocus }: StyleEd
           <DurationPicker
             value={durationMinutes}
             onChange={setDurationMinutes}
+            disabled={busy}
+          />
+          <StyleVariantsEditor
+            basePrice={parsedPrice}
+            defaultVariantLabel={defaultVariantLabel}
+            onDefaultVariantLabelChange={setDefaultVariantLabel}
+            variants={variants}
+            onChange={setVariants}
             disabled={busy}
           />
           <StyleAddonsEditor addons={addons} onChange={setAddons} disabled={busy} />
@@ -430,7 +455,15 @@ function AddStylePanel({
   onFieldFocus,
 }: {
   onAdd: (
-    input: { title: string; description: string; price: number; durationMinutes: number; addons?: StyleAddon[] },
+    input: {
+      title: string;
+      description: string;
+      price: number;
+      durationMinutes: number;
+      defaultVariantLabel?: string;
+      variants?: StyleVariant[];
+      addons?: StyleAddon[];
+    },
     imageUri: string | null,
     mimeType: string | null,
   ) => Promise<void>;
@@ -443,6 +476,8 @@ function AddStylePanel({
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_STYLE_DURATION_MINUTES);
+  const [variants, setVariants] = useState<StyleVariant[]>([]);
+  const [defaultVariantLabel, setDefaultVariantLabel] = useState('');
   const [addons, setAddons] = useState<StyleAddon[]>([]);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageMimeType, setImageMimeType] = useState<string | null>(null);
@@ -471,6 +506,8 @@ function AddStylePanel({
           description: description.trim(),
           price: parsedPrice,
           durationMinutes,
+          defaultVariantLabel: defaultVariantLabel.trim(),
+          variants: normalizeStyleVariants(variants),
           addons: normalizeStyleAddons(addons),
         },
         imageUri,
@@ -480,6 +517,8 @@ function AddStylePanel({
       setDescription('');
       setPrice('');
       setDurationMinutes(DEFAULT_STYLE_DURATION_MINUTES);
+      setVariants([]);
+      setDefaultVariantLabel('');
       setAddons([]);
       setImageUri(null);
       setImageMimeType(null);
@@ -519,7 +558,7 @@ function AddStylePanel({
             onFocus={() => onFieldFocus(descriptionRef.current)}
           />
           <Field
-            label="Price"
+            label={hasExtraStyleVariants(variants) ? 'Price (version 1)' : 'Price'}
             value={price}
             onChangeText={setPrice}
             placeholder="120"
@@ -531,6 +570,14 @@ function AddStylePanel({
           <DurationPicker
             value={durationMinutes}
             onChange={setDurationMinutes}
+            disabled={isAdding}
+          />
+          <StyleVariantsEditor
+            basePrice={parsedPrice}
+            defaultVariantLabel={defaultVariantLabel}
+            onDefaultVariantLabelChange={setDefaultVariantLabel}
+            variants={variants}
+            onChange={setVariants}
             disabled={isAdding}
           />
           <StyleAddonsEditor addons={addons} onChange={setAddons} disabled={isAdding} />
@@ -608,7 +655,15 @@ function StylesEditorBody({
   };
 
   const handleAdd = async (
-    input: { title: string; description: string; price: number; durationMinutes: number; addons?: StyleAddon[] },
+    input: {
+      title: string;
+      description: string;
+      price: number;
+      durationMinutes: number;
+      defaultVariantLabel?: string;
+      variants?: StyleVariant[];
+      addons?: StyleAddon[];
+    },
     imageUri: string | null,
     mimeType: string | null,
   ) => {

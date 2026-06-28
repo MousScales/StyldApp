@@ -1,10 +1,12 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { ClientEmailTemplateId } from '../data/clientEmailTemplates';
+import { MessagePlaceholderContext } from './messagePlaceholders';
 import { supabase } from './supabase';
 
 export type ClientEmailRecipient = {
   email: string;
   name: string;
+  merge?: Partial<MessagePlaceholderContext>;
 };
 
 export type SendClientEmailInput = {

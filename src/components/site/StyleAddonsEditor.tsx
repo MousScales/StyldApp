@@ -82,7 +82,7 @@ export default function StyleAddonsEditor({ addons, onChange, disabled }: StyleA
   );
 }
 
-const BASE_STYLES = StyleSheet.create({
+const BASE_STYLES = {
   wrap: {
     marginTop: 4,
     marginBottom: 4,
@@ -157,4 +157,4 @@ const BASE_STYLES = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-});
+};

@@ -74,6 +74,10 @@
   }
 
   function paymentSummary(row, urlPaid) {
+    var bookingStatus = String(row.booking_status || "").toLowerCase();
+    if (bookingStatus === "pending_approval") {
+      return "Request received — awaiting stylist approval. You will get a confirmation email once your appointment is accepted.";
+    }
     var s = row.payment_status || "pending";
     if (urlPaid) {
       return "Online deposit submitted through Stripe. Watch your email for a receipt; we will confirm your appointment shortly.";
@@ -108,20 +112,21 @@
       .replace(/"/g, "&quot;");
   }
 
-  /** Public URL for `booking-photos` bucket — matches js/booking.js uploads. */
-  function publicBookingPhotoUrl(path) {
-    var base = window.__SALON_SITE_SUPABASE && window.__SALON_SITE_SUPABASE.url;
-    if (!base || !path) return "";
-    return (
-      String(base).replace(/\/$/, "") +
-      "/storage/v1/object/public/booking-photos/" +
-      encodeURI(String(path).replace(/^\/+/, ""))
-    );
+  /** Signed URL for private `booking-photos` bucket — public URLs do not work. */
+  async function signedBookingPhotoUrl(path) {
+    var sb = window.salonSupabaseClient;
+    if (!sb || !path) return "";
+    try {
+      var res = await sb.storage.from("booking-photos").createSignedUrl(String(path).replace(/^\/+/, ""), 3600);
+      return res.data && res.data.signedUrl ? res.data.signedUrl : "";
+    } catch (e) {
+      console.warn("signedBookingPhotoUrl:", e);
+      return "";
+    }
   }
 
-  function addPhotoRow(dl, label, path) {
+  function addPhotoRow(dl, label, path, url) {
     if (!dl || !path) return;
-    var url = publicBookingPhotoUrl(path);
     var dt = document.createElement("dt");
     dt.textContent = label;
     var dd = document.createElement("dd");
@@ -143,6 +148,18 @@
     dl.appendChild(dd);
   }
 
+  async function addPhotoRows(dl, row) {
+    if (!dl || !row) return;
+    if (row.photo_hair_path) {
+      var hairUrl = await signedBookingPhotoUrl(row.photo_hair_path);
+      addPhotoRow(dl, "Hair photo", row.photo_hair_path, hairUrl);
+    }
+    if (row.photo_ref_path) {
+      var refUrl = await signedBookingPhotoUrl(row.photo_ref_path);
+      addPhotoRow(dl, "Reference photo", row.photo_ref_path, refUrl);
+    }
+  }
+
   function humanPaymentStatus(v) {
     var s = String(v || "pending").toLowerCase();
     if (s === "deposit_paid") return "Deposit paid";
@@ -151,7 +168,7 @@
     return v || "—";
   }
 
-  function renderReceipt(row, urlPaid) {
+  async function renderReceipt(row, urlPaid) {
     if (!els.capture) return;
 
     if (els.bookingIdCode) els.bookingIdCode.textContent = row.id || "—";
@@ -207,8 +224,7 @@
     var hasExtra = !!(row.photo_hair_path || row.photo_ref_path || row.source);
     if (els.sectionExtra) els.sectionExtra.hidden = !hasExtra;
     if (hasExtra) {
-      if (row.photo_hair_path) addPhotoRow(els.dlExtra, "Hair photo", row.photo_hair_path);
-      if (row.photo_ref_path) addPhotoRow(els.dlExtra, "Reference photo", row.photo_ref_path);
+      await addPhotoRows(els.dlExtra, row);
       if (row.source) addRow(els.dlExtra, "Source", row.source);
     }
 
@@ -223,19 +239,21 @@
   }
 
   async function fetchBooking(id) {
+    var local = readLocalBookings().find(function (r) {
+      return r.id === id;
+    });
+
     var sb = window.salonSupabaseClient;
     if (sb) {
       var res = await sb.from("bookings").select("*").eq("id", id).maybeSingle();
       if (res.error) {
         console.warn(res.error);
-        return null;
+      } else if (res.data) {
+        return res.data;
       }
-      return res.data || null;
     }
-    var local = readLocalBookings();
-    return local.find(function (r) {
-      return r.id === id;
-    }) || null;
+
+    return local || null;
   }
 
   function readNotice() {
@@ -372,7 +390,7 @@
     }
 
     clearBookingSessionKeys();
-    renderReceipt(row, urlPaid);
+    await renderReceipt(row, urlPaid);
     cleanUrl(bookingId);
 
     if (els.btnPng) els.btnPng.addEventListener("click", downloadPng);

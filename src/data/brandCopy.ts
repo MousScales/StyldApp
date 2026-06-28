@@ -15,18 +15,18 @@ export type BrandCopy = {
 };
 
 const SALON_COPY: BrandCopy = {
-  businessLabel: 'Hair salon',
+  businessLabel: 'Hairstylist/braider',
   professional: 'stylist',
-  professionalTitle: 'Stylist',
-  shop: 'salon',
+  professionalTitle: 'Hairstylist',
+  shop: 'chair',
   welcomeAccent: 'your chair is about to get busier.',
   welcomeSubtitle: "A few fun questions, then we'll set up your business — takes about two minutes.",
   onboardingDoneSubtitle: 'your booking site is next.',
-  paywallHeadline: 'Stop Managing Your Business Through DMs',
+  paywallHeadline: 'Stop Managing Your Clients Through DMs',
   paywallSubheadline:
     'Bookings, clients, payments, reminders, and scheduling — requires a Styld subscription.',
-  loginTagline: 'The CRM built for hair salons',
-  loginSubtitle: 'Bookings, clients, payments, and your website — all in one place.',
+  loginTagline: 'The CRM built for hairstylists & braiders',
+  loginSubtitle: 'Bookings, clients, payments, and your booking site — all in one place.',
 };
 
 const BARBER_COPY: BrandCopy = {
@@ -74,15 +74,62 @@ const NAIL_COPY: BrandCopy = {
   loginSubtitle: 'Bookings, clients, payments, and your nail site — all in one place.',
 };
 
+const LASH_COPY: BrandCopy = {
+  businessLabel: 'Lash tech',
+  professional: 'lash tech',
+  professionalTitle: 'Lash tech',
+  shop: 'lash studio',
+  welcomeAccent: 'your lash bed is about to fill up.',
+  welcomeSubtitle: "A few quick questions, then we'll set up your lash studio — takes about two minutes.",
+  onboardingDoneSubtitle: 'your booking site is next.',
+  paywallHeadline: 'Stop Booking Lashes Through DMs',
+  paywallSubheadline:
+    'Appointments, clients, payments, and reminders — requires a Styld subscription.',
+  loginTagline: 'The CRM built for lash techs',
+  loginSubtitle: 'Bookings, clients, payments, and your lash site — all in one place.',
+};
+
+const OTHER_COPY: BrandCopy = {
+  businessLabel: 'Other',
+  professional: 'pro',
+  professionalTitle: 'Professional',
+  shop: 'business',
+  welcomeAccent: 'your calendar is about to fill up.',
+  welcomeSubtitle: "A few quick questions, then we'll set up your business — takes about two minutes.",
+  onboardingDoneSubtitle: 'your booking site is next.',
+  paywallHeadline: 'Stop Running Your Business Through DMs',
+  paywallSubheadline:
+    'Bookings, clients, payments, reminders, and scheduling — requires a Styld subscription.',
+  loginTagline: 'The CRM built for beauty & wellness pros',
+  loginSubtitle: 'Bookings, clients, payments, and your booking site — all in one place.',
+};
+
 const BRAND_COPY: Record<BusinessType, BrandCopy> = {
   hair_salon: SALON_COPY,
   barber: BARBER_COPY,
   makeup_artist: MAKEUP_COPY,
   nail_tech: NAIL_COPY,
+  lash_tech: LASH_COPY,
+  other: OTHER_COPY,
 };
 
-export function getBrandCopy(businessType: BusinessType | ''): BrandCopy {
-  return businessType ? BRAND_COPY[businessType] : SALON_COPY;
+function withCustomOtherLabel(copy: BrandCopy, otherLabel: string): BrandCopy {
+  const label = otherLabel.trim();
+  return {
+    ...copy,
+    businessLabel: label,
+    professionalTitle: label,
+    loginTagline: `The CRM built for ${label}`,
+  };
+}
+
+export function getBrandCopy(businessType: BusinessType | '', businessTypeOther?: string): BrandCopy {
+  if (!businessType) return SALON_COPY;
+  const base = BRAND_COPY[businessType];
+  if (businessType === 'other' && businessTypeOther?.trim()) {
+    return withCustomOtherLabel(base, businessTypeOther);
+  }
+  return base;
 }
 
 export const SALON_PAYWALL_NOTIFS = [
@@ -125,6 +172,15 @@ export const NAIL_PAYWALL_NOTIFS = [
   { title: 'Appointment tomorrow', msg: 'Reminder: Bri L. · Gel removal · 10:00 AM', time: 'now' },
 ] as const;
 
+export const LASH_PAYWALL_NOTIFS = [
+  { title: 'New booking', msg: 'Morgan K. booked Volume fill · Sat 11:00 AM', time: 'now' },
+  { title: 'Deposit paid', msg: '$40 deposit from Riley S. · Classic set', time: 'now' },
+  { title: 'Booking confirmed', msg: 'Casey T. · Hybrid lashes · Fri 2:30 PM', time: '1m ago' },
+  { title: 'Payment received', msg: '$95 from Dana L. · Lash lift & tint', time: 'now' },
+  { title: 'New inquiry', msg: 'Sam P. asked about mega volume pricing', time: '2m ago' },
+  { title: 'Appointment tomorrow', msg: 'Reminder: Jordan M. · Fill · 10:00 AM', time: 'now' },
+] as const;
+
 export function getPaywallNotifs(businessType: BusinessType | '') {
   switch (businessType) {
     case 'barber':
@@ -133,6 +189,10 @@ export function getPaywallNotifs(businessType: BusinessType | '') {
       return MAKEUP_PAYWALL_NOTIFS;
     case 'nail_tech':
       return NAIL_PAYWALL_NOTIFS;
+    case 'lash_tech':
+      return LASH_PAYWALL_NOTIFS;
+    case 'other':
+      return SALON_PAYWALL_NOTIFS;
     default:
       return SALON_PAYWALL_NOTIFS;
   }
@@ -235,6 +295,27 @@ export const NAIL_ALL_DONE_MESSAGES: VibeFn[] = [
   (n) => ({ quote: 'Full book today', sub: `Every appointment handled.` }),
 ];
 
+export const LASH_DAY_OFF_MESSAGES: VibeMessage[] = [
+  { quote: 'No lash appointments today ✨', sub: 'Enjoy the quiet studio.' },
+  { quote: 'Empty lash bed today', sub: 'Recharge before the next rush.' },
+  { quote: 'Studio day off', sub: 'Take time for yourself.' },
+];
+
+export const LASH_NOT_STARTED_MESSAGES: VibeFn[] = [
+  (n) => ({ quote: `${n} ${n === 1 ? 'appointment' : 'appointments'} on the books.`, sub: 'Time to open up.' }),
+  (n) => ({ quote: `Busy day ahead — ${n} booked ✨`, sub: "Let's run a clean studio." }),
+];
+
+export const LASH_IN_PROGRESS_MESSAGES: VibeProgressFn[] = [
+  (done, left) => ({ quote: `${left} more sets to go`, sub: `${done} done so far.` }),
+  (done, left) => ({ quote: `${done} down, ${left} to finish`, sub: 'Keep the momentum.' }),
+];
+
+export const LASH_ALL_DONE_MESSAGES: VibeFn[] = [
+  (n) => ({ quote: 'All sets complete ✨', sub: `${n} ${n === 1 ? 'client' : 'clients'} served today.` }),
+  (n) => ({ quote: 'Full lash book today', sub: `Every appointment handled.` }),
+];
+
 export function getDashboardVibeMessages(businessType: BusinessType | '') {
   switch (businessType) {
     case 'barber':
@@ -257,6 +338,20 @@ export function getDashboardVibeMessages(businessType: BusinessType | '') {
         notStarted: NAIL_NOT_STARTED_MESSAGES,
         inProgress: NAIL_IN_PROGRESS_MESSAGES,
         allDone: NAIL_ALL_DONE_MESSAGES,
+      };
+    case 'lash_tech':
+      return {
+        dayOff: LASH_DAY_OFF_MESSAGES,
+        notStarted: LASH_NOT_STARTED_MESSAGES,
+        inProgress: LASH_IN_PROGRESS_MESSAGES,
+        allDone: LASH_ALL_DONE_MESSAGES,
+      };
+    case 'other':
+      return {
+        dayOff: SALON_DAY_OFF_MESSAGES,
+        notStarted: SALON_NOT_STARTED_MESSAGES,
+        inProgress: SALON_IN_PROGRESS_MESSAGES,
+        allDone: SALON_ALL_DONE_MESSAGES,
       };
     default:
       return {

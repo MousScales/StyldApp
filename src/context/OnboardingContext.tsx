@@ -11,7 +11,9 @@ import {
   needsSiteSetup,
   normalizeOnboardingState,
   OnboardingState,
+  OnboardingSurvey,
 } from '../data/onboarding';
+import { saveOnboardingSurvey } from '../lib/accountOnboarding';
 import { DEFAULT_SITE_PUBLISH, SitePublishConfig } from '../data/sitePublish';
 import { loadSitePublish, publishSiteSubdomain, saveSubdomainDraft, PublishSiteResult } from '../lib/sitePublish';
 import { supabase } from '../lib/supabase';
@@ -26,6 +28,7 @@ type OnboardingContextValue = {
   completeSetup: () => Promise<void>;
   /** Immediately marks account onboarding done in local state (after DB save). */
   markAccountOnboardingSaved: (survey?: OnboardingState['survey']) => void;
+  updateSurvey: (survey: OnboardingState['survey']) => Promise<void>;
   publishSite: (subdomain: string) => Promise<PublishSiteResult>;
   saveDraftSubdomain: (subdomain: string) => Promise<void>;
   refresh: (opts?: { silent?: boolean }) => Promise<void>;
@@ -108,6 +111,15 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     setHasStoredState(true);
   }, []);
 
+  const updateSurvey = useCallback(
+    async (survey: OnboardingSurvey) => {
+      if (!user?.id) return;
+      await saveOnboardingSurvey(user.id, survey);
+      markAccountOnboardingSaved(survey);
+    },
+    [user?.id, markAccountOnboardingSaved],
+  );
+
   const completeSetup = useCallback(async () => {
     if (!user?.id) return;
 
@@ -179,6 +191,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       needsSetup: needsSetupValue,
       completeSetup,
       markAccountOnboardingSaved,
+      updateSurvey,
       publishSite,
       saveDraftSubdomain,
       refresh,
@@ -190,6 +203,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       needsSetupValue,
       completeSetup,
       markAccountOnboardingSaved,
+      updateSurvey,
       publishSite,
       saveDraftSubdomain,
       refresh,

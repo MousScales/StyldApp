@@ -1,9 +1,9 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { BookingHours } from '../../data/bookingHours';
-import { colors } from '../../theme';
+import { getDayOpenCloseBoundaries } from '../../lib/bookingAvailability';
 import {
-  buildScheduleClosedOverlays,
+  getMinuteTop,
   getOverlayHeight,
   getOverlayTop,
   overlayFromBlock,
@@ -17,7 +17,9 @@ type TimelineClosedLayersProps = {
   bookingHours: BookingHours;
   blocks?: BlockedInterval[];
   timelineStartHour?: number;
+  timelineStartMinute?: number;
   hourHeight?: number;
+  showBoundaries?: boolean;
 };
 
 export default function TimelineClosedLayers({
@@ -25,30 +27,54 @@ export default function TimelineClosedLayers({
   bookingHours,
   blocks = [],
   timelineStartHour = 0,
+  timelineStartMinute,
   hourHeight = 56,
+  showBoundaries = true,
 }: TimelineClosedLayersProps) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
   const dateKey = toDateKey(selectedDate);
-  const closedOverlays = buildScheduleClosedOverlays(selectedDate, bookingHours);
+  const startMinute = timelineStartMinute ?? timelineStartHour * 60;
+  const boundaries = showBoundaries
+    ? getDayOpenCloseBoundaries(selectedDate, bookingHours)
+    : null;
   const blockOverlays = blocks
     .map((block) => overlayFromBlock(block, dateKey))
     .filter((overlay): overlay is TimelineOverlay => overlay !== null);
 
-  const layers = [...closedOverlays, ...blockOverlays];
-
   return (
     <>
-      {layers.map((overlay) => (
+      {boundaries ? (
+        <>
+          <View
+            style={[
+              styles.boundaryLine,
+              {
+                top: getMinuteTop(boundaries.openMinute, startMinute, hourHeight),
+              },
+            ]}
+            pointerEvents="none"
+          />
+          <View
+            style={[
+              styles.boundaryLine,
+              styles.boundaryLineClose,
+              {
+                top: getMinuteTop(boundaries.closeMinute, startMinute, hourHeight),
+              },
+            ]}
+            pointerEvents="none"
+          />
+        </>
+      ) : null}
+      {blockOverlays.map((overlay) => (
         <View
-          key={`${overlay.variant}-${overlay.id}`}
+          key={`block-${overlay.id}`}
           style={[
-            styles.layer,
-            overlay.variant === 'closed' && styles.layerClosed,
-            overlay.variant === 'block' && styles.layerBlock,
+            styles.layerBlock,
             {
-              top: getOverlayTop(overlay, timelineStartHour),
-              height: getOverlayHeight(overlay),
+              top: getOverlayTop(overlay, startMinute, hourHeight),
+              height: getOverlayHeight(overlay, hourHeight),
             },
           ]}
           pointerEvents="none"
@@ -59,19 +85,24 @@ export default function TimelineClosedLayers({
 }
 
 const BASE_STYLES = {
-  layer: {
+  boundaryLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 0,
+    borderTopWidth: 1.5,
+    borderTopColor: 'rgba(100, 116, 139, 0.55)',
+    zIndex: 1,
+  },
+  boundaryLineClose: {
+    borderTopColor: 'rgba(100, 116, 139, 0.4)',
+  },
+  layerBlock: {
     position: 'absolute',
     left: 0,
     right: 0,
     zIndex: 1,
-    borderRadius: 12,
-  },
-  layerClosed: {
-    backgroundColor: 'rgba(148, 163, 184, 0.22)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.32)',
-  },
-  layerBlock: {
+    borderRadius: 4,
     backgroundColor: 'rgba(248, 113, 113, 0.16)',
     borderWidth: 1,
     borderColor: 'rgba(248, 113, 113, 0.35)',

@@ -18,13 +18,14 @@ import ScreenGradient from '../components/ScreenGradient';
 import ServiceImage from '../components/ServiceImage';
 import { useSiteData } from '../context/SiteDataContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
-import { useSiteContent } from '../context/SiteContentContext';
-import { formatSiteAddress } from '../data/siteContent';
-import { cancelBooking, completeBooking } from '../lib/siteAdmin';
+import { cancelBooking, completeBooking, approveBooking, declinePendingBooking, startBookingSession } from '../lib/siteAdmin';
+import StartAppointmentCard from '../components/booking/StartAppointmentCard';
 import { requestReviewEmail } from '../lib/siteReviews';
 import { CalendarStackParamList } from '../navigation/CalendarNavigator';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
-import { colors } from '../theme';
+import { getCalendarEventColors } from '../lib/styleEventColors';
+import { flatListStyles } from '../theme/flatList';
+import { colors, fonts } from '../theme';
 import { maskMoney } from '../utils/money';
 
 function refundStatusLabel(status: string): string | null {
@@ -44,6 +45,8 @@ type Props = NativeStackScreenProps<
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function bookingStatusColor(status: string, depositPaid: boolean): string {
+  if (status === 'in_progress') return colors.accentPink;
+  if (status === 'pending_approval') return '#f59e0b';
   if (status === 'completed') return '#15803d';
   if (status === 'cancelled' || status === 'canceled') return '#dc2626';
   if (depositPaid || status === 'confirmed') return colors.accentPink;
@@ -51,6 +54,8 @@ function bookingStatusColor(status: string, depositPaid: boolean): string {
 }
 
 function bookingStatusLabel(status: string, depositPaid: boolean): string {
+  if (status === 'in_progress') return 'In session';
+  if (status === 'pending_approval') return 'Pending approval';
   if (status === 'completed') return 'Completed';
   if (status === 'cancelled' || status === 'canceled') return 'Cancelled';
   if (status === 'confirmed') return 'Confirmed';
@@ -98,8 +103,8 @@ function SectionCard({ title, children }: { title: string; children: React.React
   const styles = useResponsiveStyles(BASE_STYLES);
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
       {children}
     </View>
   );
@@ -145,12 +150,8 @@ function PaymentBreakdown({
               <Text style={styles.paymentCellAmount}>
                 {maskMoney(`$${depositAmount.toFixed(2)}`, privacyMode)}
               </Text>
-              <View style={styles.paidBadge}>
-                <Ionicons name="checkmark" size={10} color="#15803d" />
-                <Text style={styles.paidBadgeText}>Paid</Text>
-              </View>
             </View>
-            <Text style={styles.paymentCellLabel}>Deposit</Text>
+            <Text style={[styles.paymentCellLabel, styles.paymentPaidLabel]}>Deposit paid</Text>
           </>
         ) : (
           <>
@@ -193,11 +194,11 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
   const { appointmentId } = route.params;
   const { privacyMode } = usePrivacyMode();
   const { getAppointmentById, bookings, refresh, linkedSite } = useSiteData();
-  const { content: siteContent } = useSiteContent();
-  const siteAddress = formatSiteAddress(siteContent);
   const appointment = getAppointmentById(appointmentId);
   const [cancelling, setCancelling] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   // Raw booking record gives us email + bookingStatus
   const rawBooking = bookings.find((b) => b.id === appointmentId);
@@ -219,15 +220,15 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
   const bookingStatus = rawBooking?.bookingStatus ?? appointment.status;
   const statusLabel = bookingStatusLabel(bookingStatus, appointment.depositPaid);
   const statusColor = bookingStatusColor(bookingStatus, appointment.depositPaid);
+  const eventColors = getCalendarEventColors({
+    styleId: appointment.styleId,
+    title: appointment.service,
+    completed: bookingStatus === 'completed',
+  });
   const email = rawBooking?.email ?? '';
 
   const handleCall = () => Linking.openURL(`tel:${appointment.clientPhone}`);
   const handleEmail = () => email && Linking.openURL(`mailto:${email}`);
-  const displayLocation = appointment.location || siteAddress;
-  const handleDirections = () => {
-    const q = encodeURIComponent(displayLocation);
-    Linking.openURL(`https://maps.apple.com/?q=${q}`);
-  };
   const handleMarkComplete = () => {
     if (!linkedSite) {
       Alert.alert('No linked site', 'Connect your site before completing appointments.');
@@ -293,6 +294,68 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
 
   const isCompleted = bookingStatus === 'completed';
   const isCancelled = bookingStatus === 'cancelled' || bookingStatus === 'canceled';
+  const isPendingApproval = bookingStatus === 'pending_approval';
+  const isInProgress = bookingStatus === 'in_progress';
+  const canStartSession =
+    !isCompleted &&
+    !isCancelled &&
+    !isPendingApproval &&
+    bookingStatus === 'confirmed';
+
+  const openSession = () => {
+    navigation.navigate('AppointmentSession', { appointmentId });
+  };
+
+  const handleStartSession = async () => {
+    if (!linkedSite) return;
+    setStarting(true);
+    try {
+      await startBookingSession(linkedSite, appointmentId);
+      await refresh();
+      openSession();
+    } catch (err) {
+      Alert.alert('Could not start', err instanceof Error ? err.message : 'Try again.');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!linkedSite) return;
+    setApproving(true);
+    try {
+      await approveBooking(linkedSite, appointmentId);
+      await refresh();
+      Alert.alert('Accepted', 'The client will receive a confirmation email.');
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Could not accept booking');
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleDecline = () => {
+    if (!linkedSite) return;
+    Alert.alert('Decline booking', `Decline ${appointment.clientName}'s request?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Decline',
+        style: 'destructive',
+        onPress: async () => {
+          setCancelling(true);
+          try {
+            await declinePendingBooking(linkedSite, appointmentId);
+            await refresh();
+            navigation.goBack();
+          } catch (err) {
+            Alert.alert('Error', err instanceof Error ? err.message : 'Could not decline booking');
+          } finally {
+            setCancelling(false);
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
@@ -310,8 +373,8 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-          {/* ── Hero card ── */}
-          <View style={styles.heroCard}>
+          {/* ── Hero ── */}
+          <View style={[styles.heroSection, { borderLeftColor: eventColors.borderColor }]}>
             <View style={styles.heroTop}>
               <ServiceImage
                 styleId={appointment.styleId}
@@ -323,13 +386,7 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
               <View style={styles.heroMeta}>
                 <Text style={styles.heroService} numberOfLines={2}>{appointment.service}</Text>
                 <Text style={styles.heroClient}>{appointment.clientName}</Text>
-                <View style={[styles.statusBadge, {
-                  borderColor: statusColor + '44',
-                  backgroundColor: statusColor + '18',
-                }]}>
-                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-                </View>
+                <Text style={[styles.heroStatus, { color: statusColor }]}>{statusLabel}</Text>
               </View>
               <Text style={styles.heroPrice}>
                 {maskMoney(`$${appointment.price.toFixed(2)}`, privacyMode)}
@@ -338,7 +395,6 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
 
             <View style={styles.heroDivider} />
 
-            {/* Quick stats row */}
             <View style={styles.heroStats}>
               <View style={styles.heroStat}>
                 <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
@@ -356,6 +412,19 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
               </View>
             </View>
           </View>
+
+          {isInProgress ? (
+            <Pressable style={styles.sessionBanner} onPress={openSession}>
+              <View style={styles.sessionBannerDot} />
+              <View style={styles.sessionBannerBody}>
+                <Text style={styles.sessionBannerTitle}>Session in progress</Text>
+                <Text style={styles.sessionBannerSub}>Tap to open timer</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.accentPink} />
+            </Pressable>
+          ) : canStartSession && linkedSite ? (
+            <StartAppointmentCard onStart={handleStartSession} starting={starting} />
+          ) : null}
 
           {/* ── Payment breakdown ── */}
           <SectionCard title="Payment">
@@ -383,6 +452,39 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
             ) : null}
           </SectionCard>
 
+          {rawBooking?.orderProducts?.length ? (
+            <SectionCard title="Products">
+              {rawBooking.orderProducts.map((line) => (
+                <InfoRow
+                  key={`${line.product_id}-${line.title}`}
+                  icon="bag-outline"
+                  label={`${line.qty}× ${line.title}`}
+                  value={maskMoney(`$${(line.qty * line.unit_price).toFixed(2)}`, privacyMode)}
+                />
+              ))}
+              {rawBooking.fulfillmentMethod ? (
+                <InfoRow
+                  icon="car-outline"
+                  label="Fulfillment"
+                  value={
+                    rawBooking.fulfillmentMethod === 'at_appointment'
+                      ? 'With appointment'
+                      : rawBooking.fulfillmentMethod === 'shipping'
+                        ? 'Ship to client'
+                        : 'Pickup'
+                  }
+                />
+              ) : null}
+              {rawBooking.shippingAmount > 0 ? (
+                <InfoRow
+                  icon="airplane-outline"
+                  label="Shipping"
+                  value={maskMoney(`$${rawBooking.shippingAmount.toFixed(2)}`, privacyMode)}
+                />
+              ) : null}
+            </SectionCard>
+          ) : null}
+
           {/* ── Client info ── */}
           <SectionCard title="Client">
             <InfoRow icon="person-outline" label="Name" value={appointment.clientName} />
@@ -404,15 +506,6 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
                 onPress={handleEmail}
               />
             ) : null}
-            {displayLocation ? (
-              <InfoRow
-                icon="location-outline"
-                label="Location"
-                value={displayLocation}
-                tappable
-                onPress={handleDirections}
-              />
-            ) : null}
             {appointment.hairType ? (
               <InfoRow icon="cut-outline" label="Hair type" value={appointment.hairType} />
             ) : null}
@@ -428,6 +521,12 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
           </SectionCard>
 
           {/* ── Notes ── */}
+          {rawBooking?.stylistNotes ? (
+            <SectionCard title="Session notes">
+              <Text style={styles.notesText}>{rawBooking.stylistNotes}</Text>
+            </SectionCard>
+          ) : null}
+
           {appointment.notes && appointment.notes !== 'No notes added.' ? (
             <SectionCard title="Notes">
               <Text style={styles.notesText}>{appointment.notes}</Text>
@@ -448,15 +547,30 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
                 <Text style={styles.actionBtnText}>Email</Text>
               </Pressable>
             ) : null}
-            {displayLocation ? (
-              <Pressable style={styles.actionBtn} onPress={handleDirections}>
-                <Ionicons name="navigate-outline" size={18} color={colors.text} />
-                <Text style={styles.actionBtnText}>Directions</Text>
-              </Pressable>
-            ) : null}
           </View>
 
-          {!isCompleted && !isCancelled && (
+          {isPendingApproval ? (
+            <View style={styles.managementRow}>
+              <Pressable style={styles.completeBtn} onPress={handleApprove} disabled={approving || cancelling}>
+                {approving ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
+                )}
+                <Text style={styles.completeBtnText}>{approving ? 'Accepting…' : 'Accept booking'}</Text>
+              </Pressable>
+              <Pressable style={[styles.cancelBtn, cancelling && styles.cancelBtnDisabled]} onPress={handleDecline} disabled={cancelling || approving}>
+                {cancelling ? (
+                  <ActivityIndicator size="small" color="#f87171" />
+                ) : (
+                  <Ionicons name="close-circle-outline" size={18} color="#f87171" />
+                )}
+                <Text style={styles.cancelBtnText}>{cancelling ? 'Declining…' : 'Decline'}</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {!isCompleted && !isCancelled && !isPendingApproval && !canStartSession && !isInProgress && (
             <View style={styles.managementRow}>
               <Pressable style={styles.completeBtn} onPress={handleMarkComplete} disabled={completing}>
                 <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
@@ -493,77 +607,87 @@ const BASE_STYLES = {
   backBtn: {
     width: 38, height: 38,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
   },
   headerTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
   errorText: { color: colors.text, fontSize: 16, padding: 24 },
 
-  content: { paddingHorizontal: 20, paddingBottom: 48, gap: 12 },
+  content: { paddingHorizontal: 20, paddingBottom: 48 },
 
-  /* Hero */
-  heroCard: {
-    backgroundColor: colors.card,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 18,
+  heroSection: {
+    borderLeftWidth: 3,
+    paddingLeft: 14,
+    paddingVertical: 4,
+    marginBottom: 20,
   },
   heroTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   heroImage: { flexShrink: 0, marginTop: 2 },
   heroMeta: { flex: 1, gap: 4 },
   heroService: { color: colors.text, fontSize: 18, fontWeight: '700', letterSpacing: -0.3, lineHeight: 22 },
   heroClient: { color: colors.textMuted, fontSize: 13, fontWeight: '500' },
-  statusBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
-    borderRadius: 999, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, marginTop: 4,
-  },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 12, fontWeight: '700' },
+  heroStatus: { fontSize: 12, fontWeight: '600', marginTop: 2 },
   heroPrice: {
-    color: colors.chartBlue, fontSize: 20, fontWeight: '800', letterSpacing: -0.5, flexShrink: 0,
+    color: colors.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.5, flexShrink: 0,
+    fontFamily: fonts.number,
   },
-  heroDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.cardBorder, marginVertical: 14 },
+  heroDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.calendarGridLine,
+    marginVertical: 14,
+  },
   heroStats: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   heroStat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   heroStatText: { color: colors.textMuted, fontSize: 12, fontWeight: '500' },
   heroStatDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.textMuted },
 
-  /* Cards */
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 16,
+  sessionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingLeft: 10,
+    marginBottom: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.calendarGridLine,
   },
-  cardTitle: {
-    color: colors.textMuted, fontSize: 11, fontWeight: '700',
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 14,
+  sessionBannerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.accentPink,
   },
+  sessionBannerBody: { flex: 1, gap: 2 },
+  sessionBannerTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  sessionBannerSub: { color: colors.textMuted, fontSize: 13 },
+
+  /* Sections */
+  section: flatListStyles.section,
+  sectionTitle: flatListStyles.sectionTitle,
 
   /* Payment */
-  paymentGrid: { flexDirection: 'row', alignItems: 'stretch' },
+  paymentGrid: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.calendarGridLine,
+  },
   paymentCell: { flex: 1, alignItems: 'center', gap: 4 },
-  paymentDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.cardBorder, marginHorizontal: 4 },
-  paymentCellAmount: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  paymentDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: colors.calendarGridLine,
+    marginHorizontal: 4,
+  },
+  paymentCellAmount: { color: colors.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.3, fontFamily: fonts.number },
   paymentCellLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '500' },
+  paymentPaidLabel: { color: '#15803d', fontWeight: '600' },
   paymentPaidRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   paymentUnpaid: { color: colors.textMuted },
   paymentDue: { color: '#f59e0b' },
-  paidBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    backgroundColor: 'rgba(21,128,61,0.15)', borderRadius: 999,
-    paddingHorizontal: 5, paddingVertical: 2,
-  },
-  paidBadgeText: { color: '#15803d', fontSize: 10, fontWeight: '700' },
   refundBanner: {
     marginTop: 14,
     paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.cardBorder,
+    borderTopColor: colors.calendarGridLine,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -573,10 +697,12 @@ const BASE_STYLES = {
 
   /* Info rows */
   infoRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingLeft: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.cardBorder,
+    borderBottomColor: colors.calendarGridLine,
   },
   infoIconWrap: { width: 28, alignItems: 'center', marginRight: 10 },
   infoContent: { flex: 1 },
@@ -588,27 +714,43 @@ const BASE_STYLES = {
   infoValueLink: { color: colors.accentPink },
 
   /* Notes */
-  notesText: { color: colors.textMuted, fontSize: 14, lineHeight: 21 },
+  notesText: { color: colors.textMuted, fontSize: 14, lineHeight: 21, paddingLeft: 10 },
 
-  /* Actions */
-  actionsRow: { flexDirection: 'row', gap: 10 },
+  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   actionBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 7, backgroundColor: colors.card, borderRadius: 16,
-    borderWidth: 1, borderColor: colors.cardBorder, paddingVertical: 14,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.calendarGridLine,
   },
   actionBtnText: { color: colors.text, fontSize: 13, fontWeight: '600' },
 
-  managementRow: { flexDirection: 'row', gap: 10 },
+  managementRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
   completeBtn: {
-    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: colors.profileBlue, borderRadius: 16, paddingVertical: 14,
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.profileBlue,
+    borderRadius: 8,
+    paddingVertical: 14,
   },
   completeBtnText: { color: colors.background, fontSize: 14, fontWeight: '700' },
   cancelBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, backgroundColor: 'rgba(239,68,68,0.08)',
-    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)', paddingVertical: 14,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(239,68,68,0.35)',
   },
   cancelBtnText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   cancelBtnDisabled: { opacity: 0.5 },

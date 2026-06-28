@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,10 +18,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ScreenGradient from '../components/ScreenGradient';
+import BusinessTypePicker from '../components/BusinessTypePicker';
 import { useAuth } from '../context/AuthContext';
+import { useOnboarding } from '../context/OnboardingContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { useSiteContent } from '../context/SiteContentContext';
 import { useSiteTheme } from '../context/SiteThemeContext';
+import {
+  BusinessType,
+  isBusinessTypeStepComplete,
+  normalizeOnboardingSurvey,
+  OnboardingSurvey,
+  resolveBusinessTypeLabel,
+} from '../data/onboarding';
 import { pickSiteImageFromLibrary } from '../lib/pickSiteImage';
 import { supabase } from '../lib/supabase';
 import { ProfileStackParamList } from '../navigation/ProfileNavigator';
@@ -109,6 +118,7 @@ export default function AccountSettingsScreen({ navigation }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
   const { profile, user, updateProfile } = useAuth();
+  const { state, updateSurvey } = useOnboarding();
   const { logoImageUrl, uploadLogoImage, isSaving: logoUploading } = useSiteTheme();
   const { content, updateContent } = useSiteContent();
   const { privacyMode, setPrivacyMode } = usePrivacyMode();
@@ -122,6 +132,25 @@ export default function AccountSettingsScreen({ navigation }: Props) {
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  const savedSurvey = useMemo(
+    () => normalizeOnboardingSurvey(state.survey ?? {}),
+    [state.survey],
+  );
+  const [businessType, setBusinessType] = useState<BusinessType | ''>(savedSurvey.businessType);
+  const [businessTypeOther, setBusinessTypeOther] = useState(savedSurvey.businessTypeOther ?? '');
+  const [savingBusinessType, setSavingBusinessType] = useState(false);
+  const [savedBusinessType, setSavedBusinessType] = useState(false);
+
+  const businessTypeDirty = useMemo(() => {
+    const nextOther = businessType === 'other' ? businessTypeOther.trim() : '';
+    return (
+      businessType !== savedSurvey.businessType ||
+      nextOther !== (savedSurvey.businessTypeOther ?? '')
+    );
+  }, [businessType, businessTypeOther, savedSurvey.businessType, savedSurvey.businessTypeOther]);
+
+  const canSaveBusinessType = isBusinessTypeStepComplete(businessType, businessTypeOther);
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [savedProfile, setSavedProfile] = useState(false);
@@ -146,6 +175,34 @@ export default function AccountSettingsScreen({ navigation }: Props) {
   }, [updateProfile, updateContent]);
 
   useEffect(() => () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); }, []);
+
+  useEffect(() => {
+    setBusinessType(savedSurvey.businessType);
+    setBusinessTypeOther(savedSurvey.businessTypeOther ?? '');
+  }, [savedSurvey.businessType, savedSurvey.businessTypeOther]);
+
+  async function handleSaveBusinessType() {
+    if (!canSaveBusinessType || !businessTypeDirty) return;
+    const base = normalizeOnboardingSurvey(state.survey ?? {});
+    const nextSurvey: OnboardingSurvey = {
+      ...base,
+      businessType,
+      businessTypeOther: businessType === 'other' ? businessTypeOther.trim() : '',
+    };
+    setSavingBusinessType(true);
+    try {
+      await updateSurvey(nextSurvey);
+      setSavedBusinessType(true);
+      setTimeout(() => setSavedBusinessType(false), 2000);
+    } catch (err) {
+      Alert.alert(
+        'Could not save',
+        err instanceof Error ? err.message : 'Try again in a moment.',
+      );
+    } finally {
+      setSavingBusinessType(false);
+    }
+  }
 
   const handleBusinessName = (v: string) => { setBusinessName(v); scheduleProfileSave(v, fullName); };
   const handleFullName = (v: string) => { setFullName(v); scheduleProfileSave(businessName, v); };
@@ -205,6 +262,37 @@ export default function AccountSettingsScreen({ navigation }: Props) {
             <Text style={styles.sectionLabel}>Profile</Text>
             <LineField label="Business name" value={businessName} onChangeText={handleBusinessName} placeholder="Your business name" autoCapitalize="words" />
             <LineField label="Your name" value={fullName} onChangeText={handleFullName} placeholder="Your full name" autoCapitalize="words" />
+
+            {/* ── Business type ── */}
+            <Text style={styles.sectionLabel}>Business type</Text>
+            <Text style={styles.sectionHint}>
+              Currently: {resolveBusinessTypeLabel(savedSurvey.businessType, savedSurvey.businessTypeOther)}
+            </Text>
+            <BusinessTypePicker
+              selected={businessType}
+              otherLabel={businessTypeOther}
+              onSelect={(value) => {
+                setBusinessType(value);
+                if (value !== 'other') setBusinessTypeOther('');
+              }}
+              onOtherLabelChange={setBusinessTypeOther}
+            />
+            <Pressable
+              style={[
+                styles.actionBtn,
+                (!businessTypeDirty || !canSaveBusinessType || savingBusinessType) && { opacity: 0.4 },
+              ]}
+              onPress={handleSaveBusinessType}
+              disabled={!businessTypeDirty || !canSaveBusinessType || savingBusinessType}
+            >
+              {savingBusinessType ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>
+                  {savedBusinessType ? 'Saved ✓' : 'Save business type'}
+                </Text>
+              )}
+            </Pressable>
 
             {/* ── Email ── */}
             <Text style={styles.sectionLabel}>Email</Text>
@@ -290,6 +378,11 @@ const BASE_STYLES = {
     textTransform: 'uppercase',
     marginTop: 28,
     marginBottom: 4,
+  },
+  sectionHint: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginBottom: 12,
   },
 
   field: { paddingTop: 16, paddingBottom: 2 },

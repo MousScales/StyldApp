@@ -1,3 +1,4 @@
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { PushNotificationsProvider } from '../context/PushNotificationsContext';
@@ -12,11 +13,26 @@ import { usePurchases } from '../context/PurchasesContext';
 import TabNavigator from './TabNavigator';
 import SiteNavigator from './SiteNavigator';
 import AdminNavigator from './AdminNavigator';
+import StripeTerminalAppProvider from '../components/StripeTerminalAppProvider';
+import TabletSceneWrapper from '../components/layout/TabletSceneWrapper';
+import TapToPayCoordinator from '../components/tapToPay/TapToPayCoordinator';
+import { TAP_TO_PAY_NATIVE_ENABLED } from '../lib/tapToPayConfig';
 import { useAuth } from '../context/AuthContext';
 import { useSubscriptionSiteSync } from '../hooks/useSubscriptionSiteSync';
 import AccountOnboardingFlow from '../screens/onboarding/AccountOnboardingFlow';
 import PaywallScreen from '../screens/PaywallScreen';
 import { colors } from '../theme';
+
+const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
+
+function StripeAppShell({ children }: { children: React.ReactNode }) {
+  if (!STRIPE_PUBLISHABLE_KEY) return <>{children}</>;
+  return (
+    <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} merchantIdentifier="merchant.com.styld">
+      {children}
+    </StripeProvider>
+  );
+}
 
 function AccessLoading() {
   const styles = useResponsiveStyles(BASE_STYLES);
@@ -45,42 +61,57 @@ function AppGate() {
   }
 
   if (phase === 'account_onboarding') {
-    return <AccountOnboardingFlow onComplete={clearNewSignUp} />;
+    return (
+      <TabletSceneWrapper>
+        <AccountOnboardingFlow onComplete={clearNewSignUp} />
+      </TabletSceneWrapper>
+    );
   }
 
   if (phase === 'build_site') {
-    return <SiteNavigator />;
+    return (
+      <TabletSceneWrapper wide>
+        <SiteNavigator />
+      </TabletSceneWrapper>
+    );
   }
 
   if (phase === 'paywall') {
     return (
-      <PaywallScreen
-        mandatory
-        navigation={
-          {
-            goBack: () => {},
-            navigate: () => {},
-          } as never
-        }
-        route={{ key: 'mandatory-paywall', name: 'Paywall', params: undefined } as never}
-        onSubscribed={async () => {
-          await refreshPurchases();
-          const entitled = await waitForEntitlement();
-          if (!entitled) return;
-          if (sitePublish.subdomain) {
-            try {
-              await publishSite(sitePublish.subdomain);
-            } catch (err) {
-              console.warn('[Paywall] Republish after subscribe failed:', err);
-            }
+      <TabletSceneWrapper>
+        <PaywallScreen
+          mandatory
+          navigation={
+            {
+              goBack: () => {},
+              navigate: () => {},
+            } as never
           }
-          await refreshOnboarding();
-        }}
-      />
+          route={{ key: 'mandatory-paywall', name: 'Paywall', params: undefined } as never}
+          onSubscribed={async () => {
+            await refreshPurchases();
+            const entitled = await waitForEntitlement();
+            if (!entitled) return;
+            if (sitePublish.subdomain) {
+              try {
+                await publishSite(sitePublish.subdomain);
+              } catch (err) {
+                console.warn('[Paywall] Republish after subscribe failed:', err);
+              }
+            }
+            await refreshOnboarding();
+          }}
+        />
+      </TabletSceneWrapper>
     );
   }
 
-  return <TabNavigator />;
+  return (
+    <>
+      <TabNavigator />
+      {TAP_TO_PAY_NATIVE_ENABLED ? <TapToPayCoordinator /> : null}
+    </>
+  );
 }
 
 export default function AuthenticatedApp() {
@@ -93,7 +124,17 @@ export default function AuthenticatedApp() {
               <BrandProvider>
                 <AppAccessProvider>
                   <ServiceCatalogProvider>
-                    <AppGate />
+                    <StripeAppShell>
+                      {TAP_TO_PAY_NATIVE_ENABLED ? (
+                        <StripeTerminalAppProvider>
+                          <AppGate />
+                        </StripeTerminalAppProvider>
+                      ) : (
+                        <View style={{ flex: 1 }}>
+                          <AppGate />
+                        </View>
+                      )}
+                    </StripeAppShell>
                   </ServiceCatalogProvider>
                 </AppAccessProvider>
               </BrandProvider>

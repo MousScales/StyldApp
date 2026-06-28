@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { computeOnlineChargeCents, validateBookingPromo } from '../_shared/booking-promo.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,26 +19,70 @@ Deno.serve(async (req) => {
   try {
     const {
       amountCents,
+      subtotalCents,
+      promoCode,
+      houseCallExtraCents,
       subdomain,
       bookingId,
       customerEmail,
       customerName,
     } = await req.json();
 
-    if (!amountCents || !subdomain) {
-      return json({ error: 'Missing required fields: amountCents, subdomain' }, 400);
+    if (!subdomain) {
+      return json({ error: 'Missing required field: subdomain' }, 400);
     }
-    if (typeof amountCents !== 'number' || amountCents < 50) {
-      return json({ error: 'Amount must be at least $0.50' }, 400);
-    }
-
-    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
-    if (!stripeKey) return json({ error: 'Payment not configured' }, 500);
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
+
+    const { data: userId, error: resolveErr } = await supabase
+      .rpc('styld_resolve_published_user_id', { p_subdomain: String(subdomain).trim() });
+    if (resolveErr || !userId) {
+      return json({ error: 'Site not found' }, 404);
+    }
+
+    let chargeBaseCents = Math.round(Number(amountCents) || 0);
+
+    if (subtotalCents != null) {
+      let discountedSubtotalCents = Math.max(0, Math.round(Number(subtotalCents) || 0));
+
+      if (promoCode && String(promoCode).trim()) {
+        const promoResult = await validateBookingPromo(
+          supabase,
+          String(userId),
+          String(promoCode),
+          discountedSubtotalCents,
+        );
+        if (!promoResult.ok) {
+          return json({ error: promoResult.message || 'Invalid promo code' }, 400);
+        }
+        discountedSubtotalCents = promoResult.discountedSubtotalCents ?? discountedSubtotalCents;
+      }
+
+      const { data: payRow } = await supabase
+        .from('styld_site_records')
+        .select('data')
+        .eq('user_id', userId)
+        .eq('record_type', 'site_setting')
+        .eq('record_key', 'booking_payment')
+        .maybeSingle();
+
+      const payValue = (payRow?.data as { value?: Record<string, unknown> } | undefined)?.value ?? {};
+      chargeBaseCents = computeOnlineChargeCents(
+        payValue,
+        discountedSubtotalCents,
+        Math.max(0, Math.round(Number(houseCallExtraCents) || 0)),
+      );
+    }
+
+    if (!chargeBaseCents || chargeBaseCents < 50) {
+      return json({ error: 'Amount must be at least $0.50' }, 400);
+    }
+
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+    if (!stripeKey) return json({ error: 'Payment not configured' }, 500);
 
     // Look up the stylist's Stripe Connect account for this subdomain
     const { data: stripeAccountId } = await supabase
@@ -61,7 +106,7 @@ Deno.serve(async (req) => {
     //   application_fee_amount = chargeAmount − amountCents
     //   platform net = application_fee_amount − stripeFeeCents = platformRate × amountCents ✓
     const platformRate = parseFloat(Deno.env.get('STYLD_PLATFORM_FEE_PERCENT') ?? '1') / 100;
-    const base = Math.round(amountCents);
+    const base = Math.round(chargeBaseCents);
     const chargeAmount = Math.round((base * (1 + platformRate) + 30) / (1 - 0.029));
     const stripeFeeCents = Math.round(chargeAmount * 0.029 + 30);
     const platformFeeCents = Math.round(base * platformRate); // Styld profit

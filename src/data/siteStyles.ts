@@ -6,11 +6,25 @@ export type StyleAddon = {
   price: number;
 };
 
+/** Mutually exclusive versions of one service (e.g. with / without hair). */
+export type StyleVariant = {
+  id: string;
+  label: string;
+  price: number;
+};
+
+/** Stored on the default (base-price) version when extra versions exist. */
+export const DEFAULT_STYLE_VARIANT_ID = 'default';
+
 export type StyleMetaEntry = {
   title: string;
   description: string;
   category: string;
   durationMinutes?: number;
+  /** Label for version 1 (base price). Used when `variants` has entries. */
+  defaultVariantLabel?: string;
+  /** Additional versions beyond the base price (version 2+). */
+  variants?: StyleVariant[];
   addons?: StyleAddon[];
 };
 
@@ -61,6 +75,13 @@ export function normalizeStyleMeta(value: unknown): StyleCatalogMeta {
 
     const durationRaw = entry.durationMinutes ?? entry.duration_minutes;
     const addons = normalizeStyleAddons(entry.addons);
+    const variants = normalizeStyleVariants(entry.variants);
+    const defaultVariantLabel =
+      typeof entry.defaultVariantLabel === 'string'
+        ? entry.defaultVariantLabel.trim()
+        : typeof entry.default_variant_label === 'string'
+          ? entry.default_variant_label.trim()
+          : '';
     result[styleId] = {
       title,
       description: typeof entry.description === 'string' ? entry.description.trim() : '',
@@ -69,6 +90,8 @@ export function normalizeStyleMeta(value: unknown): StyleCatalogMeta {
           ? entry.category.trim()
           : DEFAULT_STYLE_CATEGORY,
       durationMinutes: normalizeStyleDurationMinutes(durationRaw),
+      ...(defaultVariantLabel ? { defaultVariantLabel } : {}),
+      ...(variants.length ? { variants } : {}),
       ...(addons.length ? { addons } : {}),
     };
   }
@@ -108,16 +131,84 @@ export function createStyleAddonId(): string {
   return `addon-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 4)}`;
 }
 
+export function normalizeStyleVariants(value: unknown): StyleVariant[] {
+  if (!Array.isArray(value)) return [];
+  const result: StyleVariant[] = [];
+  value.forEach((raw, index) => {
+    if (!raw || typeof raw !== 'object') return;
+    const entry = raw as Record<string, unknown>;
+    const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+    if (!label) return;
+    const priceRaw = typeof entry.price === 'number' ? entry.price : Number(entry.price);
+    const price = Number.isFinite(priceRaw) ? Math.max(0, priceRaw) : 0;
+    const id =
+      typeof entry.id === 'string' && entry.id.trim()
+        ? entry.id.trim()
+        : `variant-${index + 1}`;
+    result.push({ id, label, price });
+  });
+  return result;
+}
+
+export function createStyleVariantId(): string {
+  return `variant-${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 4)}`;
+}
+
+export function getIncompleteStyleVariants(variants: StyleVariant[]): StyleVariant[] {
+  return variants.filter((variant) => !variant.label.trim());
+}
+
 /** Rows the user started but did not name — blocked on explicit save. */
 export function getIncompleteStyleAddons(addons: StyleAddon[]): StyleAddon[] {
   return addons.filter((addon) => !addon.name.trim());
 }
 
+export function hasExtraStyleVariants(variants?: StyleVariant[]): boolean {
+  return normalizeStyleVariants(variants).length > 0;
+}
+
+/** Full picker list for booking: base price as v1, then stored extras. */
+export function buildBookingStyleVariants(
+  basePrice: number,
+  defaultVariantLabel: string | undefined,
+  extraVariants?: StyleVariant[],
+): StyleVariant[] {
+  const extras = normalizeStyleVariants(extraVariants);
+  if (!extras.length) return [];
+
+  const base = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 0;
+  const label = defaultVariantLabel?.trim() || 'Standard';
+  return [{ id: DEFAULT_STYLE_VARIANT_ID, label, price: base }, ...extras];
+}
+
+export function getEffectiveVariantPrice(variant: StyleVariant, basePrice: number): number {
+  if (Number.isFinite(variant.price) && variant.price > 0) return variant.price;
+  const base = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 0;
+  return base;
+}
+
 export function getStylePriceBounds(
   basePrice: number,
   addons?: StyleAddon[],
+  variants?: StyleVariant[],
 ): { min: number; max: number } {
   const base = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : 0;
+  const extras = normalizeStyleVariants(variants);
+
+  if (extras.length > 0) {
+    const versionPrices = [
+      ...(base > 0 ? [base] : []),
+      ...extras.map((variant) => variant.price).filter((price) => price > 0),
+    ];
+    if (versionPrices.length) {
+      const min = Math.min(...versionPrices);
+      const max = Math.max(...versionPrices);
+      const pricedAddons = (addons ?? []).map((addon) => addon.price).filter((price) => price > 0);
+      const addonMax = pricedAddons.length ? Math.max(...pricedAddons) : 0;
+      return { min, max: max + addonMax };
+    }
+  }
+
   const pricedAddons = (addons ?? []).map((addon) => addon.price).filter((price) => price > 0);
   if (!pricedAddons.length) {
     return { min: base, max: base };
@@ -130,9 +221,13 @@ export function formatStylePrice(price: number): string {
   return `$${Math.round(price)}`;
 }
 
-export function formatStylePriceRange(basePrice: number, addons?: StyleAddon[]): string {
-  const { min, max } = getStylePriceBounds(basePrice, addons);
+export function formatStylePriceRange(
+  basePrice: number,
+  addons?: StyleAddon[],
+  variants?: StyleVariant[],
+): string {
+  const { min, max } = getStylePriceBounds(basePrice, addons, variants);
   if (max <= 0) return 'Price TBD';
-  if (!addons?.length || min === max) return formatStylePrice(min);
+  if (min === max) return formatStylePrice(min);
   return `$${Math.round(min)}–$${Math.round(max)}`;
 }

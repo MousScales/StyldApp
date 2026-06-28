@@ -8,8 +8,10 @@ const MAX_SCHEDULED = 50;
 
 /** Minutes before appointment to fire each reminder. */
 const REMINDER_OFFSETS = [
+  { key: '15m', minutes: 15, title: 'Appointment in 15 minutes' },
   { key: '1h', minutes: 60, title: 'Appointment in 1 hour' },
   { key: 'morning', minutes: null, title: 'Appointment today' },
+  { key: 'start', minutes: 0, title: 'Time to start appointment' },
 ] as const;
 
 function formatTime(startsAt: Date): string {
@@ -30,14 +32,19 @@ function morningReminderAt(startsAt: Date): Date | null {
 function isEligible(booking: SiteBookingRecord): boolean {
   if (!booking.startsAt) return false;
   const status = booking.bookingStatus.toLowerCase();
-  if (status === 'cancelled' || status === 'canceled' || status === 'completed') return false;
-  return booking.startsAt.getTime() > Date.now();
+  if (status === 'cancelled' || status === 'canceled' || status === 'completed' || status === 'in_progress') {
+    return false;
+  }
+  return booking.startsAt.getTime() > Date.now() - 5 * 60_000;
 }
 
 function reminderBody(booking: SiteBookingRecord, startsAt: Date, offsetKey: string): string {
   const time = formatTime(startsAt);
   if (offsetKey === 'morning') {
     return `${booking.fullName} — ${booking.service} at ${time}.`;
+  }
+  if (offsetKey === 'start') {
+    return `Start ${booking.service} with ${booking.fullName} now.`;
   }
   return `${booking.fullName} — ${booking.service} at ${time}.`;
 }
@@ -85,6 +92,8 @@ export async function syncAppointmentReminders(bookings: SiteBookingRecord[]): P
 
       if (offset.key === 'morning') {
         fireAt = morningReminderAt(startsAt);
+      } else if (offset.key === 'start') {
+        fireAt = startsAt.getTime() > now ? startsAt : null;
       } else if (offset.minutes !== null) {
         fireAt = new Date(startsAt.getTime() - offset.minutes * 60_000);
         if (fireAt.getTime() <= now) fireAt = null;
@@ -103,7 +112,7 @@ export async function syncAppointmentReminders(bookings: SiteBookingRecord[]): P
           data: {
             type: 'appointment_reminder',
             recordId: booking.id,
-            screen: 'AppointmentDetail',
+            screen: offset.key === 'start' ? 'AppointmentSession' : 'AppointmentDetail',
           },
           ...(Platform.OS === 'android' ? { channelId: 'reminders' } : {}),
         },

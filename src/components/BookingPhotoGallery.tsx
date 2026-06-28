@@ -105,12 +105,13 @@ export default function BookingPhotoGallery({
 
     async function load() {
       try {
-        let items = await loadFromPaths();
+        // Edge function uses service role — works even when storage RLS for authenticated is missing.
+        let items = await loadFromEdge();
+        if (!items.length) {
+          items = await loadFromPaths();
+        }
         if (!items.length && storageBookingId?.trim()) {
           items = await loadFromFolder(storageBookingId.trim());
-        }
-        if (!items.length) {
-          items = await loadFromEdge();
         }
         if (!cancelled) {
           setPhotos(items);

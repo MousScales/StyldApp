@@ -1,40 +1,43 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Image, ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BrandLogo from '../components/BrandLogo';
 import WalletBalanceSection from '../components/WalletBalanceSection';
 import { useAuth } from '../context/AuthContext';
+import { useBrand } from '../context/BrandContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { useSiteData } from '../context/SiteDataContext';
 import { handleManageSubscriptionPress, subscriptionPlanLabel } from '../lib/manageSubscription';
+import { TAP_TO_PAY_NATIVE_ENABLED } from '../lib/tapToPayConfig';
+import { getProfileTileImage, ProfileTileKey } from '../lib/profileTileAssets';
+import { BrandPaletteKey } from '../theme/brandPalettes';
+import { useDeviceLayout } from '../hooks/useDeviceLayout';
 import { ProfileStackParamList } from '../navigation/ProfileNavigator';
+import { ScheduleTab } from './business/ScheduleManageScreen';
+import { PaymentsTab } from './business/PaymentsScreen';
 import { colors, fonts } from '../theme';
 import { maskMoney } from '../utils/money';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
 
-import { ScheduleTab } from './business/ScheduleManageScreen';
-import { PaymentsTab } from './business/PaymentsScreen';
-
-const MANAGE_STYLES_IMG = require('../../assets/manage-styles.png') as ImageSourcePropType;
-const MANAGE_PAY_IMG    = require('../../assets/manage-pay.png')    as ImageSourcePropType;
-const MANAGE_CAL_IMG    = require('../../assets/manage-calendar.png') as ImageSourcePropType;
-
 type ManageItem = {
   label: string;
-  image: ImageSourcePropType;
-  route?: keyof ProfileStackParamList;
+  tile: ProfileTileKey;
+  route: keyof ProfileStackParamList;
   scheduleTab?: ScheduleTab;
   paymentsTab?: PaymentsTab;
 };
 
 const MANAGE_MENU: ManageItem[] = [
-  { label: 'Form & Payments', image: MANAGE_PAY_IMG, route: 'Payments', paymentsTab: 'booking' },
-  { label: 'Styles & Services', image: MANAGE_STYLES_IMG, route: 'Styles' },
-  { label: 'Schedule', image: MANAGE_CAL_IMG, route: 'ScheduleManage', scheduleTab: 'schedule' },
+  { label: 'Form & Payments', tile: 'payments', route: 'Payments', paymentsTab: 'booking' },
+  { label: 'Styles & Services', tile: 'styles', route: 'Styles' },
+  { label: 'Schedule', tile: 'schedule', route: 'ScheduleManage', scheduleTab: 'schedule' },
+  { label: 'Reviews', tile: 'reviews', route: 'ReviewsSettings' },
+  { label: 'Certifications', tile: 'certifications', route: 'CertificationsSettings' },
+  { label: 'Products', tile: 'products', route: 'ProductsSettings' },
 ];
 
 function SectionLabel({ title }: { title: string }) {
@@ -45,9 +48,11 @@ function SectionLabel({ title }: { title: string }) {
 
 function ManageGrid({
   items,
+  brandKey,
   onPress,
 }: {
   items: ManageItem[];
+  brandKey: BrandPaletteKey;
   onPress: (item: ManageItem) => void;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
@@ -58,10 +63,15 @@ function ManageGrid({
         <Pressable
           key={item.label}
           style={({ pressed }) => [styles.manageCell, pressed && styles.manageCellPressed]}
-          onPress={item.route ? () => onPress(item) : undefined}
+          onPress={() => onPress(item)}
         >
           <View style={styles.manageCellImgWrap}>
-            <Image source={item.image} style={styles.manageCellImg} resizeMode="cover" accessibilityIgnoresInvertColors />
+            <Image
+              source={getProfileTileImage(brandKey, item.tile)}
+              style={styles.manageCellImg}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
           </View>
           <Text style={styles.manageCellLabel} numberOfLines={2}>{item.label}</Text>
         </Pressable>
@@ -88,6 +98,8 @@ function timeSince(isoDate: string | null | undefined): string {
 
 export default function ProfileScreen({ navigation }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
+  const { scrollBottomPadding } = useDeviceLayout();
+  const { brandKey } = useBrand();
 
   const { profile, user, signOut } = useAuth();
   const { privacyMode } = usePrivacyMode();
@@ -137,7 +149,10 @@ export default function ProfileScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: scrollBottomPadding }]}
+        showsVerticalScrollIndicator={false}
+      >
 
         {/* ── Profile header ── */}
         <View style={styles.profileHeader}>
@@ -160,6 +175,14 @@ export default function ProfileScreen({ navigation }: Props) {
               <Text style={styles.profileBusiness}>{businessName}</Text>
             ) : null}
           </View>
+          <Pressable
+            style={({ pressed }) => [styles.analyticsBtn, pressed && styles.analyticsBtnPressed]}
+            onPress={() => navigation.navigate('BusinessStats')}
+            accessibilityLabel="Analytics"
+            hitSlop={8}
+          >
+            <Ionicons name="stats-chart" size={20} color={colors.accentPink} />
+          </Pressable>
         </View>
 
         {/* ── Earnings — only shown once Stripe account is active ── */}
@@ -221,15 +244,15 @@ export default function ProfileScreen({ navigation }: Props) {
         {/* ── Manage business ── */}
         <SectionLabel title="Manage" />
         <ManageGrid
+          brandKey={brandKey}
           items={MANAGE_MENU}
           onPress={(item) => {
-            if (!item.route) return;
             if (item.route === 'ScheduleManage') {
               navigation.navigate('ScheduleManage', { tab: item.scheduleTab });
             } else if (item.route === 'Payments') {
               navigation.navigate('Payments', { tab: item.paymentsTab });
             } else {
-              navigation.navigate(item.route as any);
+              navigation.navigate(item.route);
             }
           }}
         />
@@ -237,16 +260,6 @@ export default function ProfileScreen({ navigation }: Props) {
         {/* ── Account ── */}
         <SectionLabel title="Account" />
         <View style={styles.menuCard}>
-          <Pressable
-            style={[styles.menuRow, styles.menuRowBorder]}
-            onPress={() => navigation.navigate('ReviewsSettings')}
-          >
-            <View style={styles.menuIconWrap}>
-              <Ionicons name="star-outline" size={18} color={colors.accentPink} />
-            </View>
-            <Text style={styles.menuLabel}>Reviews</Text>
-            <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
-          </Pressable>
           {isConfigured ? (
             <Pressable
               style={[styles.menuRow, styles.menuRowBorder]}
@@ -268,6 +281,18 @@ export default function ProfileScreen({ navigation }: Props) {
                   <Text style={styles.menuSubLabel}>{subscriptionLabel}</Text>
                 ) : null}
               </View>
+              <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
+          {Platform.OS === 'ios' && TAP_TO_PAY_NATIVE_ENABLED ? (
+            <Pressable
+              style={[styles.menuRow, styles.menuRowBorder]}
+              onPress={() => navigation.navigate('TapToPaySettings')}
+            >
+              <View style={styles.menuIconWrap}>
+                <Ionicons name="radio-outline" size={18} color={colors.accentPink} />
+              </View>
+              <Text style={styles.menuLabel}>Tap to Pay on iPhone</Text>
               <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
             </Pressable>
           ) : null}
@@ -328,7 +353,7 @@ const BASE_STYLES = {
     fontSize: 26,
     fontWeight: '700',
   },
-  profileInfo: { flex: 1 },
+  profileInfo: { flex: 1, minWidth: 0 },
   profileName: {
     color: colors.text,
     fontSize: 22,
@@ -345,6 +370,19 @@ const BASE_STYLES = {
     color: colors.textMuted,
     fontSize: 13,
     fontWeight: '400',
+  },
+  analyticsBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  analyticsBtnPressed: {
+    opacity: 0.75,
   },
 
   /* Section labels */
@@ -421,16 +459,18 @@ const BASE_STYLES = {
     fontWeight: '500',
   },
 
-  /* Manage 1×3 image grid */
+  /* Manage 2×3 image grid */
   manageGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginBottom: 24,
   },
   manageCell: {
-    flex: 1,
+    width: '31.5%',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 4,
   },
   manageCellPressed: {
     opacity: 0.72,
@@ -438,21 +478,19 @@ const BASE_STYLES = {
   manageCellImgWrap: {
     width: '100%',
     aspectRatio: 1,
-    borderRadius: 18,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   manageCellImg: {
-    width: '100%',
-    height: '100%',
+    width: '88%',
+    height: '88%',
   },
   manageCellLabel: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 14,
   },
 
   /* Menu card */

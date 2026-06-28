@@ -7,8 +7,8 @@ function withPhoneOnlyScreens(config) {
         $: {
           'android:smallScreens': 'true',
           'android:normalScreens': 'true',
-          'android:largeScreens': 'false',
-          'android:xlargeScreens': 'false',
+          'android:largeScreens': 'true',
+          'android:xlargeScreens': 'true',
         },
       },
     ];

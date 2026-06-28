@@ -6,6 +6,8 @@ type SiteInquiry = { id: string; name: string; createdAt: Date };
 
 type NotificationDraft = AppNotification & { sortAt: number };
 
+const RECENT_MS = 90 * 24 * 60 * 60 * 1000;
+
 function formatRelativeTime(date: Date): string {
   const diffMs = Date.now() - date.getTime();
   if (diffMs < 0) return 'Just now';
@@ -47,8 +49,18 @@ function formatAppointmentWhen(startsAt: Date | null): string {
   return `${weekday} at ${time}`;
 }
 
+function formatMoney(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}
+
+function isRecent(date: Date | null): boolean {
+  if (!date) return false;
+  return date.getTime() >= Date.now() - RECENT_MS;
+}
+
 function isUpcoming(booking: SiteBookingRecord): boolean {
-  if (booking.bookingStatus === 'cancelled' || booking.bookingStatus === 'completed') {
+  const status = booking.bookingStatus.toLowerCase();
+  if (status === 'cancelled' || status === 'canceled' || status === 'completed') {
     return false;
   }
   if (booking.startsAt && booking.startsAt.getTime() < Date.now()) {
@@ -57,15 +69,24 @@ function isUpcoming(booking: SiteBookingRecord): boolean {
   return true;
 }
 
+function paymentMethodLabel(method: string): string {
+  const m = method.toLowerCase();
+  if (m === 'cash') return 'Cash';
+  if (m === 'tap_to_pay') return 'Tap to Pay';
+  if (m === 'card') return 'Card';
+  return '';
+}
+
 function buildBookingNotificationDrafts(bookings: SiteBookingRecord[]): NotificationDraft[] {
   const drafts: NotificationDraft[] = [];
-  const recentCutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
 
   for (const booking of bookings) {
     const when = formatAppointmentWhen(booking.startsAt);
     const createdAt = booking.createdAt;
+    const status = booking.bookingStatus.toLowerCase();
 
-    if (booking.bookingStatus === 'cancelled') {
+    if (status === 'cancelled' || status === 'canceled') {
+      if (!isRecent(createdAt)) continue;
       drafts.push({
         id: `cancelled-${booking.id}`,
         title: 'Booking cancelled',
@@ -78,7 +99,44 @@ function buildBookingNotificationDrafts(bookings: SiteBookingRecord[]): Notifica
       continue;
     }
 
-    if (createdAt.getTime() >= recentCutoff) {
+    if (status === 'pending_approval' && isRecent(createdAt)) {
+      drafts.push({
+        id: `pending-${booking.id}`,
+        title: 'Booking request',
+        body: `${booking.fullName} requested ${booking.service} for ${when}. Tap to accept or decline.`,
+        time: formatRelativeTime(createdAt),
+        icon: 'hourglass-outline',
+        unread: true,
+        sortAt: createdAt.getTime() + 2,
+      });
+
+      if (booking.depositPaid && booking.depositAmount > 0) {
+        drafts.push({
+          id: `deposit-${booking.id}`,
+          title: 'Deposit received',
+          body: `${formatMoney(booking.depositAmount)} deposit from ${booking.fullName} for ${booking.service}.`,
+          time: formatRelativeTime(createdAt),
+          icon: 'card-outline',
+          unread: true,
+          sortAt: createdAt.getTime() + 1,
+        });
+      }
+      continue;
+    }
+
+    if (status === 'in_progress' && booking.sessionStartedAt) {
+      drafts.push({
+        id: `session-${booking.id}`,
+        title: 'Session in progress',
+        body: `${booking.service} with ${booking.fullName} — view timer and checkout when ready.`,
+        time: formatRelativeTime(booking.sessionStartedAt),
+        icon: 'timer-outline',
+        unread: true,
+        sortAt: booking.sessionStartedAt.getTime() + 3,
+      });
+    }
+
+    if (isRecent(createdAt) && status !== 'in_progress') {
       drafts.push({
         id: `new-${booking.id}`,
         title: 'New booking',
@@ -90,11 +148,16 @@ function buildBookingNotificationDrafts(bookings: SiteBookingRecord[]): Notifica
       });
     }
 
-    if (booking.depositPaid && booking.depositAmount > 0) {
+    if (
+      booking.depositPaid &&
+      booking.depositAmount > 0 &&
+      booking.balanceCollectedCents <= 0 &&
+      isRecent(createdAt)
+    ) {
       drafts.push({
-        id: `payment-${booking.id}`,
-        title: 'Payment received',
-        body: `You received $${booking.depositAmount} from ${booking.fullName} for ${booking.service}.`,
+        id: `deposit-${booking.id}`,
+        title: 'Deposit received',
+        body: `${formatMoney(booking.depositAmount)} deposit from ${booking.fullName} for ${booking.service}.`,
         time: formatRelativeTime(createdAt),
         icon: 'card-outline',
         unread: true,
@@ -102,11 +165,28 @@ function buildBookingNotificationDrafts(bookings: SiteBookingRecord[]): Notifica
       });
     }
 
-    if (booking.bookingStatus === 'confirmed' && isUpcoming(booking)) {
+    const collectedAt = booking.balanceCollectedAt ?? booking.sessionEndedAt ?? booking.completedAt;
+    if (booking.balanceCollectedCents > 0 && isRecent(collectedAt)) {
+      const total = booking.balanceCollectedCents / 100;
+      const method = paymentMethodLabel(booking.paymentMethodAtService);
+      const tipText =
+        booking.tipAmount > 0 ? ` (${formatMoney(booking.tipAmount)} tip included)` : '';
+      drafts.push({
+        id: `checkout-payment-${booking.id}`,
+        title: 'Payment collected',
+        body: `${formatMoney(total)} from ${booking.fullName} for ${booking.service}${tipText}${method ? ` · ${method}` : ''}.`,
+        time: formatRelativeTime(collectedAt!),
+        icon: 'wallet-outline',
+        unread: true,
+        sortAt: collectedAt!.getTime() + 2,
+      });
+    }
+
+    if (status === 'confirmed' && isUpcoming(booking)) {
       drafts.push({
         id: `confirmed-${booking.id}`,
-        title: 'Booking confirmed',
-        body: `${booking.fullName} is confirmed for ${booking.service} ${when}.`,
+        title: 'Upcoming appointment',
+        body: `${booking.fullName} — ${booking.service} ${when}.`,
         time: formatRelativeTime(booking.startsAt ?? createdAt),
         icon: 'checkmark-circle-outline',
         unread: true,
@@ -114,12 +194,19 @@ function buildBookingNotificationDrafts(bookings: SiteBookingRecord[]): Notifica
       });
     }
 
-    if (booking.bookingStatus === 'completed') {
-      const completedAt = booking.startsAt ?? createdAt;
+    if (status === 'completed') {
+      const completedAt = booking.completedAt ?? booking.sessionEndedAt ?? booking.startsAt ?? createdAt;
+      if (!isRecent(completedAt)) continue;
+
+      const durationText =
+        booking.actualDurationMinutes > 0 ? ` · ${booking.actualDurationMinutes} min` : '';
+      const tipText =
+        booking.tipAmount > 0 ? ` · ${formatMoney(booking.tipAmount)} tip` : '';
+
       drafts.push({
         id: `completed-${booking.id}`,
         title: 'Appointment completed',
-        body: `${booking.service} with ${booking.fullName} is marked complete.`,
+        body: `${booking.service} with ${booking.fullName}${durationText}${tipText}.`,
         time: formatRelativeTime(completedAt),
         icon: 'checkmark-done-outline',
         unread: true,
@@ -132,7 +219,15 @@ function buildBookingNotificationDrafts(bookings: SiteBookingRecord[]): Notifica
 }
 
 function finalizeDrafts(drafts: NotificationDraft[]): AppNotification[] {
-  return drafts
+  const byId = new Map<string, NotificationDraft>();
+  for (const draft of drafts) {
+    const existing = byId.get(draft.id);
+    if (!existing || draft.sortAt > existing.sortAt) {
+      byId.set(draft.id, draft);
+    }
+  }
+
+  return [...byId.values()]
     .sort((a, b) => b.sortAt - a.sortAt)
     .slice(0, 50)
     .map(({ sortAt: _sortAt, ...notification }) => notification);
@@ -143,12 +238,11 @@ export function buildNotificationsFromBookings(bookings: SiteBookingRecord[]): A
 }
 
 function buildReviewNotifications(reviews: SiteReview[]): NotificationDraft[] {
-  const recentCutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
   const drafts: NotificationDraft[] = [];
 
   for (const review of reviews) {
     if (!review.published) continue;
-    if (review.createdAt.getTime() < recentCutoff) continue;
+    if (!isRecent(review.createdAt)) continue;
 
     drafts.push({
       id: `review-${review.id}`,
@@ -165,11 +259,10 @@ function buildReviewNotifications(reviews: SiteReview[]): NotificationDraft[] {
 }
 
 function buildInquiryNotifications(inquiries: SiteInquiry[]): NotificationDraft[] {
-  const recentCutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
   const drafts: NotificationDraft[] = [];
 
   for (const inquiry of inquiries) {
-    if (inquiry.createdAt.getTime() < recentCutoff) continue;
+    if (!isRecent(inquiry.createdAt)) continue;
 
     drafts.push({
       id: `inquiry-${inquiry.id}`,

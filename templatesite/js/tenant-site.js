@@ -64,6 +64,24 @@
     return '$' + Math.round(amount);
   }
 
+  function normalizeVariants(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(function (entry, index) {
+        if (!entry || typeof entry !== 'object') return null;
+        var label = typeof entry.label === 'string' ? entry.label.trim() : '';
+        if (!label) return null;
+        var price = typeof entry.price === 'number' ? entry.price : Number(entry.price);
+        if (!Number.isFinite(price) || price < 0) price = 0;
+        var id =
+          typeof entry.id === 'string' && entry.id.trim()
+            ? entry.id.trim()
+            : 'variant-' + (index + 1);
+        return { id: id, label: label, price: price };
+      })
+      .filter(Boolean);
+  }
+
   function normalizeAddons(raw) {
     if (!Array.isArray(raw)) return [];
     return raw
@@ -82,10 +100,38 @@
       .filter(Boolean);
   }
 
-  function formatStylePriceRange(basePrice, addons) {
+  function formatStylePriceRange(basePrice, addons, variants) {
+    var list = normalizeVariants(variants);
     var base = typeof basePrice === 'number' && !Number.isNaN(basePrice) && basePrice > 0 ? basePrice : 0;
-    var list = normalizeAddons(addons);
-    var priced = list
+    if (list.length) {
+      var versionPrices = (base > 0 ? [base] : []).concat(
+        list
+          .map(function (variant) {
+            return variant.price;
+          })
+          .filter(function (price) {
+            return price > 0;
+          }),
+      );
+      if (versionPrices.length) {
+        var min = Math.min.apply(null, versionPrices);
+        var max = Math.max.apply(null, versionPrices);
+        var addonList = normalizeAddons(addons);
+        var addonPrices = addonList
+          .map(function (addon) {
+            return addon.price;
+          })
+          .filter(function (price) {
+            return price > 0;
+          });
+        if (addonPrices.length) max += Math.max.apply(null, addonPrices);
+        if (min === max) return formatPrice(min);
+        return '$' + Math.round(min) + '\u2013$' + Math.round(max);
+      }
+    }
+
+    var addonList = normalizeAddons(addons);
+    var priced = addonList
       .map(function (addon) {
         return addon.price;
       })
@@ -152,6 +198,8 @@
       var covers = {};
       var reviewsSettings = { enabled: true };
       var reviews = [];
+      var siteProducts = [];
+      var productsSettings = null;
 
       records.forEach(function (record) {
         var value = settingValue(record);
@@ -159,6 +207,12 @@
         if (record.record_type === 'site_setting' && record.record_key === 'site_theme') theme = Object.assign(theme, value || {});
         if (record.record_type === 'site_setting' && record.record_key === 'style_catalog_meta') meta = value || {};
         if (record.record_type === 'site_setting' && record.record_key === 'style_price_overrides') prices = value || {};
+        if (record.record_type === 'site_setting' && record.record_key === 'products_catalog') {
+          siteProducts = Array.isArray(value) ? value : [];
+        }
+        if (record.record_type === 'site_setting' && record.record_key === 'products_settings') {
+          productsSettings = value || null;
+        }
         if (record.record_type === 'site_setting' && record.record_key === 'reviews_settings') {
           reviewsSettings = Object.assign({ enabled: true }, value || {});
         }
@@ -191,6 +245,8 @@
       var templateId = 'profile';
 
       window.__STYLD_SITE_CONTENT__ = content;
+      window.__STYLD_SITE_PRODUCTS__ = siteProducts;
+      window.__STYLD_PRODUCTS_SETTINGS__ = productsSettings;
       var heroStackImagePaths = Array.isArray(theme.heroStackImagePaths) ? theme.heroStackImagePaths : [];
       window.__STYLD_SITE_THEME__ = {
         heroLayout: theme.heroLayout || 'split',
@@ -202,6 +258,8 @@
         heroImageUrl: coverUrl(theme.heroImagePath),
         logoImageUrl: coverUrl(theme.logoImagePath),
         heroStackImageUrls: heroStackImagePaths.map(function(p) { return coverUrl(p); }).filter(Boolean),
+        portfolioItems: Array.isArray(theme.portfolioItems) ? theme.portfolioItems : [],
+        certificationItems: Array.isArray(theme.certificationItems) ? theme.certificationItems : [],
         primaryColor: theme.primaryColor || null,
         secondaryColor: theme.secondaryColor || null,
         navbarColor: theme.navbarColor || null,
@@ -409,15 +467,17 @@
           var item = meta[styleId] || {};
           var sizeLabel = item.sizeLabel || item.variant || sizeLabelFromStyleId(styleId);
           var itemAddons = normalizeAddons(item.addons);
+          var itemVariants = normalizeVariants(item.variants);
           return {
             id: styleId,
             title: item.title || styleId,
             description: item.description || '',
-            priceLabel: formatStylePriceRange(prices[styleId], itemAddons),
+            priceLabel: formatStylePriceRange(prices[styleId], itemAddons, itemVariants),
             sizeLabel: sizeLabel || undefined,
             durationLabel: formatStyleDuration(item.durationMinutes),
             imageUrl: coverUrl(covers[styleId]) || logoFallbackUrl,
             category: item.category || '',
+            variants: itemVariants,
             addons: itemAddons,
           };
         });

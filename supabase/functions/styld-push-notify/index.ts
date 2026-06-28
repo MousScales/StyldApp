@@ -1,9 +1,5 @@
-/**
- * Sends Expo push notifications to the stylist app for new site activity.
- * Triggered by DB insert on styld_site_records (booking, review, inquiry).
- */
+import { buildPushForBookingUpdate, buildPushForSiteRecord, sendPushToUser } from '../_shared/stylist-push.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { buildPushForSiteRecord, notifyStylistForSiteRecord } from '../_shared/stylist-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +19,7 @@ type IncomingRecord = {
   record_type?: string;
   data?: Record<string, unknown> | null;
   created_at?: string;
+  updated_at?: string;
 };
 
 function parseRecord(payload: unknown): IncomingRecord | null {
@@ -34,6 +31,21 @@ function parseRecord(payload: unknown): IncomingRecord | null {
   }
 
   return source as IncomingRecord;
+}
+
+function parseOldRecord(payload: unknown): IncomingRecord | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const source = payload as Record<string, unknown>;
+  if (source.old_record && typeof source.old_record === 'object') {
+    return source.old_record as IncomingRecord;
+  }
+  return null;
+}
+
+function parseEvent(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return 'insert';
+  const source = payload as Record<string, unknown>;
+  return typeof source.event === 'string' ? source.event.toLowerCase() : 'insert';
 }
 
 Deno.serve(async (req) => {
@@ -53,13 +65,14 @@ Deno.serve(async (req) => {
       body = null;
     }
 
+    const event = parseEvent(body);
     let record = parseRecord(body);
+    const oldRecord = parseOldRecord(body);
 
-    // DB trigger may POST an empty body — use the newest matching site record.
     if (!record?.id || !record.user_id || !record.record_type) {
       const { data: latest, error } = await supabase
         .from('styld_site_records')
-        .select('id, user_id, record_type, data, created_at')
+        .select('id, user_id, record_type, data, created_at, updated_at')
         .in('record_type', ['booking', 'review', 'inquiry'])
         .order('created_at', { ascending: false })
         .limit(1)
@@ -74,25 +87,35 @@ Deno.serve(async (req) => {
       return json({ ok: true, skipped: 'ignored_record_type' });
     }
 
-    // Re-fetch to ensure the row exists and is fresh (guards empty trigger payloads).
     const { data: fresh, error: freshError } = await supabase
       .from('styld_site_records')
-      .select('id, user_id, record_type, data, created_at')
+      .select('id, user_id, record_type, data, created_at, updated_at')
       .eq('id', record.id)
       .maybeSingle();
 
     if (freshError) return json({ error: freshError.message }, 500);
     if (!fresh) return json({ error: 'Record not found' }, 404);
 
-    const createdAt = fresh.created_at ? new Date(fresh.created_at).getTime() : Date.now();
-    if (Date.now() - createdAt > 5 * 60 * 1000) {
+    const referenceAt = fresh.updated_at ?? fresh.created_at;
+    const referenceMs = referenceAt ? new Date(referenceAt).getTime() : Date.now();
+    if (Date.now() - referenceMs > 5 * 60 * 1000) {
       return json({ ok: true, skipped: 'stale_record' });
     }
 
-    const preview = buildPushForSiteRecord(fresh);
+    let preview = buildPushForSiteRecord(fresh);
+
+    if (event === 'update' && fresh.record_type === 'booking' && oldRecord?.data) {
+      preview =
+        buildPushForBookingUpdate(
+          oldRecord.data ?? {},
+          (fresh.data ?? {}) as Record<string, unknown>,
+          fresh.id,
+        ) ?? preview;
+    }
+
     if (!preview) return json({ ok: true, skipped: 'no_push_payload' });
 
-    const result = await notifyStylistForSiteRecord(supabase, fresh);
+    const result = await sendPushToUser(supabase, fresh.user_id, preview);
     return json({ ok: true, ...result, title: preview.title });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Internal error';

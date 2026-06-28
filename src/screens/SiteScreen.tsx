@@ -34,7 +34,7 @@ import { useSiteData } from '../context/SiteDataContext';
 import { fetchAnalyticsSummary, friendlyPath, type AnalyticsSummary } from '../lib/siteAnalytics';
 import { SiteStackParamList } from '../navigation/SiteNavigator';
 import { colors } from '../theme';
-import { LAYOUT_BASE, makeScaleFns } from '../theme/layout';
+import { getSiteTabPreviewHeight } from '../theme/layout';
 
 function normalizeDisplaySlug(value: string): string {
   return normalizeSubdomain(value.replace(/\s+/g, '-')) || 'your-site';
@@ -55,14 +55,14 @@ function formatMoney(amount: number): string {
 function SitePreviewPanel({ loading }: { loading: boolean }) {
   const styles = useResponsiveStyles(BASE_STYLES);
   const { width, height } = useWindowDimensions();
-  const webviewHeight = useMemo(() => {
-    const { rh } = makeScaleFns(width, height);
-    return Math.round(rh(LAYOUT_BASE.height * 0.7));
-  }, [width, height]);
+  const webviewHeight = useMemo(
+    () => getSiteTabPreviewHeight(width, height),
+    [width, height],
+  );
 
   const { content } = useSiteContent();
   const { sitePublish } = useOnboarding();
-  const { theme, heroImageUrl, logoImageUrl, stackImageUrls } = useSiteTheme();
+  const { theme, heroImageUrl, logoImageUrl, stackImageUrls, portfolioMediaUrls } = useSiteTheme();
   const { catalogServices, getCoverUrl, getPrice, getStyleMeta } = useServiceCatalog();
 
   const liveUrl = sitePublish.published && sitePublish.publicUrl ? sitePublish.publicUrl : null;
@@ -79,7 +79,7 @@ function SitePreviewPanel({ loading }: { loading: boolean }) {
           id: service.id,
           title: meta?.title ?? service.name,
           description: meta?.description ?? service.description ?? '',
-          priceLabel: formatStylePriceRange(price, meta?.addons),
+          priceLabel: formatStylePriceRange(price, meta?.addons, meta?.variants),
           sizeLabel: service.variant !== 'STANDARD' ? service.variant : undefined,
           durationLabel: formatStyleDuration(
             meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
@@ -96,8 +96,9 @@ function SitePreviewPanel({ loading }: { loading: boolean }) {
         heroImageUrl,
         logoImageUrl,
         heroStackImageUrls: stackImageUrls,
+        portfolioMedia: portfolioMediaUrls,
       }),
-    [heroImageUrl, logoImageUrl, stackImageUrls, theme],
+    [heroImageUrl, logoImageUrl, portfolioMediaUrls, stackImageUrls, theme],
   );
 
   const browserBar = (

@@ -27,14 +27,19 @@ import {
   formatStyleDuration,
   formatStylePriceRange,
   getIncompleteStyleAddons,
+  getIncompleteStyleVariants,
+  hasExtraStyleVariants,
   normalizeStyleAddons,
+  normalizeStyleVariants,
   STYLE_DURATION_PRESETS,
   StyleAddon,
+  StyleVariant,
 } from '../../data/siteStyles';
 import { pickSiteImageFromLibrary } from '../../lib/pickSiteImage';
 import { ProfileStackParamList } from '../../navigation/ProfileNavigator';
 import { colors } from '../../theme';
 import StyleAddonsEditor from '../../components/site/StyleAddonsEditor';
+import StyleVariantsEditor from '../../components/site/StyleVariantsEditor';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Styles'>;
 
@@ -47,43 +52,47 @@ function StyleCard({
   service: CatalogService;
   onPress: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_CARD_STYLES);
   const { getPrice, getStyleMeta, getCoverUrl } = useServiceCatalog();
   const meta = getStyleMeta(service.id);
   const title = meta?.title ?? service.name;
   const price = getPrice(service.id);
   const coverUrl = getCoverUrl(service.id);
+  const variants = meta?.variants ?? [];
+  const addons = meta?.addons ?? [];
+  const priceLabel = formatStylePriceRange(price, addons, variants);
 
   return (
     <Pressable
-      style={({ pressed }) => [cardStyles.card, pressed && cardStyles.cardPressed]}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={onPress}
     >
       {/* thumbnail */}
       {coverUrl ? (
-        <Image source={{ uri: coverUrl }} style={cardStyles.thumb} resizeMode="cover" />
+        <Image source={{ uri: coverUrl }} style={styles.thumb} resizeMode="cover" />
       ) : (
-        <View style={[cardStyles.thumb, cardStyles.thumbPlaceholder]}>
+        <View style={[styles.thumb, styles.thumbPlaceholder]}>
           <Ionicons name="image-outline" size={22} color={colors.textMuted} />
         </View>
       )}
 
       {/* info */}
-      <View style={cardStyles.info}>
-        <Text style={cardStyles.name} numberOfLines={1}>{title}</Text>
+      <View style={styles.info}>
+        <Text style={styles.name} numberOfLines={1}>{title}</Text>
         {(meta?.description || service.description) ? (
-          <Text style={cardStyles.desc} numberOfLines={1}>
+          <Text style={styles.desc} numberOfLines={1}>
             {meta?.description ?? service.description}
           </Text>
         ) : null}
       </View>
 
       {/* price */}
-      <Text style={cardStyles.price}>{formatStylePriceRange(price, meta?.addons)}</Text>
+      <Text style={styles.price}>{priceLabel}</Text>
     </Pressable>
   );
 }
 
-const cardStyles = StyleSheet.create({
+const BASE_CARD_STYLES = {
   card: {
     flex: 1,
     flexDirection: 'row',
@@ -127,7 +136,7 @@ const cardStyles = StyleSheet.create({
     fontWeight: '700',
     flexShrink: 0,
   },
-});
+};
 
 // ─── Edit / Add modal ─────────────────────────────────────────────────────────
 
@@ -144,6 +153,7 @@ function FolderPicker({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const styles = useResponsiveStyles(BASE_FP_STYLES);
   const { catalogServices } = useServiceCatalog();
   const [newName, setNewName] = useState('');
 
@@ -164,18 +174,18 @@ function FolderPicker({
   };
 
   return (
-    <View style={fpStyles.wrap}>
-      <Text style={fpStyles.label}>Folder / Section</Text>
+    <View style={styles.wrap}>
+      <Text style={styles.label}>Folder / Section</Text>
 
       {/* All known folders + current selection as chips */}
-      <View style={fpStyles.chips}>
+      <View style={styles.chips}>
         {allFolders.map((cat) => (
           <Pressable
             key={cat}
-            style={[fpStyles.chip, value === cat && fpStyles.chipActive]}
+            style={[styles.chip, value === cat && styles.chipActive]}
             onPress={() => onChange(cat)}
           >
-            <Text style={[fpStyles.chipText, value === cat && fpStyles.chipTextActive]}>
+            <Text style={[styles.chipText, value === cat && styles.chipTextActive]}>
               {cat}
             </Text>
           </Pressable>
@@ -183,10 +193,10 @@ function FolderPicker({
       </View>
 
       {/* New folder input */}
-      <Text style={fpStyles.newLabel}>Create a new folder</Text>
-      <View style={fpStyles.newRow}>
+      <Text style={styles.newLabel}>Create a new folder</Text>
+      <View style={styles.newRow}>
         <TextInput
-          style={fpStyles.newInput}
+          style={styles.newInput}
           value={newName}
           onChangeText={setNewName}
           placeholder="e.g. KNOTLESS"
@@ -196,18 +206,18 @@ function FolderPicker({
           onSubmitEditing={applyNew}
         />
         <Pressable
-          style={[fpStyles.newConfirm, !newName.trim() && { opacity: 0.4 }]}
+          style={[styles.newConfirm, !newName.trim() && { opacity: 0.4 }]}
           onPress={applyNew}
           disabled={!newName.trim()}
         >
-          <Text style={fpStyles.newConfirmText}>Add</Text>
+          <Text style={styles.newConfirmText}>Add</Text>
         </Pressable>
       </View>
     </View>
   );
 }
 
-const fpStyles = StyleSheet.create({
+const BASE_FP_STYLES = {
   wrap: { marginBottom: 14 },
   label: {
     color: colors.textMuted,
@@ -278,7 +288,7 @@ const fpStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-});
+};
 
 // ─── Edit / Add modal ─────────────────────────────────────────────────────────
 
@@ -289,6 +299,7 @@ function EditModal({
   state: EditState;
   onClose: () => void;
 }) {
+  const styles = useResponsiveStyles(BASE_MODAL_STYLES);
   const { getStyleMeta, getPrice, upsertStyle, deleteStyle, uploadStyleImage, getCoverUrl } =
     useServiceCatalog();
 
@@ -304,6 +315,8 @@ function EditModal({
     meta?.durationMinutes ?? DEFAULT_STYLE_DURATION_MINUTES,
   );
   const [addons, setAddons] = useState<StyleAddon[]>(meta?.addons ?? []);
+  const [variants, setVariants] = useState<StyleVariant[]>(meta?.variants ?? []);
+  const [defaultVariantLabel, setDefaultVariantLabel] = useState(meta?.defaultVariantLabel ?? '');
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [imageMimeType, setImageMimeType] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -334,7 +347,17 @@ function EditModal({
       );
       return;
     }
+    const incompleteVariants = getIncompleteStyleVariants(variants);
+    if (incompleteVariants.length > 0) {
+      Alert.alert(
+        'Version label required',
+        'Enter a label for each version, or tap × to remove empty rows.',
+      );
+      return;
+    }
     const normalizedAddons = normalizeStyleAddons(addons);
+    const normalizedVariants = normalizeStyleVariants(variants);
+    const trimmedDefaultLabel = defaultVariantLabel.trim();
     setSaving(true);
     try {
       const cat = folder.trim() || DEFAULT_STYLE_CATEGORY;
@@ -346,7 +369,9 @@ function EditModal({
             price: parsedPrice,
             durationMinutes,
             category: cat,
+            defaultVariantLabel: trimmedDefaultLabel,
             addons: normalizedAddons,
+            variants: normalizedVariants,
           },
           localImageUri,
           imageMimeType,
@@ -360,7 +385,9 @@ function EditModal({
           durationMinutes,
           category: cat,
           venue: service.venue,
+          defaultVariantLabel: trimmedDefaultLabel,
           addons: normalizedAddons,
+          variants: normalizedVariants,
         });
         if (localImageUri) {
           await uploadStyleImage(service.id, localImageUri, imageMimeType ?? undefined);
@@ -392,16 +419,16 @@ function EditModal({
 
   return (
     <KeyboardAvoidingView
-      style={modalStyles.root}
+      style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
-      <View style={modalStyles.header}>
-        <Pressable onPress={onClose} hitSlop={12} style={modalStyles.headerBtn}>
+      <View style={styles.header}>
+        <Pressable onPress={onClose} hitSlop={12} style={styles.headerBtn}>
           <Ionicons name="close" size={22} color={colors.text} />
         </Pressable>
-        <Text style={modalStyles.headerTitle}>{isNew ? 'Add style' : 'Edit style'}</Text>
-        <View style={modalStyles.headerRight}>
+        <Text style={styles.headerTitle}>{isNew ? 'Add style' : 'Edit style'}</Text>
+        <View style={styles.headerRight}>
           {!isNew && (
             <Pressable onPress={handleDelete} hitSlop={12} disabled={saving}>
               <Ionicons name="trash-outline" size={20} color="#f87171" />
@@ -411,21 +438,21 @@ function EditModal({
       </View>
 
       <ScrollView
-        contentContainerStyle={modalStyles.content}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Photo */}
-        <Pressable style={modalStyles.photoArea} onPress={pickImage} disabled={saving}>
+        <Pressable style={styles.photoArea} onPress={pickImage} disabled={saving}>
           {displayUri ? (
-            <Image source={{ uri: displayUri }} style={modalStyles.photoImg} resizeMode="cover" />
+            <Image source={{ uri: displayUri }} style={styles.photoImg} resizeMode="cover" />
           ) : (
-            <View style={modalStyles.photoPlaceholder}>
+            <View style={styles.photoPlaceholder}>
               <Ionicons name="image-outline" size={32} color={colors.textMuted} />
-              <Text style={modalStyles.photoPlaceholderText}>Tap to add photo</Text>
+              <Text style={styles.photoPlaceholderText}>Tap to add photo</Text>
             </View>
           )}
-          <View style={modalStyles.photoOverlay}>
+          <View style={styles.photoOverlay}>
             <Ionicons name="camera-outline" size={14} color="#fff" />
           </View>
         </Pressable>
@@ -434,20 +461,27 @@ function EditModal({
         <EditField label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Knotless braids" />
         <EditField label="Description" value={description} onChangeText={setDescription} placeholder="What's included" multiline />
         <FolderPicker value={folder} onChange={setFolder} />
-        <EditField label="Price" value={price} onChangeText={setPrice} placeholder="150" keyboardType="decimal-pad" prefix="$" />
+        <EditField
+          label={hasExtraStyleVariants(variants) ? 'Price (version 1)' : 'Price'}
+          value={price}
+          onChangeText={setPrice}
+          placeholder="150"
+          keyboardType="decimal-pad"
+          prefix="$"
+        />
 
         {/* Duration */}
-        <Text style={modalStyles.fieldLabel}>Duration</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={modalStyles.durationRow}>
+        <Text style={styles.fieldLabel}>Duration</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.durationRow}>
           {STYLE_DURATION_PRESETS.map((preset) => {
             const active = durationMinutes === preset.minutes;
             return (
               <Pressable
                 key={preset.minutes}
-                style={[modalStyles.durationChip, active && modalStyles.durationChipActive]}
+                style={[styles.durationChip, active && styles.durationChipActive]}
                 onPress={() => setDurationMinutes(preset.minutes)}
               >
-                <Text style={[modalStyles.durationChipText, active && modalStyles.durationChipTextActive]}>
+                <Text style={[styles.durationChipText, active && styles.durationChipTextActive]}>
                   {preset.label}
                 </Text>
               </Pressable>
@@ -455,17 +489,36 @@ function EditModal({
           })}
         </ScrollView>
 
+        <StyleVariantsEditor
+          basePrice={parsedPrice}
+          defaultVariantLabel={defaultVariantLabel}
+          onDefaultVariantLabelChange={setDefaultVariantLabel}
+          variants={variants}
+          onChange={setVariants}
+          disabled={saving}
+        />
+        {hasExtraStyleVariants(normalizeStyleVariants(variants)) ? (
+          <Text style={styles.pricePreview}>
+            Shown on menu:{' '}
+            {formatStylePriceRange(
+              parsedPrice,
+              normalizeStyleAddons(addons),
+              normalizeStyleVariants(variants),
+            )}
+          </Text>
+        ) : null}
+
         <StyleAddonsEditor addons={addons} onChange={setAddons} disabled={saving} />
 
         {/* Save */}
         <Pressable
-          style={[modalStyles.saveBtn, saving && { opacity: 0.6 }]}
+          style={[styles.saveBtn, saving && { opacity: 0.6 }]}
           onPress={handleSave}
           disabled={saving}
         >
           {saving
             ? <ActivityIndicator color="#fff" />
-            : <Text style={modalStyles.saveBtnText}>{isNew ? 'Add style' : 'Save changes'}</Text>
+            : <Text style={styles.saveBtnText}>{isNew ? 'Add style' : 'Save changes'}</Text>
           }
         </Pressable>
       </ScrollView>
@@ -490,13 +543,15 @@ function EditField({
   keyboardType?: 'default' | 'decimal-pad';
   prefix?: string;
 }) {
+  const styles = useResponsiveStyles(BASE_MODAL_STYLES);
+
   return (
-    <View style={modalStyles.fieldWrap}>
-      <Text style={modalStyles.fieldLabel}>{label}</Text>
-      <View style={[modalStyles.inputRow, multiline && modalStyles.inputRowMulti]}>
-        {prefix ? <Text style={modalStyles.prefix}>{prefix}</Text> : null}
+    <View style={styles.fieldWrap}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={[styles.inputRow, multiline && styles.inputRowMulti]}>
+        {prefix ? <Text style={styles.prefix}>{prefix}</Text> : null}
         <TextInput
-          style={[modalStyles.input, multiline && modalStyles.inputMulti]}
+          style={[styles.input, multiline && styles.inputMulti]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -511,7 +566,7 @@ function EditField({
   );
 }
 
-const modalStyles = StyleSheet.create({
+const BASE_MODAL_STYLES = {
   root: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -578,6 +633,13 @@ const modalStyles = StyleSheet.create({
   durationChipActive: { borderColor: colors.accentPinkBorder, backgroundColor: colors.accentPinkMuted },
   durationChipText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   durationChipTextActive: { color: colors.accentPink, fontWeight: '700' },
+  pricePreview: {
+    color: colors.accentPink,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 12,
+    marginTop: -4,
+  },
   saveBtn: {
     backgroundColor: colors.accentPink, borderRadius: 14,
     paddingVertical: 15, alignItems: 'center', marginTop: 8,
@@ -585,7 +647,7 @@ const modalStyles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 10, elevation: 5,
   },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-});
+};
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 

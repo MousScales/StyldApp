@@ -15,12 +15,15 @@ import { useOnboarding } from './OnboardingContext';
 
 type BrandContextValue = {
   businessType: BusinessType | '';
+  businessTypeOther: string;
+  businessTypeLabel: string;
   isBarber: boolean;
   brandKey: BrandPaletteKey;
   colors: AppColors;
   copy: BrandCopy;
   /** Live preview during onboarding before save. */
   setPreviewBusinessType: (type: BusinessType | '') => void;
+  setPreviewBusinessTypeOther: (label: string) => void;
 };
 
 const BrandContext = createContext<BrandContextValue | undefined>(undefined);
@@ -28,8 +31,13 @@ const BrandContext = createContext<BrandContextValue | undefined>(undefined);
 export function BrandProvider({ children }: { children: ReactNode }) {
   const { state } = useOnboarding();
   const [previewBusinessType, setPreviewBusinessType] = useState<BusinessType | ''>('');
+  const [previewBusinessTypeOther, setPreviewBusinessTypeOther] = useState('');
 
+  const usingPreview = Boolean(previewBusinessType);
   const businessType = previewBusinessType || state.survey?.businessType || '';
+  const businessTypeOther = usingPreview
+    ? previewBusinessTypeOther
+    : (state.survey?.businessTypeOther ?? '');
   const isBarber = businessType === 'barber';
   const brandKey = brandKeyForBusinessType(businessType);
   const brandColors = useMemo(() => getBrandColors(brandKey), [brandKey]);
@@ -38,18 +46,29 @@ export function BrandProvider({ children }: { children: ReactNode }) {
     applyBrandPalette(brandKey);
   }, [brandKey]);
 
-  const copy = useMemo(() => getBrandCopy(businessType), [businessType]);
+  const copy = useMemo(
+    () => getBrandCopy(businessType, businessTypeOther),
+    [businessType, businessTypeOther],
+  );
+
+  const businessTypeLabel = useMemo(() => {
+    if (businessType === 'other' && businessTypeOther.trim()) return businessTypeOther.trim();
+    return copy.businessLabel;
+  }, [businessType, businessTypeOther, copy.businessLabel]);
 
   const value = useMemo<BrandContextValue>(
     () => ({
       businessType,
+      businessTypeOther,
+      businessTypeLabel,
       isBarber,
       brandKey,
       colors: brandColors,
       copy,
       setPreviewBusinessType,
+      setPreviewBusinessTypeOther,
     }),
-    [businessType, isBarber, brandKey, brandColors, copy],
+    [businessType, businessTypeOther, businessTypeLabel, isBarber, brandKey, brandColors, copy],
   );
 
   return <BrandContext.Provider value={value}>{children}</BrandContext.Provider>;
@@ -69,11 +88,14 @@ export function useBrandOptional(): BrandContextValue {
   const fallback = useMemo(
     () => ({
       businessType: '' as BusinessType | '',
+      businessTypeOther: '',
+      businessTypeLabel: '',
       isBarber: false,
       brandKey: 'salon' as BrandPaletteKey,
       colors: themeColors,
       copy: getBrandCopy(''),
       setPreviewBusinessType: (_type: BusinessType | '') => {},
+      setPreviewBusinessTypeOther: (_label: string) => {},
     }),
     [],
   );
@@ -85,6 +107,16 @@ export function useSetPreviewBusinessType() {
   return useCallback(
     (type: BusinessType | '') => {
       setPreview?.(type);
+    },
+    [setPreview],
+  );
+}
+
+export function useSetPreviewBusinessTypeOther() {
+  const setPreview = useContext(BrandContext)?.setPreviewBusinessTypeOther;
+  return useCallback(
+    (label: string) => {
+      setPreview?.(label);
     },
     [setPreview],
   );

@@ -10,6 +10,10 @@
   const BOOKING_NOTICE_KEY = "salon_site_booking_notice";
   const DETAILS_BOOKING_KEY = "salon_site_details_booking_id";
 
+  /** @type {{ code: string, discountUsd: number, discountCents: number, subtotalCents: number } | null} */
+  let appliedPromo = null;
+  let promoValidating = false;
+
   const DT = window.luxon && window.luxon.DateTime ? window.luxon.DateTime : null;
   if (!DT) {
     console.error("Luxon is required for salon timezone scheduling (see booking.html).");
@@ -63,16 +67,160 @@
       depositIncludedInPrice: true,
       requireCurrentHairPhoto: true,
       requireReferencePhoto: false,
+      requireBookingApproval: false,
     },
     CFG.payment || {},
   );
 
+  const CATALOG_PRODUCTS = (function normalizeCatalogProducts(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(function (entry) {
+        if (!entry || typeof entry !== "object") return null;
+        var id = entry.id ? String(entry.id) : "";
+        var title = entry.title ? String(entry.title).trim() : "";
+        if (!id || !title || entry.enabled === false) return null;
+        var price = Number(entry.price);
+        if (!Number.isFinite(price) || price < 0) price = 0;
+        var trackInventory = entry.trackInventory === true;
+        var stockQty =
+          typeof entry.stockQty === "number" && Number.isFinite(entry.stockQty)
+            ? Math.max(0, Math.floor(entry.stockQty))
+            : 0;
+        return {
+          id: id,
+          title: title,
+          description: entry.description ? String(entry.description) : "",
+          price: Math.round(price * 100) / 100,
+          trackInventory: trackInventory,
+          stockQty: stockQty,
+        };
+      })
+      .filter(Boolean);
+  })(CFG.products || []);
+
+  function productInStock(product, qty) {
+    qty = qty || 1;
+    if (!product.trackInventory) return true;
+    return product.stockQty >= qty;
+  }
+
+  function productStockLabel(product) {
+    if (!product.trackInventory) return "";
+    if (product.stockQty <= 0) return "Out of stock";
+    if (product.stockQty === 1) return "1 left";
+    return product.stockQty + " in stock";
+  }
+
+  /** @type {Record<string, number>} */
+  const selectedProductQty = {};
+
+  function getSelectedOrderProducts() {
+    return CATALOG_PRODUCTS.filter(function (p) {
+      return (selectedProductQty[p.id] || 0) > 0;
+    }).map(function (p) {
+      var qty = selectedProductQty[p.id] || 1;
+      return {
+        product_id: p.id,
+        title: p.title,
+        qty: qty,
+        unit_price: p.price,
+      };
+    });
+  }
+
+  function productsSubtotalUsd() {
+    return round2(
+      getSelectedOrderProducts().reduce(function (sum, line) {
+        return sum + line.qty * line.unit_price;
+      }, 0),
+    );
+  }
+
+  function renderBookingProductsField() {
+    var wrap = document.getElementById("booking-products-list");
+    var section = document.getElementById("booking-products-section");
+    if (!wrap || !section) return;
+    if (!CATALOG_PRODUCTS.length) {
+      section.classList.add("hidden");
+      section.setAttribute("aria-hidden", "true");
+      wrap.innerHTML = "";
+      return;
+    }
+    section.classList.remove("hidden");
+    section.setAttribute("aria-hidden", "false");
+    wrap.innerHTML = CATALOG_PRODUCTS.map(function (product) {
+      var inStock = productInStock(product, 1);
+      var checked = inStock && (selectedProductQty[product.id] || 0) > 0;
+      var stockLabel = productStockLabel(product);
+      return (
+        '<label class="booking-product-option' +
+        (inStock ? "" : " booking-product-option--disabled") +
+        '">' +
+        '<input type="checkbox" name="booking-product" value="' +
+        product.id +
+        '"' +
+        (checked ? " checked" : "") +
+        (inStock ? "" : " disabled") +
+        " />" +
+        '<span class="booking-product-option__body">' +
+        '<span class="booking-product-option__title">' +
+        product.title +
+        "</span>" +
+        (product.description
+          ? '<span class="booking-product-option__desc">' + product.description + "</span>"
+          : "") +
+        '<span class="booking-product-option__meta">' +
+        '<span class="booking-product-option__price">$' +
+        product.price.toFixed(2) +
+        "</span>" +
+        (stockLabel
+          ? '<span class="booking-product-option__stock' +
+            (inStock ? "" : " booking-product-option__stock--out") +
+            '">' +
+            stockLabel +
+            "</span>"
+          : "") +
+        "</span></span></label>"
+      );
+    }).join("");
+    wrap.querySelectorAll('input[name="booking-product"]').forEach(function (input) {
+      input.addEventListener("change", function () {
+        var product = CATALOG_PRODUCTS.find(function (p) {
+          return p.id === input.value;
+        });
+        if (input.checked) {
+          if (product && !productInStock(product, 1)) {
+            input.checked = false;
+            return;
+          }
+          selectedProductQty[input.value] = 1;
+        } else delete selectedProductQty[input.value];
+        renderPricing();
+      });
+    });
+  }
+
+  function applyProductFromQueryParam() {
+    try {
+      var id = new URLSearchParams(window.location.search).get("product");
+      if (!id) return;
+      if (CATALOG_PRODUCTS.some(function (p) { return p.id === id && productInStock(p, 1); })) {
+        selectedProductQty[id] = 1;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
   function paymentMode() {
     const configured = PAYMENT.mode || "in_person";
+    const enabled = PAYMENT.onlinePaymentsEnabled === true;
+    if (!enabled) return "in_person";
     if ((configured === "deposit" || configured === "full") && !window.__STYLD_STRIPE_READY__) {
       return "in_person";
     }
-    return configured;
+    return configured === "deposit" || configured === "full" ? configured : "in_person";
   }
 
   function depositIncludedInPrice() {
@@ -235,6 +383,8 @@
   const els = {
     form: document.getElementById("booking-form"),
     styleSelect: document.getElementById("style-select"),
+    styleVariantWrap: document.getElementById("style-variant-field-wrap"),
+    styleVariantList: document.getElementById("style-variant-list"),
     styleAddonWrap: document.getElementById("style-addon-field-wrap"),
     styleAddonList: document.getElementById("style-addon-list"),
     hairLength: document.getElementById("hair-length-select"),
@@ -272,6 +422,13 @@
     sideInPersonDue: document.getElementById("side-in-person-due"),
     sideInPersonRow: document.getElementById("side-in-person-row"),
     paymentBox: document.getElementById("payment-section"),
+    promoSection: document.getElementById("promo-code-section"),
+    promoInput: document.getElementById("promo-code-input"),
+    promoApplyBtn: document.getElementById("promo-code-apply"),
+    promoFeedback: document.getElementById("promo-code-feedback"),
+    promoApplied: document.getElementById("promo-code-applied"),
+    sidePromoRow: document.getElementById("side-promo-row"),
+    sidePromoDiscount: document.getElementById("side-promo-discount"),
     photoHair: document.getElementById("photo-hair"),
     photoRef: document.getElementById("photo-ref"),
     photoHairPreview: document.getElementById("photo-hair-preview"),
@@ -483,8 +640,81 @@
       name: opt.textContent,
       base,
       durationMinutes: def && typeof def.durationMinutes === "number" ? def.durationMinutes : undefined,
+      defaultVariantLabel:
+        def && typeof def.defaultVariantLabel === "string" ? def.defaultVariantLabel.trim() : "",
+      variants: def && Array.isArray(def.variants) ? def.variants : [],
       addons: def && Array.isArray(def.addons) ? def.addons : [],
     };
+  }
+
+  function getStyleVariantsForStyle(style) {
+    if (!style || !Array.isArray(style.variants)) return [];
+    var extras = style.variants.filter(function (variant) {
+      if (!variant || typeof variant !== "object") return false;
+      var label = typeof variant.label === "string" ? variant.label.trim() : "";
+      return label.length > 0;
+    });
+    if (!extras.length) return [];
+    var baseLabel =
+      style.defaultVariantLabel && style.defaultVariantLabel.length
+        ? style.defaultVariantLabel
+        : "Standard";
+    var base = style.base > 0 ? style.base : 0;
+    return [{ id: "default", label: baseLabel, price: base }].concat(extras);
+  }
+
+  function renderStyleVariantField(style) {
+    if (!els.styleVariantWrap || !els.styleVariantList) return;
+    els.styleVariantList.innerHTML = "";
+    var variants = getStyleVariantsForStyle(style);
+    var show = !!TENANT_BOOKING && variants.length > 0;
+    els.styleVariantWrap.hidden = !show;
+    if (!show) return;
+
+    variants.forEach(function (variant, index) {
+      var labelEl = document.createElement("label");
+      labelEl.className = "style-addon-option";
+      var input = document.createElement("input");
+      input.type = "radio";
+      input.name = "style-variant";
+      input.value = variant.id;
+      input.checked = index === 0;
+      input.addEventListener("change", function () {
+        renderPricing();
+        renderSlots();
+        void refreshUnavailableForSelection();
+      });
+      var priceText =
+        variant.price > 0 ? " (" + money(variant.price) + ")" : "";
+      labelEl.appendChild(input);
+      labelEl.appendChild(document.createTextNode(" " + variant.label + priceText));
+      els.styleVariantList.appendChild(labelEl);
+    });
+  }
+
+  function getSelectedStyleVariant() {
+    if (!TENANT_BOOKING) return null;
+    var style = getSelectedStyle();
+    var variants = getStyleVariantsForStyle(style);
+    if (!variants.length || !els.styleVariantList) return null;
+    var input = els.styleVariantList.querySelector('input[name="style-variant"]:checked');
+    if (!input || !input.value) return variants[0] || null;
+    return (
+      variants.find(function (variant) {
+        return variant.id === input.value;
+      }) ||
+      variants[0] ||
+      null
+    );
+  }
+
+  function effectiveStyleBase(style) {
+    if (!style) return 0;
+    var variant = getSelectedStyleVariant();
+    if (variant) {
+      return variant.price > 0 ? variant.price : style.base;
+    }
+    return style.base;
   }
 
   function getStyleAddonsForStyle(style) {
@@ -558,6 +788,7 @@
     const style = getSelectedStyle();
     const sid = style?.id || "";
 
+    renderStyleVariantField(style);
     renderStyleAddonField(style);
 
     const showLen = styleSupportsExtraHairLength(sid);
@@ -966,11 +1197,27 @@
 
   function computeTotals() {
     const style = getSelectedStyle();
-    const base = style ? style.base : 0;
+    const base = effectiveStyleBase(style);
     const lengthUsd = hairLengthAddonUsd();
     const addonUsd = styleAddonUsd();
 
-    const total = Math.max(0, round2(base + lengthUsd + addonUsd));
+    const rawSubtotal = Math.max(0, round2(base + lengthUsd + addonUsd + productsSubtotalUsd()));
+    const rawSubtotalCents = Math.round(rawSubtotal * 100);
+
+    if (appliedPromo && appliedPromo.subtotalCents !== rawSubtotalCents) {
+      appliedPromo = null;
+      if (els.promoApplied) {
+        els.promoApplied.hidden = true;
+        els.promoApplied.textContent = "";
+      }
+      if (els.promoFeedback) {
+        els.promoFeedback.hidden = true;
+        els.promoFeedback.textContent = "";
+      }
+    }
+
+    const promoDiscountUsd = appliedPromo ? appliedPromo.discountUsd : 0;
+    const total = Math.max(0, round2(rawSubtotal - promoDiscountUsd));
     const pctDeposit = round2(total * 0.1);
     const houseFee = style && isHouseStyleId(style.id) ? 15 : 0;
     const deposit = onlineChargeForTotal(total, style);
@@ -982,6 +1229,10 @@
       lengthUsd,
       addonUsd,
       subtotal: base,
+      rawSubtotal,
+      rawSubtotalCents,
+      promoDiscountUsd,
+      productsSubtotalUsd: productsSubtotalUsd(),
       total,
       deposit,
       balanceDue,
@@ -993,7 +1244,20 @@
   }
 
   function renderPricing() {
-    const { base, lengthUsd, addonUsd, total, deposit, balanceDue, pctDeposit, houseFee, style, mode } = computeTotals();
+    const {
+      base,
+      lengthUsd,
+      addonUsd,
+      rawSubtotal,
+      promoDiscountUsd,
+      total,
+      deposit,
+      balanceDue,
+      pctDeposit,
+      houseFee,
+      style,
+      mode,
+    } = computeTotals();
     const dur = totalDurationMinutes();
     const online = needsOnlinePayment();
     const hasPricedStyle = !!(style && style.id !== "other");
@@ -1090,6 +1354,15 @@
     if (els.sideLengthAddon) els.sideLengthAddon.textContent = lengthUsd > 0 ? money(lengthUsd) : "—";
     if (els.sideStyleAddon) els.sideStyleAddon.textContent = addonUsd > 0 ? money(addonUsd) : "—";
     if (els.sideStyleAddonRow) els.sideStyleAddonRow.hidden = !(addonUsd > 0);
+    var productsUsd = productsSubtotalUsd();
+    var sideProductsRow = document.getElementById("side-products-row");
+    var sideProductsSubtotal = document.getElementById("side-products-subtotal");
+    if (sideProductsRow) sideProductsRow.hidden = !(productsUsd > 0);
+    if (sideProductsSubtotal) sideProductsSubtotal.textContent = money(productsUsd);
+    if (els.sidePromoRow) els.sidePromoRow.hidden = !(promoDiscountUsd > 0);
+    if (els.sidePromoDiscount) {
+      els.sidePromoDiscount.textContent = promoDiscountUsd > 0 ? "−" + money(promoDiscountUsd) : "—";
+    }
     if (els.sideTotal) els.sideTotal.textContent = money(displayTotalAmount);
     if (els.sideTotalLabel) els.sideTotalLabel.textContent = displayTotalLabel;
     if (els.sideDepositExcludedNote) {
@@ -1173,6 +1446,7 @@
     const complete = isFormCompleteForBooking();
     const paymentsBlocked = merchantPaymentsNotReady();
     const showPayment = complete && online;
+    const showPromo = complete && hasPricedStyle;
     const showTenantPolicy = TENANT_BOOKING && !!policySummaryText && hasPricedStyle;
     const policySection = document.getElementById("cancellation-policy-section");
     const policyText = document.getElementById("cancellation-policy-text");
@@ -1189,6 +1463,10 @@
         "aria-hidden",
         showPayment || paymentsBlocked ? "false" : "true",
       );
+    }
+    if (els.promoSection) {
+      els.promoSection.classList.toggle("hidden", !showPromo);
+      els.promoSection.setAttribute("aria-hidden", showPromo ? "false" : "true");
     }
 
     var paymentsBlockedEl = document.getElementById("payments-not-ready");
@@ -1346,10 +1624,94 @@
       data = null;
     }
     if (!res.ok) {
-      throw new Error((data && data.error) || res.statusText || "Payment request failed");
+      throw new Error((data && (data.error || data.message)) || res.statusText || "Payment request failed");
     }
     if (data && data.error) throw new Error(data.error);
     return data;
+  }
+
+  function setPromoFeedback(message, kind) {
+    if (!els.promoFeedback) return;
+    els.promoFeedback.hidden = !message;
+    els.promoFeedback.textContent = message || "";
+    els.promoFeedback.classList.remove("booking-feedback--error", "booking-feedback--promo-ok");
+    if (message && kind === "error") els.promoFeedback.classList.add("booking-feedback--error");
+    if (message && kind === "ok") els.promoFeedback.classList.add("booking-feedback--promo-ok");
+  }
+
+  async function applyPromoCode() {
+    const raw = (els.promoInput?.value || "").trim();
+    if (!raw) {
+      setPromoFeedback("Enter a promo code.", "error");
+      return;
+    }
+
+    const { rawSubtotalCents, style } = computeTotals();
+    if (!style || style.id === "other" || rawSubtotalCents < 1) {
+      setPromoFeedback("Choose a service first.", "error");
+      return;
+    }
+
+    const subdomain = getBookingSubdomain();
+    if (!subdomain) {
+      setPromoFeedback("Could not verify promo code.", "error");
+      return;
+    }
+
+    if (promoValidating) return;
+    promoValidating = true;
+    if (els.promoApplyBtn) {
+      els.promoApplyBtn.disabled = true;
+      els.promoApplyBtn.textContent = "Checking…";
+    }
+
+    try {
+      const data = await invokeBookingEdgeFunction("validate-booking-promo", {
+        subdomain,
+        code: raw,
+        subtotalCents: rawSubtotalCents,
+      });
+
+      if (!data || !data.ok) {
+        appliedPromo = null;
+        setPromoFeedback((data && data.message) || "That promo code is not valid.", "error");
+        if (els.promoApplied) {
+          els.promoApplied.hidden = true;
+          els.promoApplied.textContent = "";
+        }
+        renderPricing();
+        return;
+      }
+
+      const discountCents = data.discountCents || 0;
+      appliedPromo = {
+        code: data.code || raw.toUpperCase(),
+        discountUsd: round2(discountCents / 100),
+        discountCents,
+        subtotalCents: rawSubtotalCents,
+      };
+      setPromoFeedback("", null);
+      if (els.promoApplied) {
+        els.promoApplied.hidden = false;
+        els.promoApplied.textContent =
+          appliedPromo.code + " applied — you save " + money(appliedPromo.discountUsd) + ".";
+      }
+      renderPricing();
+    } catch (err) {
+      appliedPromo = null;
+      setPromoFeedback(err.message || "Could not validate promo code.", "error");
+      if (els.promoApplied) {
+        els.promoApplied.hidden = true;
+        els.promoApplied.textContent = "";
+      }
+      renderPricing();
+    } finally {
+      promoValidating = false;
+      if (els.promoApplyBtn) {
+        els.promoApplyBtn.disabled = false;
+        els.promoApplyBtn.textContent = "Apply";
+      }
+    }
   }
 
   async function confirmBookingPayment(payload) {
@@ -1387,6 +1749,9 @@
     try {
       piData = await invokeBookingEdgeFunction("stripe-booking-pay", {
         amountCents: payload.amountCents,
+        subtotalCents: payload.subtotalCents,
+        promoCode: payload.promoCode || null,
+        houseCallExtraCents: payload.houseCallExtraCents || 0,
         subdomain: payload.subdomain,
         bookingId: payload.bookingId,
         customerEmail: payload.customerEmail,
@@ -1510,7 +1875,7 @@
 
   async function uploadBookingFiles(sb, bookingId, hairFile, refFile) {
     const out = { photo_hair_path: null, photo_ref_path: null };
-    if (!hairFile) return out;
+    if (!hairFile && !refFile) return out;
 
     const uploadOne = async (file, kind) => {
       const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
@@ -1524,7 +1889,7 @@
       return path;
     };
 
-    out.photo_hair_path = await uploadOne(hairFile, "hair");
+    if (hairFile) out.photo_hair_path = await uploadOne(hairFile, "hair");
     if (refFile) out.photo_ref_path = await uploadOne(refFile, "ref");
     return out;
   }
@@ -1540,19 +1905,30 @@
     return DT.fromISO(iso, { zone: CFG.salonTimeZone }).toFormat("yyyy-MM-dd");
   }
 
+  function resolveBookingStatus(payInPerson, paidOnline) {
+    if (!paidOnline && !payInPerson) return "pending_payment";
+    if (PAYMENT.requireBookingApproval === true) return "pending_approval";
+    return "confirmed";
+  }
+
   function buildRowPayload(bookingId, paths, apptIso, durationMinutes, unitPaymentId, options) {
     options = options || {};
     const style = getSelectedStyle();
     const notes = document.getElementById("notes")?.value?.trim() || null;
     const addon = getSelectedStyleAddon();
-    const { total, deposit, mode } = computeTotals();
+    const variant = getSelectedStyleVariant();
+    const { total, deposit, mode, rawSubtotal, promoDiscountUsd } = computeTotals();
+    const orderProducts = getSelectedOrderProducts();
+    const productsSubtotal = productsSubtotalUsd();
     const payInPerson = mode === "in_person";
     const paidOnline = options.paidOnline === true;
 
     const service_address =
       style && isHouseStyleId(style.id) && isHouseAddressComplete() ? formatServiceAddressForStorage() : null;
 
-    const styleName = addon ? style.name + " + " + addon.name : style.name;
+    var styleName = style.name;
+    if (variant) styleName = style.name + " — " + variant.label;
+    if (addon) styleName = styleName + " + " + addon.name;
 
     return {
       id: bookingId,
@@ -1561,6 +1937,9 @@
       email: document.getElementById("email")?.value?.trim(),
       style_id: style.id,
       style_name: styleName,
+      selected_variant_id: variant ? variant.id : null,
+      selected_variant_label: variant ? variant.label : null,
+      selected_variant_price: variant ? variant.price : 0,
       selected_addon_id: addon ? addon.id : null,
       selected_addon_name: addon ? addon.name : null,
       selected_addon_price: addon ? addon.price : 0,
@@ -1571,9 +1950,15 @@
       appointment_slot: appointmentSlotLabelFromIso(apptIso),
       appointment_starts_at: apptIso,
       duration_minutes: durationMinutes,
-      booking_status: payInPerson || paidOnline ? "confirmed" : "pending_payment",
+      booking_status: resolveBookingStatus(payInPerson, paidOnline),
       notes,
-      promo_code: null,
+      promo_code: appliedPromo?.code ?? null,
+      promo_discount_amount: promoDiscountUsd > 0 ? promoDiscountUsd : 0,
+      subtotal_before_promo: rawSubtotal,
+      order_products: orderProducts,
+      products_subtotal: productsSubtotal,
+      fulfillment_method: orderProducts.length ? "at_appointment" : null,
+      shipping_amount: 0,
       estimated_total: total,
       deposit_amount: payInPerson ? 0 : deposit,
       payment_status: payInPerson ? "in_person" : paidOnline ? "deposit_paid" : "pending",
@@ -1603,6 +1988,9 @@
     options = options || {};
     const style = getSelectedStyle();
     if (!style || style.id === "other") throw new Error("Choose a priced style to book.");
+    if (getStyleVariantsForStyle(style).length && !getSelectedStyleVariant()) {
+      throw new Error("Choose a version for this service.");
+    }
 
     const paths =
       options.paths || (await uploadBookingPhotosForRequest(sb, bookingId));
@@ -1699,6 +2087,20 @@
     if (els.calPrev) els.calPrev.addEventListener("click", () => navigateMonth(-1));
     if (els.calNext) els.calNext.addEventListener("click", () => navigateMonth(1));
 
+    if (els.promoApplyBtn) {
+      els.promoApplyBtn.addEventListener("click", function () {
+        void applyPromoCode();
+      });
+    }
+    if (els.promoInput) {
+      els.promoInput.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          void applyPromoCode();
+        }
+      });
+    }
+
     if (els.form) {
       els.form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -1718,6 +2120,12 @@
             return;
           }
           alert("Please complete all required fields, choose a style, upload any required photos, and select an available time slot.");
+          return;
+        }
+
+        const promoRaw = (els.promoInput?.value || "").trim();
+        if (promoRaw && !appliedPromo) {
+          setBookingFeedback("Tap Apply to use your promo code before booking.", "error");
           return;
         }
 
@@ -1753,9 +2161,11 @@
             const { id, paths } = await submitBookingRequest(sb, apptIso, durationMinutes, bookingId, null);
             if (!id) throw new Error("Could not save booking id.");
             void invokeNotifySalon(sb, { booking_id: bookingId });
-            void sb.functions.invoke("booking-client-email", {
-              body: { bookingId, subdomain },
-            }).catch(function(e) { console.warn("booking-client-email:", e); });
+            if (PAYMENT.requireBookingApproval !== true) {
+              void sb.functions.invoke("booking-client-email", {
+                body: { bookingId, subdomain },
+              }).catch(function(e) { console.warn("booking-client-email:", e); });
+            }
             saveLocalBooking({
               ...buildRowPayload(bookingId, paths, apptIso, durationMinutes, null),
               created_at: new Date().toISOString(),
@@ -1769,6 +2179,9 @@
             }
             const detailsQ = new URLSearchParams();
             detailsQ.set("booking_id", bookingId);
+            if (PAYMENT.requireBookingApproval === true) {
+              detailsQ.set("pending_approval", "1");
+            }
             window.location.assign(buildBookingSuccessUrl(detailsQ));
             return;
           }
@@ -1776,14 +2189,17 @@
           if (submitBtn) submitBtn.textContent = "Processing payment…";
 
           const photoPaths = await uploadBookingPhotosForRequest(sb, bookingId);
-          const { deposit } = computeTotals();
-          const amountCents = Math.round(Number(deposit || 0) * 100);
+          const payTotals = computeTotals();
+          const amountCents = Math.round(Number(payTotals.deposit || 0) * 100);
           const nameEl = document.getElementById("full-name");
           const emailEl = document.getElementById("email");
           const payResult = await payBookingWithStripe(sb, {
             subdomain,
             bookingId,
             amountCents,
+            subtotalCents: payTotals.rawSubtotalCents,
+            promoCode: appliedPromo?.code || null,
+            houseCallExtraCents: 0,
             customerName: (nameEl && nameEl.value && nameEl.value.trim()) || "",
             customerEmail: (emailEl && emailEl.value && emailEl.value.trim()) || "",
           });
@@ -1806,9 +2222,11 @@
           if (!id) throw new Error("Payment succeeded but the appointment could not be saved. Contact the business with reference " + (payResult.paymentId || bookingId) + ".");
 
           void invokeNotifySalon(sb, { booking_id: bookingId });
-          void sb.functions.invoke("booking-client-email", {
-            body: { bookingId, subdomain },
-          }).catch(function(e) { console.warn("booking-client-email:", e); });
+          if (PAYMENT.requireBookingApproval !== true) {
+            void sb.functions.invoke("booking-client-email", {
+              body: { bookingId, subdomain },
+            }).catch(function(e) { console.warn("booking-client-email:", e); });
+          }
           saveLocalBooking({
             ...buildRowPayload(bookingId, paths, apptIso, durationMinutes, payResult.paymentId || null, { paidOnline: true }),
             created_at: new Date().toISOString(),
@@ -1826,6 +2244,9 @@
           const successQ = new URLSearchParams();
           successQ.set("booking_id", bookingId);
           successQ.set("paid", "1");
+          if (PAYMENT.requireBookingApproval === true) {
+            successQ.set("pending_approval", "1");
+          }
           window.location.assign(buildBookingSuccessUrl(successQ));
           return;
         } catch (err) {
@@ -1901,6 +2322,8 @@
 
   readPaidReturnParams();
   populateStyles();
+  applyProductFromQueryParam();
+  renderBookingProductsField();
 
   const presetRaw = new URLSearchParams(window.location.search).get("style");
   const preset = presetRaw ? STYLE_ALIASES[presetRaw] || presetRaw : "";

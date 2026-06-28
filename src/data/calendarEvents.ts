@@ -2,6 +2,7 @@ export type CalendarEvent = {
   id: string;
   appointmentId: string;
   title: string;
+  styleId?: string;
   dateKey: string;
   startHour: number;
   startMinute: number;

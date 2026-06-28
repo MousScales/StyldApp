@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Loading…</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700&family=Inter:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/styles.css?v=49" />
+    <style>
+      #tenant-status {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        background: #fafafa;
+        color: #525252;
+        font: 600 1rem/1.5 "Source Sans 3", system-ui, sans-serif;
+        text-align: center;
+        z-index: 9999;
+      }
+      #tenant-status[hidden] { display: none; }
+      body.tenant-error .profile-nav,
+      body.tenant-error .profile-portfolio-catalog,
+      body.tenant-error .site-footer { opacity: 0.2; pointer-events: none; }
+    </style>
+  </head>
+  <body class="tpl-profile page-portfolio">
+    <div id="tenant-status">Loading your site…</div>
+
+    <nav class="profile-nav" id="profile-nav">
+      <div class="container profile-nav__inner">
+        <a class="profile-brand" href="/">
+          <div class="profile-brand__logo" id="profile-logo-placeholder" aria-hidden="true"></div>
+          <span id="profile-brand-name">Your Brand</span>
+        </a>
+        <div class="profile-nav__links" id="profile-nav-links" hidden>
+          <div class="profile-nav__tabs" id="profile-nav-tabs" hidden>
+            <a class="profile-nav__link" href="/certifications" data-nav-page="certifications">Certifications</a>
+            <a class="profile-nav__link" href="/products" data-nav-page="products">Shop</a>
+          </div>
+        </div>
+        <div class="profile-nav__actions">
+          <button class="profile-nav__menu-btn" type="button" id="profile-nav-menu-btn" aria-expanded="false" aria-controls="profile-nav-drawer" aria-label="Open menu" hidden>
+            <span class="profile-nav__menu-icon" aria-hidden="true"></span>
+          </button>
+          <a class="profile-book-btn" href="/booking">Book Now</a>
+        </div>
+      </div>
+      <div class="profile-nav__drawer" id="profile-nav-drawer" hidden>
+        <div class="container profile-nav__drawer-inner">
+          <div class="profile-nav__drawer-tabs">
+            <a class="profile-nav__drawer-link" href="/certifications" data-nav-page="certifications">Certifications</a>
+            <a class="profile-nav__drawer-link" href="/products" data-nav-page="products">Shop</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="profile-portfolio-lightbox" id="profile-portfolio-lightbox" hidden>
+      <div class="profile-portfolio-lightbox__backdrop" data-portfolio-lightbox-close></div>
+      <button class="profile-portfolio-lightbox__close" type="button" data-portfolio-lightbox-close aria-label="Close">&times;</button>
+      <div class="profile-portfolio-lightbox__stage" id="profile-portfolio-lightbox-stage"></div>
+    </div>
+
+    <main>
+      <section class="profile-portfolio-catalog" id="profile-portfolio-catalog">
+        <div class="container">
+          <div class="profile-portfolio-catalog__head">
+            <a class="profile-portfolio-back" href="/">&larr; Back</a>
+            <h1 id="portfolio-catalog-title">Our work</h1>
+            <p class="profile-menu-blurb" id="portfolio-catalog-blurb"></p>
+          </div>
+          <div class="profile-portfolio-grid profile-portfolio-grid--catalog" id="portfolio-catalog-grid"></div>
+          <p class="profile-portfolio-catalog__empty" id="portfolio-catalog-empty" hidden>No portfolio items yet.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer site-footer--home-promo">
+      <div class="container footer-bottom">
+        <p id="preview-footer-brand">&copy; Your brand name</p>
+        <p class="footer-built-by">
+          <a
+            class="footer-built-by__link"
+            id="preview-footer-styld-link"
+            href="https://styldd.com"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <img
+              class="footer-built-by__logo"
+              src="/assets/styld-icon.png"
+              alt=""
+              width="22"
+              height="22"
+              decoding="async"
+            />
+            <span>Built with Styld</span>
+          </a>
+        </p>
+      </div>
+    </footer>
+
+    <script src="/js/styld-tenant-config.js?v=35"></script>
+    <script src="/js/styld-tenant-config.local.js?v=35"></script>
+    <script src="/js/styld-tenant-shared.js?v=40"></script>
+    <script src="/js/styld-analytics.js?v=1"></script>
+    <script src="/js/profile-content.js?v=10"></script>
+    <script src="/js/tenant-site.js?v=39"></script>
+  </body>
+</html>

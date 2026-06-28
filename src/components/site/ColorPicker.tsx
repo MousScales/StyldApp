@@ -299,6 +299,7 @@ function WheelSection({
   onHexFocus: () => void;
   onHexBlur: () => void;
 }) {
+  const wheelStyles = useResponsiveStyles(BASE_WHEEL_STYLES);
   const [wheelColor, setWheelColor] = useColor(value);
   const pickerWidth = Dimensions.get('window').width - 40;
 
@@ -363,7 +364,7 @@ function WheelSection({
   );
 }
 
-const wheelStyles = StyleSheet.create({
+const BASE_WHEEL_STYLES = {
   wrap: {
     marginBottom: 8,
     alignItems: 'center',
@@ -417,11 +418,12 @@ const wheelStyles = StyleSheet.create({
     width: 52,
     textAlign: 'right',
   },
-});
+};
 
 // ─── Image eyedropper section ─────────────────────────────────────────────────
 
 function ImageSection({ onPick }: { onPick: (hex: string) => void }) {
+  const imgStyles = useResponsiveStyles(BASE_IMG_STYLES);
   const [imageHtml, setImageHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
@@ -509,7 +511,7 @@ function ImageSection({ onPick }: { onPick: (hex: string) => void }) {
   );
 }
 
-const imgStyles = StyleSheet.create({
+const BASE_IMG_STYLES = {
   wrap: { marginBottom: 8 },
   header: {
     flexDirection: 'row',
@@ -559,7 +561,7 @@ const imgStyles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 17,
   },
-});
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 

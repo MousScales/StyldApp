@@ -8,6 +8,10 @@
       .replace(/'/g, '&#39;');
   }
 
+  function formatFaqAnswer(value) {
+    return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  }
+
   function formatSiteAddress(content) {
     if (!content) return '';
     return [content.addressLine1, content.addressLine2, content.city, content.state, content.zip]
@@ -417,12 +421,738 @@
     }
   }
 
+  function resolvePortfolioMediaUrl(path) {
+    if (!path) return '';
+    if (window.StyldTenant && typeof window.StyldTenant.resolveStyleCoverUrl === 'function') {
+      return window.StyldTenant.resolveStyleCoverUrl(path);
+    }
+    var config = window.__STYLD_TENANT_CONFIG__ || {};
+    var supabaseUrl = config.supabaseUrl || '';
+    if (!supabaseUrl) return '';
+    return (
+      supabaseUrl.replace(/\/$/, '') +
+      '/storage/v1/object/public/style-covers/' +
+      String(path).replace(/^\/+/, '')
+    );
+  }
+
+  function normalizePortfolioItems(theme) {
+    if (!theme) return [];
+    if (Array.isArray(theme.portfolioItems) && theme.portfolioItems.length) {
+      return theme.portfolioItems.filter(function (item) {
+        return item && item.storagePath;
+      });
+    }
+    if (Array.isArray(theme.galleryImagePaths)) {
+      return theme.galleryImagePaths
+        .filter(function (path) {
+          return typeof path === 'string' && path.trim();
+        })
+        .map(function (path) {
+          return { storagePath: path.trim(), mediaType: 'image' };
+        });
+    }
+    return [];
+  }
+
+  function buildPortfolioMediaInner(item, url) {
+    var safeUrl = escapeHtml(url);
+    if (item.mediaType === 'video') {
+      return (
+        '<video src="' +
+        safeUrl +
+        '" autoplay muted playsinline loop preload="metadata"></video>'
+      );
+    }
+    return '<img src="' + safeUrl + '" alt="" loading="lazy" />';
+  }
+
+  function buildPortfolioItemHtml(item, url, options) {
+    options = options || {};
+    var clickable = options.clickable !== false;
+    var type = item.mediaType === 'video' ? 'video' : 'image';
+    var cls =
+      'profile-portfolio-item' + (type === 'video' ? ' profile-portfolio-item--video' : '');
+    var inner = buildPortfolioMediaInner(item, url);
+    var safeUrl = escapeHtml(url);
+
+    if (!clickable) {
+      return '<div class="' + cls + '">' + inner + '</div>';
+    }
+
+    return (
+      '<button type="button" class="' +
+      cls +
+      ' profile-portfolio-item-btn" data-portfolio-url="' +
+      safeUrl +
+      '" data-portfolio-type="' +
+      type +
+      '">' +
+      inner +
+      '</button>'
+    );
+  }
+
+  function normalizeCertificationItems(theme) {
+    if (!theme) return [];
+    if (Array.isArray(theme.certificationItems) && theme.certificationItems.length) {
+      return theme.certificationItems
+        .filter(function (item) {
+          return item && item.storagePath;
+        })
+        .map(function (item) {
+          return {
+            storagePath: item.storagePath,
+            mediaType: item.mediaType === 'video' ? 'video' : 'image',
+            caption: typeof item.caption === 'string' ? item.caption : '',
+          };
+        });
+    }
+    return [];
+  }
+
+  function buildCertificationCardHtml(item, url) {
+    var safeUrl = escapeHtml(url);
+    var caption = typeof item.caption === 'string' ? item.caption.trim() : '';
+    var captionHtml = caption
+      ? '<p class="profile-certification-card__caption">' + escapeHtml(caption) + '</p>'
+      : '';
+
+    return (
+      '<article class="profile-certification-card">' +
+      '<div class="profile-certification-card__frame">' +
+      '<button type="button" class="profile-certification-card__btn profile-portfolio-item-btn" data-portfolio-url="' +
+      safeUrl +
+      '" data-portfolio-type="image">' +
+      '<img class="profile-certification-card__img" src="' +
+      safeUrl +
+      '" alt="" loading="lazy" />' +
+      '</button>' +
+      '</div>' +
+      captionHtml +
+      '</article>'
+    );
+  }
+
+  function populateSiteNav(content) {
+    var linksWrap = document.getElementById('profile-nav-links');
+    var tabsWrap = document.getElementById('profile-nav-tabs');
+    var menuBtn = document.getElementById('profile-nav-menu-btn');
+    var drawer = document.getElementById('profile-nav-drawer');
+    if (!linksWrap && !menuBtn && !drawer) return;
+
+    var showCertifications = !isSectionHidden(content, 'certifications');
+    var showProducts = !isSectionHidden(content, 'products');
+    var showNav = showCertifications || showProducts;
+
+    var certLabel = (content.certificationsTitle || 'Certifications').trim() || 'Certifications';
+    var productsLabel = (content.productsTitle || 'Shop').trim() || 'Shop';
+    var activeCert = document.body.classList.contains('page-certifications') ? 'certifications' : '';
+    var activeProducts = document.body.classList.contains('page-products') ? 'products' : '';
+
+    document.querySelectorAll('[data-nav-page="certifications"]').forEach(function (link) {
+      link.textContent = certLabel;
+      link.hidden = !showCertifications;
+      link.classList.toggle('is-active', activeCert === 'certifications');
+    });
+
+    document.querySelectorAll('[data-nav-page="products"]').forEach(function (link) {
+      link.textContent = productsLabel;
+      link.hidden = !showProducts;
+      link.classList.toggle('is-active', activeProducts === 'products');
+    });
+
+    if (linksWrap) linksWrap.hidden = !showNav;
+    if (tabsWrap) tabsWrap.hidden = !showNav;
+    if (menuBtn) menuBtn.hidden = !showNav;
+    if (drawer && !showNav) drawer.hidden = true;
+  }
+
+  function bindSiteNavMenu() {
+    if (document.documentElement.dataset.siteNavBound === '1') return;
+    document.documentElement.dataset.siteNavBound = '1';
+
+    var menuBtn = document.getElementById('profile-nav-menu-btn');
+    var drawer = document.getElementById('profile-nav-drawer');
+    if (!menuBtn || !drawer) return;
+
+    function closeDrawer() {
+      drawer.hidden = true;
+      menuBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    menuBtn.addEventListener('click', function () {
+      var opening = drawer.hidden;
+      drawer.hidden = !opening;
+      menuBtn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    });
+
+    drawer.querySelectorAll('a').forEach(function (link) {
+      link.addEventListener('click', closeDrawer);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (drawer.hidden) return;
+      if (e.target === menuBtn || menuBtn.contains(e.target)) return;
+      if (drawer.contains(e.target)) return;
+      closeDrawer();
+    });
+  }
+
+  function normalizeSiteProducts(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(function (item) {
+        if (!item || typeof item !== 'object') return null;
+        var id = item.id ? String(item.id) : '';
+        var title = item.title ? String(item.title).trim() : '';
+        if (!id || !title) return null;
+        var price = Number(item.price);
+        if (!Number.isFinite(price) || price < 0) price = 0;
+        var imagePaths = Array.isArray(item.imagePaths)
+          ? item.imagePaths.map(function (p) { return String(p || '').trim(); }).filter(Boolean)
+          : [];
+        if (!imagePaths.length && item.storagePath) imagePaths = [String(item.storagePath)];
+        var trackInventory = item.trackInventory === true;
+        var stockQty =
+          typeof item.stockQty === "number" && Number.isFinite(item.stockQty)
+            ? Math.max(0, Math.floor(item.stockQty))
+            : 0;
+        return {
+          id: id,
+          title: title,
+          description: item.description ? String(item.description).trim() : '',
+          price: Math.round(price * 100) / 100,
+          storagePath: imagePaths[0] || (item.storagePath ? String(item.storagePath) : ''),
+          imagePaths: imagePaths,
+          enabled: item.enabled !== false,
+          trackInventory: trackInventory,
+          stockQty: stockQty,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function productCoverPath(product) {
+    if (product.imagePaths && product.imagePaths.length) return product.imagePaths[0];
+    return product.storagePath || '';
+  }
+
+  function buildProductCardHtml(product) {
+    var paths = product.imagePaths && product.imagePaths.length ? product.imagePaths : [];
+    var cover = productCoverPath(product);
+    var url = cover ? coverUrlFromPath(cover) : '';
+    var extraPhotos = paths.length > 1 ? paths.length - 1 : 0;
+    var inStock = !product.trackInventory || product.stockQty > 0;
+    var stockLabel = product.trackInventory
+      ? product.stockQty <= 0
+        ? 'Out of stock'
+        : product.stockQty === 1
+          ? '1 in stock'
+          : product.stockQty + ' in stock'
+      : '';
+    var imgHtml = url
+      ? '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(product.title) + '" class="profile-product-card__img" loading="lazy" decoding="async" />'
+      : '<div class="profile-product-card__img profile-product-card__img--placeholder">No photo</div>';
+    var desc = product.description
+      ? '<p class="profile-product-card__desc">' + escapeHtml(product.description) + '</p>'
+      : '';
+    var bookingUrl = '/booking?product=' + encodeURIComponent(product.id);
+    var orderUrl = '/products/order?product=' + encodeURIComponent(product.id);
+    var stockHtml = stockLabel
+      ? '<p class="profile-product-card__stock' +
+        (inStock ? '' : ' profile-product-card__stock--out') +
+        '">' +
+        escapeHtml(stockLabel) +
+        '</p>'
+      : '';
+    var actionsHtml = inStock
+      ? '<div class="profile-product-card__actions">' +
+        '<a class="btn btn-secondary profile-product-card__btn" href="' +
+        bookingUrl +
+        '">Add when booking</a>' +
+        '<a class="btn btn-primary profile-product-card__btn" href="' +
+        orderUrl +
+        '">Order now</a>' +
+        '</div>'
+      : '<p class="profile-product-card__unavailable">Currently unavailable</p>';
+    return (
+      '<article class="profile-product-card' +
+      (inStock ? '' : ' profile-product-card--out') +
+      '">' +
+      imgHtml +
+      '<div class="profile-product-card__body">' +
+      '<h2 class="profile-product-card__title">' +
+      escapeHtml(product.title) +
+      '</h2>' +
+      desc +
+      '<p class="profile-product-card__price">$' +
+      product.price.toFixed(2) +
+      (extraPhotos > 0 ? ' · ' + (paths.length + ' photos') : '') +
+      '</p>' +
+      stockHtml +
+      actionsHtml +
+      '</div></article>'
+    );
+  }
+
+  function populateProductsCatalog(content) {
+    var section = document.getElementById('profile-products-catalog');
+    var grid = document.getElementById('products-catalog-grid');
+    var emptyEl = document.getElementById('products-catalog-empty');
+    if (!section || !grid) return;
+
+    var products = normalizeSiteProducts(window.__STYLD_SITE_PRODUCTS__ || []).filter(function (p) {
+      return p.enabled;
+    });
+    var hidden = isSectionHidden(content, 'products');
+    var show = !hidden;
+
+    section.hidden = !show;
+    if (!show) {
+      grid.innerHTML = '';
+      if (emptyEl) emptyEl.hidden = true;
+      return;
+    }
+
+    var titleEl = document.getElementById('products-catalog-title');
+    if (titleEl) titleEl.textContent = content.productsTitle || 'Shop';
+
+    var blurbEl = document.getElementById('products-catalog-blurb');
+    if (blurbEl) {
+      var blurb = content.productsBlurb || '';
+      blurbEl.textContent = blurb;
+      blurbEl.hidden = !blurb;
+    }
+
+    if (!products.length) {
+      grid.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = hidden ? 'This page is not available.' : 'No products yet.';
+      }
+      return;
+    }
+
+    if (emptyEl) emptyEl.hidden = true;
+    grid.innerHTML = products.map(buildProductCardHtml).join('');
+  }
+
+  function populateCertificationsCatalog(content, theme) {
+    var section = document.getElementById('profile-certifications-catalog');
+    var grid = document.getElementById('certifications-catalog-grid');
+    var emptyEl = document.getElementById('certifications-catalog-empty');
+    if (!section || !grid) return;
+
+    var items = normalizeCertificationItems(theme);
+    var hidden = isSectionHidden(content, 'certifications');
+    var show = !hidden;
+
+    section.hidden = !show;
+    if (!show) {
+      grid.innerHTML = '';
+      if (emptyEl) emptyEl.hidden = true;
+      return;
+    }
+
+    var titleEl = document.getElementById('certifications-catalog-title');
+    if (titleEl) titleEl.textContent = content.certificationsTitle || 'Certifications';
+
+    var blurbEl = document.getElementById('certifications-catalog-blurb');
+    if (blurbEl) {
+      var blurb = content.certificationsBlurb || '';
+      blurbEl.textContent = blurb;
+      blurbEl.hidden = !blurb;
+    }
+
+    if (!items.length) {
+      grid.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = hidden ? 'This page is not available.' : 'No certifications uploaded yet.';
+      }
+      return;
+    }
+
+    if (emptyEl) emptyEl.hidden = true;
+
+    grid.innerHTML = items
+      .map(function (item) {
+        var url = coverUrlFromPath(item.storagePath);
+        if (!url) return '';
+        return buildCertificationCardHtml(item, url);
+      })
+      .filter(Boolean)
+      .join('');
+  }
+
+  function buildPortfolioViewMoreSlide() {
+    return (
+      '<a class="profile-portfolio-carousel__slide profile-portfolio-view-more-slide" href="/portfolio">' +
+      '<span class="profile-portfolio-view-more-slide__label">View more</span>' +
+      '</a>'
+    );
+  }
+
+  function openPortfolioLightbox(url, mediaType) {
+    var modal = document.getElementById('profile-portfolio-lightbox');
+    var stage = document.getElementById('profile-portfolio-lightbox-stage');
+    if (!modal || !stage) return;
+
+    stage.innerHTML = '';
+    if (mediaType === 'video') {
+      var video = document.createElement('video');
+      video.src = url;
+      video.controls = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.className = 'profile-portfolio-lightbox__media';
+      stage.appendChild(video);
+      var playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(function () {});
+      }
+    } else {
+      var img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      img.className = 'profile-portfolio-lightbox__media';
+      stage.appendChild(img);
+    }
+
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePortfolioLightbox() {
+    var modal = document.getElementById('profile-portfolio-lightbox');
+    var stage = document.getElementById('profile-portfolio-lightbox-stage');
+    if (!modal) return;
+    modal.hidden = true;
+    document.body.style.overflow = '';
+    if (stage) {
+      stage.querySelectorAll('video').forEach(function (video) {
+        video.pause();
+      });
+      stage.innerHTML = '';
+    }
+  }
+
+  function bindPortfolioLightbox() {
+    if (document.documentElement.dataset.portfolioLightboxBound === '1') return;
+    document.documentElement.dataset.portfolioLightboxBound = '1';
+
+    document.addEventListener('click', function (e) {
+      var btn =
+        e.target && e.target.closest ? e.target.closest('.profile-portfolio-item-btn') : null;
+      if (btn) {
+        e.preventDefault();
+        var url = btn.getAttribute('data-portfolio-url');
+        var type = btn.getAttribute('data-portfolio-type') || 'image';
+        if (url) openPortfolioLightbox(url, type);
+        return;
+      }
+
+      if (e.target && e.target.closest && e.target.closest('[data-portfolio-lightbox-close]')) {
+        closePortfolioLightbox();
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closePortfolioLightbox();
+    });
+  }
+
+  function startPortfolioVideos(root) {
+    if (!root) return;
+    root.querySelectorAll('video').forEach(function (video) {
+      video.muted = true;
+      video.playsInline = true;
+      video.autoplay = true;
+      video.loop = true;
+      var playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(function () {});
+      }
+    });
+  }
+
+  var PORTFOLIO_HOME_PREVIEW = 5;
+
+  function populatePortfolioCatalog(content, theme) {
+    var section = document.getElementById('profile-portfolio-catalog');
+    var grid = document.getElementById('portfolio-catalog-grid');
+    var emptyEl = document.getElementById('portfolio-catalog-empty');
+    if (!grid) return;
+
+    var items = normalizePortfolioItems(theme);
+    var hidden = isSectionHidden(content, 'portfolio');
+    var show = !hidden && items.length > 0;
+
+    if (section) section.hidden = false;
+
+    var titleEl = document.getElementById('portfolio-catalog-title');
+    if (titleEl) titleEl.textContent = content.reelsTitle || 'Our work';
+
+    var blurbEl = document.getElementById('portfolio-catalog-blurb');
+    if (blurbEl) {
+      var blurb = content.reelsBlurb || '';
+      blurbEl.textContent = blurb;
+      blurbEl.hidden = !blurb;
+    }
+
+    if (!show) {
+      grid.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = hidden ? 'This gallery is not available.' : 'No portfolio items yet.';
+      }
+      return;
+    }
+
+    if (emptyEl) emptyEl.hidden = true;
+    grid.innerHTML = items
+      .map(function (item) {
+        var url = resolvePortfolioMediaUrl(item.storagePath);
+        if (!url) return '';
+        return buildPortfolioItemHtml(item, url);
+      })
+      .join('');
+    startPortfolioVideos(grid);
+
+    document.title =
+      (content.reelsTitle || 'Our work') + ' | ' + (content.brandName || 'Book online');
+  }
+
+  function populatePortfolio(content, theme) {
+    var section = document.getElementById('profile-portfolio-section');
+    var track = document.getElementById('profile-portfolio-carousel-track');
+    var viewMore = document.getElementById('profile-portfolio-view-more');
+    var menuSection = document.getElementById('profile-menu-section');
+    if (!section || !track) return;
+
+    var items = normalizePortfolioItems(theme);
+    var hidden = isSectionHidden(content, 'portfolio');
+    var show = !hidden && items.length > 0;
+
+    section.hidden = !show;
+    if (!show) {
+      track.innerHTML = '';
+      if (viewMore) viewMore.hidden = true;
+      return;
+    }
+
+    var placement = content.portfolioPlacement === 'below_menu' ? 'below_menu' : 'above_menu';
+    if (menuSection && menuSection.parentNode) {
+      if (placement === 'above_menu') {
+        menuSection.parentNode.insertBefore(section, menuSection);
+      } else if (menuSection.nextSibling) {
+        menuSection.parentNode.insertBefore(section, menuSection.nextSibling);
+      } else {
+        menuSection.parentNode.appendChild(section);
+      }
+    }
+
+    var titleEl = document.getElementById('profile-portfolio-title');
+    if (titleEl) titleEl.textContent = content.reelsTitle || 'Our work';
+
+    var blurbEl = document.getElementById('profile-portfolio-blurb');
+    if (blurbEl) {
+      var blurb = content.reelsBlurb || '';
+      blurbEl.textContent = blurb;
+      blurbEl.hidden = !blurb;
+    }
+
+    var previewItems = items.slice(0, PORTFOLIO_HOME_PREVIEW);
+    var slidesHtml = previewItems
+      .map(function (item) {
+        var url = resolvePortfolioMediaUrl(item.storagePath);
+        if (!url) return '';
+        return (
+          '<div class="profile-portfolio-carousel__slide">' +
+          buildPortfolioItemHtml(item, url) +
+          '</div>'
+        );
+      })
+      .join('');
+
+    if (items.length > PORTFOLIO_HOME_PREVIEW) {
+      slidesHtml += buildPortfolioViewMoreSlide();
+    }
+
+    track.innerHTML = slidesHtml;
+
+    startPortfolioVideos(track);
+
+    if (viewMore) {
+      viewMore.hidden = items.length <= PORTFOLIO_HOME_PREVIEW;
+      viewMore.href = '/portfolio';
+    }
+  }
+
+  function normalizeFaqItems(content) {
+    if (!content || !Array.isArray(content.faqItems)) return [];
+    return content.faqItems
+      .filter(function (item) {
+        return item && (String(item.question || '').trim() || String(item.answer || '').trim());
+      })
+      .map(function (item) {
+        return {
+          question: String(item.question || '').trim(),
+          answer: String(item.answer || '').trim(),
+        };
+      })
+      .filter(function (item) {
+        return item.question && item.answer;
+      });
+  }
+
+  function populateFaq(content) {
+    var section = document.getElementById('profile-faq-section');
+    var listEl = document.getElementById('profile-faq-list');
+    if (!section || !listEl) return;
+
+    var items = normalizeFaqItems(content);
+    var hidden = isSectionHidden(content, 'faq');
+    var show = !hidden && items.length > 0;
+
+    section.hidden = !show;
+    if (!show) {
+      listEl.innerHTML = '';
+      return;
+    }
+
+    var titleEl = document.getElementById('profile-faq-title');
+    if (titleEl) titleEl.textContent = content.faqTitle || 'FAQ';
+
+    var blurbEl = document.getElementById('profile-faq-blurb');
+    if (blurbEl) {
+      var blurb = content.faqBlurb || '';
+      blurbEl.textContent = blurb;
+      blurbEl.hidden = !blurb;
+    }
+
+    listEl.innerHTML = items
+      .map(function (item, index) {
+        return (
+          '<div class="profile-faq-item">' +
+          '<button class="profile-faq-item__question" type="button" aria-expanded="false" aria-controls="profile-faq-answer-' +
+          index +
+          '">' +
+          '<span class="profile-faq-item__question-text">' +
+          escapeHtml(item.question) +
+          '</span>' +
+          '<span class="profile-faq-item__toggle" aria-hidden="true">+</span>' +
+          '</button>' +
+          '<div class="profile-faq-item__answer" id="profile-faq-answer-' +
+          index +
+          '" hidden>' +
+          formatFaqAnswer(item.answer) +
+          '</div>' +
+          '</div>'
+        );
+      })
+      .join('');
+  }
+
+  if (document.documentElement.dataset.profileFaqBound !== '1') {
+    document.documentElement.dataset.profileFaqBound = '1';
+    document.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('.profile-faq-item__question') : null;
+      if (!btn) return;
+      var answer = btn.nextElementSibling;
+      if (!answer || !answer.classList.contains('profile-faq-item__answer')) return;
+      var opening = answer.hidden;
+      answer.hidden = !opening;
+      btn.classList.toggle('is-open', opening);
+      btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    });
+  }
+
+  bindPortfolioLightbox();
+  bindSiteNavMenu();
+
   window.applyStyldPreviewContent = function applyStyldPreviewContent() {
     var content = window.__STYLD_SITE_CONTENT__;
     if (!content || typeof content !== 'object') return;
 
     var theme = window.__STYLD_SITE_THEME__ || {};
     var styles = window.__STYLD_SITE_STYLES__ || [];
+    var isPortfolioPage = document.body.classList.contains('page-portfolio');
+    var isCertificationsPage = document.body.classList.contains('page-certifications');
+    var isProductsPage = document.body.classList.contains('page-products');
+
+    if (isProductsPage) {
+      var prodBrandEl = document.getElementById('profile-brand-name');
+      if (prodBrandEl) prodBrandEl.textContent = content.brandName || '';
+      populateSiteNav(content);
+      populateProductsCatalog(content);
+      return;
+    }
+
+    if (isCertificationsPage) {
+      var certBrandEl = document.getElementById('profile-brand-name');
+      if (certBrandEl) certBrandEl.textContent = content.brandName || '';
+
+      if (theme.logoImageUrl) {
+        var certLogoPlaceholder = document.getElementById('profile-logo-placeholder');
+        if (certLogoPlaceholder) {
+          var certLogoImg = document.createElement('img');
+          certLogoImg.className = 'profile-brand__logo-img';
+          certLogoImg.src = theme.logoImageUrl;
+          certLogoImg.alt = '';
+          certLogoImg.width = 38;
+          certLogoImg.height = 38;
+          certLogoImg.decoding = 'async';
+          certLogoPlaceholder.replaceWith(certLogoImg);
+        }
+      }
+
+      populateSiteNav(content);
+      populateCertificationsCatalog(content, theme);
+
+      if (window.StyldTenant && window.StyldTenant.applySiteFooter) {
+        window.StyldTenant.applySiteFooter(content);
+      } else {
+        var certFooterBrand = document.getElementById('preview-footer-brand');
+        if (certFooterBrand && content.brandName) {
+          certFooterBrand.textContent = '\u00A9 ' + content.brandName;
+        }
+      }
+      return;
+    }
+
+    if (isPortfolioPage) {
+      var portfolioBrandEl = document.getElementById('profile-brand-name');
+      if (portfolioBrandEl) portfolioBrandEl.textContent = content.brandName || '';
+
+      if (theme.logoImageUrl) {
+        var portfolioLogoPlaceholder = document.getElementById('profile-logo-placeholder');
+        if (portfolioLogoPlaceholder) {
+          var portfolioLogoImg = document.createElement('img');
+          portfolioLogoImg.className = 'profile-brand__logo-img';
+          portfolioLogoImg.src = theme.logoImageUrl;
+          portfolioLogoImg.alt = '';
+          portfolioLogoImg.width = 38;
+          portfolioLogoImg.height = 38;
+          portfolioLogoImg.decoding = 'async';
+          portfolioLogoPlaceholder.replaceWith(portfolioLogoImg);
+        }
+      }
+
+      populatePortfolioCatalog(content, theme);
+      populateSiteNav(content);
+
+      if (window.StyldTenant && window.StyldTenant.applySiteFooter) {
+        window.StyldTenant.applySiteFooter(content);
+      } else {
+        var portfolioFooterBrand = document.getElementById('preview-footer-brand');
+        if (portfolioFooterBrand && content.brandName) {
+          portfolioFooterBrand.textContent = '\u00A9 ' + content.brandName;
+        }
+      }
+      return;
+    }
 
     // Brand name
     var brandNameEl = document.getElementById('profile-brand-name');
@@ -668,6 +1398,10 @@
     }
 
     populateReviews(content, theme);
+    populatePortfolio(content, theme);
+    populateFaq(content);
+    populateSiteNav(content);
+    bindSiteNavMenu();
 
     // Section visibility (menu, visit, etc. — not aboutMe/policies, handled above)
     document.querySelectorAll('[data-site-section]').forEach(function (el) {
@@ -676,7 +1410,9 @@
         sectionId &&
         sectionId !== 'reviews' &&
         sectionId !== 'aboutMe' &&
-        sectionId !== 'policies'
+        sectionId !== 'policies' &&
+        sectionId !== 'portfolio' &&
+        sectionId !== 'faq'
       ) {
         el.hidden = isSectionHidden(content, sectionId);
       }

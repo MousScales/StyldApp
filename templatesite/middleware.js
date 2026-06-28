@@ -11,6 +11,10 @@ const TENANT_STATIC_PAGES = {
   '/booking-details': '/booking-details.html',
   '/styles-catalog': '/styles-catalog.html',
   '/gallery': '/gallery.html',
+  '/portfolio': '/tenant/portfolio.html',
+  '/certifications': '/tenant/certifications.html',
+  '/products': '/tenant/products.html',
+  '/products/order': '/tenant/products-order.html',
   '/review': '/review.html',
 };
 

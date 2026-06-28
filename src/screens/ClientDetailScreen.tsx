@@ -1,16 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
+import { CommonActions } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ScreenGradient from '../components/ScreenGradient';
 import ServiceImage from '../components/ServiceImage';
+import { Booking } from '../data/clients';
 import { useSiteData } from '../context/SiteDataContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
-import { useSiteContent } from '../context/SiteContentContext';
-import { formatSiteAddress } from '../data/siteContent';
 import { ClientStackParamList } from '../navigation/ClientNavigator';
+import { getCalendarEventColors } from '../lib/styleEventColors';
+import { flatListStyles } from '../theme/flatList';
 import { colors, fonts } from '../theme';
 import { maskMoney } from '../utils/money';
 
@@ -24,17 +26,21 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function statusColor(status: string): string {
+function statusColor(status: Booking['status']): string {
   if (status === 'completed') return '#22c55e';
-  if (status === 'cancelled' || status === 'canceled') return '#ef4444';
-  if (status === 'confirmed') return colors.accentPink;
-  return '#f59e0b';
+  if (status === 'cancelled') return '#ef4444';
+  if (status === 'pending') return '#f59e0b';
+  if (status === 'in_progress') return colors.accentPink;
+  return colors.accentPink;
 }
 
-function statusLabel(status: string): string {
+function statusLabel(status: Booking['status'], bookingStatus?: string): string {
   if (status === 'completed') return 'Completed';
-  if (status === 'cancelled' || status === 'canceled') return 'Cancelled';
-  if (status === 'confirmed') return 'Confirmed';
+  if (status === 'cancelled') return 'Cancelled';
+  if (status === 'pending') return 'Pending approval';
+  if (status === 'in_progress') return 'In session';
+  if (bookingStatus === 'confirmed') return 'Confirmed';
+  if (bookingStatus === 'pending_payment') return 'Awaiting payment';
   return 'Upcoming';
 }
 
@@ -50,57 +56,59 @@ function formatDate(dateStr: string): string {
 
 // ─── sub-components ──────────────────────────────────────────────────────────
 
-function StatCard({
+function StatRow({
   icon,
   label,
   value,
+  isLast,
 }: {
   icon: string;
   label: string;
   value: string;
+  isLast?: boolean;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
   return (
-    <View style={styles.statCard}>
-      <Ionicons name={icon as any} size={18} color={colors.accentPink} style={{ marginBottom: 6 }} />
-      <Text style={styles.statValue} numberOfLines={1}>{value}</Text>
+    <View style={[styles.detailRow, isLast && styles.detailRowLast]}>
+      <Ionicons name={icon as any} size={16} color={colors.textMuted} />
       <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, { flex: 1, textAlign: 'right' }]} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
 
-function ContactButton({
+function ContactRow({
   icon,
   label,
   value,
   onPress,
   disabled,
+  isLast,
 }: {
   icon: string;
   label: string;
   value: string;
   onPress?: () => void;
   disabled?: boolean;
+  isLast?: boolean;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
   return (
     <Pressable
-      style={[styles.contactBtn, disabled && styles.contactBtnDisabled]}
+      style={[styles.detailRow, disabled && styles.contactRowDisabled, isLast && styles.detailRowLast]}
       onPress={onPress}
       disabled={disabled}
     >
-      <View style={[styles.contactIcon, disabled && styles.contactIconDisabled]}>
-        <Ionicons name={icon as any} size={18} color={disabled ? colors.textMuted : colors.accentPink} />
-      </View>
+      <Ionicons name={icon as any} size={18} color={disabled ? colors.textMuted : colors.textMuted} />
       <View style={styles.contactText}>
         <Text style={styles.contactLabel}>{label}</Text>
         <Text style={[styles.contactValue, !disabled && styles.contactValueActive]} numberOfLines={1}>
           {value || '—'}
         </Text>
       </View>
-      {!disabled && <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />}
+      {!disabled ? <Ionicons name="chevron-forward" size={14} color={colors.textMuted} /> : null}
     </Pressable>
   );
 }
@@ -111,11 +119,12 @@ function SectionHeader({ title }: { title: string }) {
   return <Text style={styles.sectionTitle}>{title}</Text>;
 }
 
-type HistoryFilter = 'all' | 'upcoming' | 'completed' | 'cancelled';
+type HistoryFilter = 'all' | 'upcoming' | 'pending' | 'completed' | 'cancelled';
 
 const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'upcoming', label: 'Upcoming' },
+  { id: 'pending', label: 'Pending' },
   { id: 'completed', label: 'Completed' },
   { id: 'cancelled', label: 'Cancelled' },
 ];
@@ -154,8 +163,6 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
   const { getClientById } = useSiteData();
   const client = getClientById(route.params.clientId);
   const { privacyMode } = usePrivacyMode();
-  const { content: siteContent } = useSiteContent();
-  const siteAddress = formatSiteAddress(siteContent);
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 
   if (!client) {
@@ -183,6 +190,31 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
   const handleEmail = () => hasEmail && Linking.openURL(`mailto:${client.email}`);
   const handleCall = () => hasPhone && Linking.openURL(`tel:${client.phone.replace(/\D/g, '')}`);
 
+  const openBooking = (bookingId: string) => {
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: 'Dashboard',
+        params: {
+          screen: 'AppointmentDetail',
+          params: { appointmentId: bookingId },
+        },
+      }),
+    );
+  };
+
+  const statRows = [
+    { icon: 'calendar-outline', label: 'Bookings', value: String(client.totalBookings) },
+    { icon: 'cash-outline', label: 'Total spent', value: maskMoney(client.totalSpent, privacyMode) },
+    { icon: 'trending-up-outline', label: 'Avg. spend', value: maskMoney(averageSpend, privacyMode) },
+    { icon: 'time-outline', label: 'Client since', value: client.memberSince },
+    ...(client.avgSessionMinutes > 0
+      ? [{ icon: 'hourglass-outline', label: 'Avg. session', value: `${client.avgSessionMinutes} min` }]
+      : []),
+    ...(client.totalTips > 0
+      ? [{ icon: 'heart-outline', label: 'Total tips', value: maskMoney(client.totalTips, privacyMode) }]
+      : []),
+  ];
+
   return (
     <View style={styles.container}>
       <ScreenGradient />
@@ -196,125 +228,92 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
             <Ionicons name="chevron-back" size={22} color={colors.text} />
           </Pressable>
 
-          {/* ── Hero card ──────────────────────────────────────────────── */}
-          <View style={styles.heroCard}>
-            {/* Avatar */}
-            <View style={styles.avatarRing}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{getInitials(client.name)}</Text>
-              </View>
+          {/* ── Hero ───────────────────────────────────────────────────── */}
+          <View style={styles.heroSection}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{getInitials(client.name)}</Text>
             </View>
-
             <Text style={styles.heroName}>{client.name}</Text>
-
-            <View style={styles.heroBadgeRow}>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {client.totalBookings} booking{client.totalBookings === 1 ? '' : 's'}
-                </Text>
-              </View>
-              {client.hairTypes.length > 0 && (
-                <View style={[styles.badge, styles.badgeSecondary]}>
-                  <Text style={styles.badgeTextSecondary}>{client.hairTypes[0]}</Text>
-                </View>
-              )}
-            </View>
+            <Text style={styles.heroSub}>
+              {client.totalBookings} booking{client.totalBookings === 1 ? '' : 's'}
+              {client.hairTypes.length > 0 ? ` · ${client.hairTypes[0]}` : ''}
+            </Text>
           </View>
 
-          {/* ── Stats grid ─────────────────────────────────────────────── */}
-          <View style={styles.statsGrid}>
-            <StatCard
-              icon="calendar-outline"
-              label="Bookings"
-              value={String(client.totalBookings)}
-            />
-            <StatCard
-              icon="cash-outline"
-              label="Total spent"
-              value={maskMoney(client.totalSpent, privacyMode)}
-            />
-            <StatCard
-              icon="trending-up-outline"
-              label="Avg. spend"
-              value={maskMoney(averageSpend, privacyMode)}
-            />
-            <StatCard
-              icon="time-outline"
-              label="Client since"
-              value={client.memberSince}
-            />
+          {/* ── Stats ──────────────────────────────────────────────────── */}
+          <View style={styles.section}>
+            <SectionHeader title="Overview" />
+            <View style={styles.listGroup}>
+              {statRows.map((row, index) => (
+                <StatRow
+                  key={row.label}
+                  icon={row.icon}
+                  label={row.label}
+                  value={row.value}
+                  isLast={index === statRows.length - 1}
+                />
+              ))}
+            </View>
           </View>
 
           {/* ── Contact ────────────────────────────────────────────────── */}
-          <SectionHeader title="Contact" />
-          <View style={styles.card}>
-            <ContactButton
-              icon="mail-outline"
-              label="Email"
-              value={client.email}
-              onPress={handleEmail}
-              disabled={!hasEmail}
-            />
-            <View style={styles.divider} />
-            <ContactButton
-              icon="call-outline"
-              label="Phone"
-              value={client.phone}
-              onPress={handleCall}
-              disabled={!hasPhone}
-            />
-            {(client.location || siteAddress) ? (
-              <>
-                <View style={styles.divider} />
-                <ContactButton
-                  icon="location-outline"
-                  label="Location"
-                  value={client.location || siteAddress}
-                  disabled
-                />
-              </>
-            ) : null}
+          <View style={styles.section}>
+            <SectionHeader title="Contact" />
+            <View style={styles.listGroup}>
+              <ContactRow
+                icon="mail-outline"
+                label="Email"
+                value={client.email}
+                onPress={handleEmail}
+                disabled={!hasEmail}
+              />
+              <ContactRow
+                icon="call-outline"
+                label="Phone"
+                value={client.phone}
+                onPress={handleCall}
+                disabled={!hasPhone}
+                isLast
+              />
+            </View>
           </View>
 
           {/* ── Favorite services ──────────────────────────────────────── */}
           {client.favoriteOrders.length > 0 ? (
-            <>
+            <View style={styles.section}>
               <SectionHeader title="Favorite services" />
-              <View style={styles.card}>
+              <View style={styles.listGroup}>
                 {client.favoriteOrders.map((order, i) => (
-                  <View key={order.service}>
-                    <View style={styles.favRow}>
-                      <ServiceImage
-                        styleId={order.styleId}
-                        serviceName={order.service}
-                        size={36}
-                        circular
-                        style={styles.favServiceImage}
-                      />
-                      <Text style={styles.favService} numberOfLines={1}>{order.service}</Text>
-                      <View style={styles.favCountPill}>
-                        <Text style={styles.favCount}>×{order.count}</Text>
-                      </View>
-                    </View>
-                    {i < client.favoriteOrders.length - 1 && <View style={styles.divider} />}
+                  <View
+                    key={order.service}
+                    style={[styles.favRow, i === client.favoriteOrders.length - 1 && styles.detailRowLast]}
+                  >
+                    <ServiceImage
+                      styleId={order.styleId}
+                      serviceName={order.service}
+                      size={36}
+                      circular
+                      style={styles.favServiceImage}
+                    />
+                    <Text style={styles.favService} numberOfLines={1}>{order.service}</Text>
+                    <Text style={styles.favCount}>×{order.count}</Text>
                   </View>
                 ))}
               </View>
-            </>
+            </View>
           ) : null}
 
           {/* ── Hair profile ───────────────────────────────────────────── */}
           {client.hairTypes.length > 0 ? (
-            <>
+            <View style={styles.section}>
               <SectionHeader title="Hair profile" />
-              <View style={styles.chipRow}>
-                {client.hairTypes.map((ht) => (
-                  <View key={ht} style={styles.chip}>
-                    <Text style={styles.chipText}>{ht}</Text>
-                  </View>
-                ))}
+              <View style={styles.listGroup}>
+                <View style={[styles.detailRow, styles.detailRowLast]}>
+                  <Ionicons name="cut-outline" size={16} color={colors.textMuted} />
+                  <Text style={styles.hairProfileText}>{client.hairTypes.join(' · ')}</Text>
+                </View>
               </View>
-            </>
+            </View>
           ) : null}
 
           {/* ── Booking history ────────────────────────────────────────── */}
@@ -322,14 +321,16 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
             const filtered = historyFilter === 'all'
               ? client.pastBookings
               : client.pastBookings.filter((b) => {
-                  if (historyFilter === 'cancelled') {
-                    return b.status === 'cancelled' || b.status === 'canceled';
+                  if (historyFilter === 'cancelled') return b.status === 'cancelled';
+                  if (historyFilter === 'pending') return b.status === 'pending';
+                  if (historyFilter === 'upcoming') {
+                    return b.status === 'upcoming' || b.status === 'in_progress';
                   }
                   return b.status === historyFilter;
                 });
 
             return (
-              <>
+              <View style={styles.section}>
                 <SectionHeader title="Booking history" />
                 <HistoryFilterBar active={historyFilter} onChange={setHistoryFilter} />
                 {filtered.length === 0 ? (
@@ -337,52 +338,69 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
                     <Text style={styles.emptyFilterText}>No {historyFilter} bookings</Text>
                   </View>
                 ) : (
-                  <View style={styles.historyList}>
-                    {filtered.map((booking) => {
+                  <View style={styles.listGroup}>
+                    {filtered.map((booking, index) => {
                       const sColor = statusColor(booking.status);
+                      const eventColors = getCalendarEventColors({
+                        styleId: booking.styleId,
+                        title: booking.service,
+                        completed: booking.status === 'completed',
+                      });
+                      const timeLabel = booking.time?.split(' – ')[0] ?? '';
+                      const metaParts = [
+                        formatDate(booking.date),
+                        timeLabel,
+                        booking.hairType && booking.hairType !== '—' ? booking.hairType : '',
+                        booking.productCount ? `${booking.productCount} product${booking.productCount === 1 ? '' : 's'}` : '',
+                      ].filter(Boolean);
+
                       return (
-                        <View key={booking.id} style={styles.historyRow}>
+                        <Pressable
+                          key={booking.id}
+                          style={[
+                            styles.historyRow,
+                            { borderLeftColor: eventColors.borderColor },
+                            index === filtered.length - 1 && styles.rowLast,
+                          ]}
+                          onPress={() => openBooking(booking.id)}
+                        >
                           <ServiceImage
                             styleId={booking.styleId}
                             serviceName={booking.service}
-                            size={46}
+                            size={44}
                             circular
                           />
                           <View style={styles.historyInfo}>
                             <Text style={styles.historyService} numberOfLines={1}>
                               {booking.service}
                             </Text>
-                            <Text style={styles.historyMeta} numberOfLines={1}>
-                              {formatDate(booking.date)}
-                              {booking.hairType ? ` · ${booking.hairType}` : ''}
+                            <Text style={styles.historyMeta} numberOfLines={2}>
+                              <Text style={{ color: sColor }}>{statusLabel(booking.status, booking.bookingStatus)}</Text>
+                              {' · '}
+                              {metaParts.join(' · ')}
                             </Text>
-                            <View style={[styles.statusDot, { backgroundColor: sColor + '22', borderColor: sColor + '55' }]}>
-                              <View style={[styles.statusDotInner, { backgroundColor: sColor }]} />
-                              <Text style={[styles.statusText, { color: sColor }]}>
-                                {statusLabel(booking.status)}
-                              </Text>
-                            </View>
                           </View>
-                          <Text style={styles.historyAmount}>
-                            {maskMoney(booking.amount, privacyMode)}
-                          </Text>
-                        </View>
+                          <View style={styles.historyRight}>
+                            <Text style={styles.historyAmount}>
+                              {maskMoney(booking.amount, privacyMode)}
+                            </Text>
+                            <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+                          </View>
+                        </Pressable>
                       );
                     })}
                   </View>
                 )}
-              </>
+              </View>
             );
           })() : null}
 
           {/* ── Notes ─────────────────────────────────────────────────── */}
           {client.notes ? (
-            <>
+            <View style={styles.section}>
               <SectionHeader title="Notes" />
-              <View style={styles.card}>
-                <Text style={styles.notesText}>{client.notes}</Text>
-              </View>
-            </>
+              <Text style={styles.notesText}>{client.notes}</Text>
+            </View>
           ) : null}
         </ScrollView>
       </SafeAreaView>
@@ -401,14 +419,13 @@ const BASE_STYLES = {
     flex: 1,
   },
   content: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingBottom: 60,
   },
 
-  // Back button
   backBtn: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: -6,
@@ -416,22 +433,10 @@ const BASE_STYLES = {
     marginBottom: 8,
   },
 
-  // Hero
-  heroCard: {
+  heroSection: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 8,
     marginBottom: 20,
-  },
-  avatarRing: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 2,
-    borderColor: colors.accentPinkBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-    backgroundColor: colors.accentPinkMuted,
   },
   avatar: {
     width: 72,
@@ -440,195 +445,100 @@ const BASE_STYLES = {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accentPinkSoft,
+    marginBottom: 12,
   },
   avatarText: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
     color: colors.accentPink,
     letterSpacing: 1,
   },
   heroName: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
     color: colors.text,
     letterSpacing: -0.4,
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 4,
   },
-  heroBadgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  badge: {
-    backgroundColor: colors.accentPinkMuted,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: colors.accentPinkBorder,
-  },
-  badgeText: {
-    color: colors.accentPink,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  badgeSecondary: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderColor: colors.cardBorder,
-  },
-  badgeTextSecondary: {
+  heroSub: {
+    fontSize: 13,
+    fontWeight: '500',
     color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
+    textAlign: 'center',
   },
 
-  // Stats
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 24,
-  },
-  statCard: {
+  section: flatListStyles.section,
+  sectionTitle: flatListStyles.sectionTitle,
+  listGroup: flatListStyles.listGroup,
+  detailRow: flatListStyles.detailRow,
+  detailRowLast: flatListStyles.detailRowLast,
+  rowLast: flatListStyles.rowLast,
+
+  statLabel: {
     flex: 1,
-    minWidth: '45%',
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: 'flex-start',
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '500',
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '700',
     fontFamily: fonts.number,
     color: colors.text,
-    letterSpacing: -0.3,
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '500',
+    letterSpacing: -0.2,
   },
 
-  // Section header
-  sectionTitle: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-    marginBottom: 10,
-    marginTop: 4,
-  },
-
-  // Card container
-  card: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 16,
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.cardBorder,
-    marginHorizontal: 16,
-  },
-
-  // Contact
-  contactBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-  },
-  contactBtnDisabled: {
+  contactRowDisabled: {
     opacity: 0.5,
-  },
-  contactIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: colors.accentPinkMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  contactIconDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   contactText: {
     flex: 1,
     gap: 2,
   },
   contactLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: colors.textMuted,
-    fontWeight: '500',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   contactValue: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.text,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   contactValueActive: {
     color: colors.accentPink,
   },
 
-  // Favorite services
   favRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    ...flatListStyles.detailRow,
+    paddingVertical: 12,
   },
   favServiceImage: {
     borderRadius: 10,
   },
   favService: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     color: colors.text,
     fontWeight: '600',
   },
-  favCountPill: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
   favCount: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.textMuted,
     fontWeight: '700',
+    fontFamily: fonts.number,
   },
 
-  // Hair chips
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
-  },
-  chip: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  chipText: {
-    fontSize: 13,
+  hairProfileText: {
+    flex: 1,
+    fontSize: 14,
     color: colors.text,
     fontWeight: '500',
   },
 
-  // Filter bar
   filterBar: {
     flexDirection: 'row',
     gap: 8,
@@ -636,19 +546,18 @@ const BASE_STYLES = {
     flexWrap: 'wrap',
   },
   filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.calendarGridLine,
   },
   filterPillActive: {
-    backgroundColor: colors.accentPinkMuted,
     borderColor: colors.accentPinkBorder,
+    backgroundColor: colors.accentPinkMuted,
   },
   filterPillText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.textMuted,
   },
@@ -658,76 +567,43 @@ const BASE_STYLES = {
   emptyFilter: {
     alignItems: 'center',
     paddingVertical: 28,
-    marginBottom: 20,
   },
   emptyFilterText: {
     color: colors.textMuted,
     fontSize: 14,
   },
 
-  // Booking history
-  historyList: {
-    gap: 10,
-    marginBottom: 20,
-  },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 16,
-    padding: 14,
-  },
+  historyRow: flatListStyles.row,
   historyInfo: {
     flex: 1,
-    gap: 3,
+    minWidth: 0,
   },
   historyService: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.text,
+    marginBottom: 2,
   },
-  historyMeta: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  statusDot: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    marginTop: 2,
-  },
-  statusDotInner: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  historyMeta: flatListStyles.metaText,
   historyAmount: {
     fontSize: 15,
     fontWeight: '700',
     color: colors.text,
+    fontFamily: fonts.number,
+    letterSpacing: -0.3,
+  },
+  historyRight: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
 
-  // Notes
   notesText: {
-    fontSize: 15,
-    color: colors.text,
-    lineHeight: 22,
-    padding: 16,
+    fontSize: 14,
+    color: colors.textMuted,
+    lineHeight: 21,
+    paddingLeft: 10,
   },
 
-  // Empty
   emptyWrap: {
     flex: 1,
     alignItems: 'center',

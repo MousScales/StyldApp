@@ -7,6 +7,7 @@ import SiteSetupScreen from '../screens/onboarding/SiteSetupScreen';
 import SiteEditorIntroScreen from '../screens/onboarding/SiteEditorIntroScreen';
 import MandatoryPaywallScreen from '../screens/MandatoryPaywallScreen';
 import HeroAboutScreen from '../screens/HeroAboutScreen';
+import HeroFaqScreen from '../screens/HeroFaqScreen';
 import HeroPolicyScreen from '../screens/HeroPolicyScreen';
 
 export type SiteStackParamList = {
@@ -18,6 +19,7 @@ export type SiteStackParamList = {
   MandatoryPaywall: { pendingSubdomain: string };
   HeroAbout: undefined;
   HeroPolicy: undefined;
+  HeroFaq: undefined;
 };
 
 const Stack = createNativeStackNavigator<SiteStackParamList>();
@@ -46,6 +48,7 @@ export default function SiteNavigator() {
       />
       <Stack.Screen name="HeroAbout" component={HeroAboutScreen} />
       <Stack.Screen name="HeroPolicy" component={HeroPolicyScreen} />
+      <Stack.Screen name="HeroFaq" component={HeroFaqScreen} />
     </Stack.Navigator>
   );
 }

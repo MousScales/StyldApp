@@ -117,15 +117,36 @@ Deno.serve(async (req) => {
     }
 
     if (!pendingInsert) {
-      const emailFnUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/booking-client-email`;
-      fetch(emailFnUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ bookingId, subdomain }),
-      }).catch((e: unknown) => console.warn('booking-client-email fire:', e));
+      const { data: subRow } = await supabase
+        .from('styld_site_subdomains')
+        .select('user_id')
+        .eq('subdomain', subdomain)
+        .maybeSingle();
+
+      let requireApproval = false;
+      if (subRow?.user_id) {
+        const { data: payRow } = await supabase
+          .from('styld_site_records')
+          .select('data')
+          .eq('user_id', subRow.user_id)
+          .eq('record_type', 'site_setting')
+          .eq('record_key', 'booking_payment')
+          .maybeSingle();
+        const payValue = (payRow?.data as { value?: Record<string, unknown> } | undefined)?.value;
+        requireApproval = payValue?.requireBookingApproval === true;
+      }
+
+      if (!requireApproval) {
+        const emailFnUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/booking-client-email`;
+        fetch(emailFnUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ bookingId, subdomain }),
+        }).catch((e: unknown) => console.warn('booking-client-email fire:', e));
+      }
     }
 
     return json({ ok: true, verified: true, paymentStatus, rowsUpdated: Number(rowsUpdated) || 0, pendingInsert });

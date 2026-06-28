@@ -78,13 +78,34 @@ export const NAIL_ACCENT = {
   subtleTintBgStrong: 'rgba(249, 115, 22, 0.12)',
 } as const;
 
-export type BrandPaletteKey = 'salon' | 'barber' | 'makeup' | 'nail';
+/** Lash tech — gold / champagne palette. */
+export const LASH_ACCENT = {
+  accentPink: '#d4a017',
+  accentPinkDeep: '#b8860b',
+  accentPinkMuted: 'rgba(212, 160, 23, 0.15)',
+  accentPinkSoft: 'rgba(212, 160, 23, 0.14)',
+  accentPinkBorder: 'rgba(212, 160, 23, 0.28)',
+  accentPinkGlow: 'rgba(212, 160, 23, 0.35)',
+  accentPinkRing: 'rgba(212, 160, 23, 0.35)',
+  activeGlow: 'rgba(212, 160, 23, 0.45)',
+  accentBlue: '#d4a017',
+  accentBlueMuted: 'rgba(212, 160, 23, 0.15)',
+  chartBlue: '#d4a017',
+  profileBlue: '#d4a017',
+  screenGradientMid: '#141208',
+  screenGradientEnd: '#1a160d',
+  subtleTintBg: 'rgba(212, 160, 23, 0.08)',
+  subtleTintBgStrong: 'rgba(212, 160, 23, 0.12)',
+} as const;
+
+export type BrandPaletteKey = 'salon' | 'barber' | 'makeup' | 'nail' | 'lash';
 
 const PALETTES: Record<BrandPaletteKey, typeof SALON_ACCENT> = {
   salon: SALON_ACCENT,
   barber: BARBER_ACCENT,
   makeup: MAKEUP_ACCENT,
   nail: NAIL_ACCENT,
+  lash: LASH_ACCENT,
 };
 
 export function getAccentPalette(key: BrandPaletteKey) {

@@ -103,7 +103,7 @@ function applyBrandSubstitution(
   return next;
 }
 
-/** Scales static style objects from the iPhone 15 Plus baseline (never upscales). */
+/** Scales static style objects from the iPhone 15 Plus baseline (scales down on phones, up slightly on tablet). */
 export function useResponsiveStyles(base: Record<string, object>) {
   const { width, height } = useWindowDimensions();
   const { brandKey } = useBrandOptional();

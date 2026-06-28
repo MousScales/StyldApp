@@ -17,6 +17,14 @@ export function navigateFromPushData(data: Record<string, unknown> | undefined) 
     return;
   }
 
+  if (screen === 'AppointmentSession' && recordId) {
+    navigationRef.navigate('Dashboard', {
+      screen: 'AppointmentSession',
+      params: { appointmentId: recordId },
+    });
+    return;
+  }
+
   if (screen === 'ReviewsSettings') {
     navigationRef.navigate('Profile', { screen: 'ReviewsSettings' });
     return;

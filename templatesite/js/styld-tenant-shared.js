@@ -138,6 +138,24 @@
     return hours + ' hrs ' + remainder + ' min';
   }
 
+  function normalizeVariants(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(function (entry, index) {
+        if (!entry || typeof entry !== 'object') return null;
+        var label = typeof entry.label === 'string' ? entry.label.trim() : '';
+        if (!label) return null;
+        var price = typeof entry.price === 'number' ? entry.price : Number(entry.price);
+        if (!Number.isFinite(price) || price < 0) price = 0;
+        var id =
+          typeof entry.id === 'string' && entry.id.trim()
+            ? entry.id.trim()
+            : 'variant-' + (index + 1);
+        return { id: id, label: label, price: price };
+      })
+      .filter(Boolean);
+  }
+
   function normalizeAddons(raw) {
     if (!Array.isArray(raw)) return [];
     return raw
@@ -161,10 +179,38 @@
     return '$' + Math.round(amount);
   }
 
-  function formatStylePriceRange(basePrice, addons) {
+  function formatStylePriceRange(basePrice, addons, variants) {
+    var list = normalizeVariants(variants);
     var base = typeof basePrice === 'number' && !Number.isNaN(basePrice) && basePrice > 0 ? basePrice : 0;
-    var list = normalizeAddons(addons);
-    var priced = list
+    if (list.length) {
+      var versionPrices = (base > 0 ? [base] : []).concat(
+        list
+          .map(function (variant) {
+            return variant.price;
+          })
+          .filter(function (price) {
+            return price > 0;
+          }),
+      );
+      if (versionPrices.length) {
+        var min = Math.min.apply(null, versionPrices);
+        var max = Math.max.apply(null, versionPrices);
+        var addonList = normalizeAddons(addons);
+        var addonPrices = addonList
+          .map(function (addon) {
+            return addon.price;
+          })
+          .filter(function (price) {
+            return price > 0;
+          });
+        if (addonPrices.length) max += Math.max.apply(null, addonPrices);
+        if (min === max) return formatPrice(min);
+        return '$' + Math.round(min) + '\u2013$' + Math.round(max);
+      }
+    }
+
+    var addonList = normalizeAddons(addons);
+    var priced = addonList
       .map(function (addon) {
         return addon.price;
       })
@@ -194,11 +240,16 @@
         var base = prices[styleId];
         if (typeof base !== 'number' || Number.isNaN(base)) base = 0;
         var itemAddons = normalizeAddons(item.addons);
+        var itemVariants = normalizeVariants(item.variants);
+        var defaultVariantLabel =
+          typeof item.defaultVariantLabel === 'string' ? item.defaultVariantLabel.trim() : '';
         return {
           id: styleId,
           name: name,
           base: base,
           durationMinutes: normalizeDurationMinutes(item.durationMinutes),
+          defaultVariantLabel: defaultVariantLabel,
+          variants: itemVariants,
           addons: itemAddons,
         };
       })
@@ -228,14 +279,16 @@
       var item = meta[styleId] || {};
       var variant = item.sizeLabel || item.variant || sizeLabelFromStyleId(styleId);
       var itemAddons = normalizeAddons(item.addons);
+      var itemVariants = normalizeVariants(item.variants);
       return {
         id: styleId,
         title: item.title || styleId,
         sizeLabel: variant || '',
         durationLabel: formatStyleDuration(item.durationMinutes),
-        priceLabel: formatStylePriceRange(prices[styleId], itemAddons),
+        priceLabel: formatStylePriceRange(prices[styleId], itemAddons, itemVariants),
         imageUrl: coverUrl(covers[styleId]),
         category: (item.category && String(item.category).trim()) || 'SERVICES',
+        variants: itemVariants,
         addons: itemAddons,
       };
     });
@@ -477,6 +530,8 @@
             var bookingHours = null;
             var bookingPayment = null;
             var cancellationPolicy = null;
+            var productsCatalog = [];
+            var productsSettings = null;
 
             records.forEach(function (record) {
               var value = settingValue(record);
@@ -499,6 +554,12 @@
               if (record.record_type === 'site_setting' && record.record_key === 'cancellation_policy') {
                 cancellationPolicy = value;
               }
+              if (record.record_type === 'site_setting' && record.record_key === 'products_catalog') {
+                productsCatalog = Array.isArray(value) ? value : [];
+              }
+              if (record.record_type === 'site_setting' && record.record_key === 'products_settings') {
+                productsSettings = value;
+              }
               if (record.record_type === 'style_cover_image' && record.record_key) {
                 var coverPath = coverStoragePath(value);
                 if (typeof coverPath === 'string') covers[record.record_key] = coverPath;
@@ -518,6 +579,8 @@
               bookingHours: normalizeBookingHours(bookingHours),
               bookingPayment: bookingPayment,
               cancellationPolicy: cancellationPolicy,
+              productsCatalog: productsCatalog,
+              productsSettings: productsSettings,
               bookingStyles: buildBookingStyles(meta, prices),
               catalogCards: buildCatalogCards(meta, prices, covers, cfg.supabaseUrl),
             };

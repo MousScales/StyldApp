@@ -22,8 +22,8 @@ const PAYWALL_BASE = {
   privacyPolicyUrl: 'https://styldd.com/privacy',
 } as const;
 
-export function getPaywallContent(businessType: BusinessType | '') {
-  const copy = getBrandCopy(businessType);
+export function getPaywallContent(businessType: BusinessType | '', businessTypeOther?: string) {
+  const copy = getBrandCopy(businessType, businessTypeOther);
   return {
     ...PAYWALL_BASE,
     headline: copy.paywallHeadline,

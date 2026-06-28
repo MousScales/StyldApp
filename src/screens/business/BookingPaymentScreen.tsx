@@ -33,6 +33,7 @@ import {
   computeBalanceDue,
   computeDepositAmount,
   effectiveBookingPayment,
+  bookingPaymentToSave,
 } from '../../data/bookingPayment';
 import { useUnsavedChangesGuard } from '../../hooks/useUnsavedChangesGuard';
 import { computeServiceFee, totalChargeWithServiceFee } from '../../lib/bookingServiceFee';
@@ -400,7 +401,7 @@ export default function BookingPaymentScreen({ navigation }: Props) {
       const stripeReadyNow =
         stripeStatus?.status === 'ready' || stripeStatus?.status === 'pending_review';
       setStripeReady(stripeReadyNow);
-      setPayment(effectiveBookingPayment(paymentData, stripeReadyNow));
+      setPayment({ ...paymentData, ...effectiveBookingPayment(paymentData, stripeReadyNow) });
       setCancellationPolicy(policyData);
       setIsDirty(false);
     } catch (err) {
@@ -496,7 +497,7 @@ export default function BookingPaymentScreen({ navigation }: Props) {
     setSaving(true);
     try {
       await Promise.all([
-        saveBookingPayment(linkedSite, payment),
+        saveBookingPayment(linkedSite, bookingPaymentToSave(payment)),
         saveCancellationPolicy(linkedSite, cancellationPolicy),
       ]);
       setSaved(true);

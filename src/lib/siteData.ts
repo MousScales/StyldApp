@@ -3,6 +3,11 @@ import { Booking, Client, FavoriteOrder } from '../data/clients';
 import { CalendarEvent } from '../data/calendarEvents';
 import { Period } from '../data/periods';
 import {
+  formatOrderProductsSummary,
+  normalizeOrderProductLines,
+  OrderProductLine,
+} from '../data/productsCatalog';
+import {
   createLinkedSiteClient,
   fetchLinkedSite,
   getLinkedSiteLabel,
@@ -50,6 +55,20 @@ export type SiteBookingRecord = {
   startsAt: Date | null;
   durationMinutes: number;
   createdAt: Date;
+  sessionStartedAt: Date | null;
+  sessionEndedAt: Date | null;
+  actualDurationMinutes: number;
+  stylistNotes: string;
+  tipAmount: number;
+  balanceCollectedCents: number;
+  balanceCollectedAt: Date | null;
+  completedAt: Date | null;
+  paymentMethodAtService: string;
+  orderProducts: OrderProductLine[];
+  productsSubtotal: number;
+  shippingAmount: number;
+  fulfillmentMethod: string;
+  isProductOrder: boolean;
 };
 
 export type SiteDataSnapshot = {
@@ -145,17 +164,74 @@ function formatTimeRange(start: Date, durationMinutes: number): string {
   return `${formatTime(start)} – ${formatTime(end)}`;
 }
 
-function mapBookingStatus(bookingStatus: string, startsAt: Date | null): AppointmentDetail['status'] {
-  if (bookingStatus === 'cancelled') return 'cancelled';
-  if (bookingStatus === 'completed') return 'completed';
-  if (startsAt && startsAt.getTime() < Date.now()) return 'completed';
+function parseProductOrderFields(data: Record<string, unknown>) {
+  const orderProducts = normalizeOrderProductLines(data.order_products);
+  return {
+    orderProducts,
+    productsSubtotal: asNumber(data.products_subtotal),
+    shippingAmount: asNumber(data.shipping_amount),
+    fulfillmentMethod: asString(data.fulfillment_method),
+    isProductOrder: data.is_product_order === true || asString(data.booking_type) === 'product_order',
+  };
+}
+
+function parseSessionFields(data: Record<string, unknown>) {
+  return {
+    sessionStartedAt: parseDate(data.session_started_at),
+    sessionEndedAt: parseDate(data.session_ended_at),
+    actualDurationMinutes: asNumber(data.actual_duration_minutes),
+    stylistNotes: asString(data.stylist_notes),
+    tipAmount: asNumber(data.tip_amount),
+    balanceCollectedCents: asNumber(data.balance_collected_cents),
+    balanceCollectedAt: parseDate(data.balance_collected_at),
+    completedAt: parseDate(data.completed_at),
+    paymentMethodAtService: asString(data.payment_method_at_service),
+  };
+}
+
+function mapBookingStatus(bookingStatus: string, _startsAt: Date | null): AppointmentDetail['status'] {
+  const normalized = bookingStatus.toLowerCase();
+  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
+  if (normalized === 'completed') return 'completed';
+  if (normalized === 'in_progress') return 'in_progress';
+  if (normalized === 'pending_approval') return 'pending_approval';
   return 'upcoming';
 }
 
 function mapClientBookingStatus(status: AppointmentDetail['status']): Booking['status'] {
   if (status === 'cancelled') return 'cancelled';
   if (status === 'completed') return 'completed';
+  if (status === 'in_progress') return 'in_progress';
+  if (status === 'pending_approval') return 'pending';
   return 'upcoming';
+}
+
+export function isBookingInProgress(booking: Pick<SiteBookingRecord, 'bookingStatus'>): boolean {
+  return booking.bookingStatus.toLowerCase() === 'in_progress';
+}
+
+export function isBookingActiveNow(booking: SiteBookingRecord, now = Date.now()): boolean {
+  if (isBookingInProgress(booking)) return true;
+  const status = booking.bookingStatus.toLowerCase();
+  if (status !== 'confirmed') return false;
+  if (!booking.startsAt) return false;
+  const startMs = booking.startsAt.getTime();
+  const endMs = startMs + booking.durationMinutes * 60_000;
+  const graceMs = 15 * 60_000;
+  return now >= startMs - graceMs && now <= endMs + graceMs;
+}
+
+export function getBalanceDue(booking: SiteBookingRecord): number {
+  const ps = booking.paymentStatus.toLowerCase().trim();
+  if (ps === 'paid' || booking.bookingStatus.toLowerCase() === 'completed') return 0;
+  const deposit = booking.depositPaid ? booking.depositAmount : 0;
+  return Math.max(0, booking.price - deposit);
+}
+
+export function getSessionElapsedMs(booking: SiteBookingRecord, now = Date.now()): number {
+  if (!booking.sessionStartedAt) return 0;
+  const end = booking.sessionEndedAt?.getTime() ?? now;
+  return Math.max(0, end - booking.sessionStartedAt.getTime());
 }
 
 function getClientKey(email: string, phone: string): string {
@@ -213,6 +289,8 @@ function parseUnifiedBooking(record: UnifiedSiteRecord): SiteBookingRecord | nul
     startsAt,
     durationMinutes: asNumber(data.duration_minutes, 120),
     createdAt: parseDate(record.created_at) ?? new Date(),
+    ...parseSessionFields(data),
+    ...parseProductOrderFields(data),
   };
 }
 
@@ -288,6 +366,8 @@ function parseFlatBooking(record: FlatBookingRecord): SiteBookingRecord | null {
     startsAt,
     durationMinutes: asNumber(record.duration_minutes, 120),
     createdAt: parseDate(record.created_at) ?? new Date(),
+    ...parseSessionFields(record as Record<string, unknown>),
+    ...parseProductOrderFields(record as Record<string, unknown>),
   };
 }
 
@@ -340,6 +420,7 @@ function toCalendarEvent(booking: SiteBookingRecord): CalendarEvent | null {
     id: `event-${booking.id}`,
     appointmentId: booking.id,
     title: booking.service,
+    styleId: booking.styleId || undefined,
     dateKey: toDateKey(booking.startsAt),
     startHour: booking.startsAt.getHours(),
     startMinute: booking.startsAt.getMinutes(),
@@ -372,6 +453,16 @@ function buildClients(bookings: SiteBookingRecord[]): Client[] {
         (booking) => mapBookingStatus(booking.bookingStatus, booking.startsAt) === 'completed',
       );
 
+      const completedWithDuration = completedBookings.filter((b) => b.actualDurationMinutes > 0);
+      const avgSessionMinutes =
+        completedWithDuration.length > 0
+          ? Math.round(
+              completedWithDuration.reduce((sum, b) => sum + b.actualDurationMinutes, 0) /
+                completedWithDuration.length,
+            )
+          : 0;
+      const totalTips = completedBookings.reduce((sum, b) => sum + (b.tipAmount > 0 ? b.tipAmount : 0), 0);
+
       const serviceCounts = new Map<string, { count: number; styleId?: string }>();
       for (const booking of sorted) {
         const existing = serviceCounts.get(booking.service);
@@ -401,9 +492,12 @@ function buildClients(bookings: SiteBookingRecord[]): Client[] {
           service: booking.service,
           styleId: booking.styleId || undefined,
           date: appointment.date,
+          time: appointment.time,
           amount: booking.price,
           hairType: booking.hairType,
           status: mapClientBookingStatus(appointment.status),
+          productCount: booking.orderProducts.length,
+          bookingStatus: booking.bookingStatus,
         };
       });
 
@@ -414,8 +508,13 @@ function buildClients(bookings: SiteBookingRecord[]): Client[] {
         phone: latest.phone || '—',
         location: latest.location,
         memberSince: earliest.toLocaleDateString('default', { month: 'short', year: 'numeric' }),
-        totalSpent: completedBookings.reduce((sum, booking) => sum + booking.price, 0),
+        totalSpent: completedBookings.reduce(
+          (sum, booking) => sum + booking.price + (booking.tipAmount > 0 ? booking.tipAmount : 0),
+          0,
+        ),
         totalBookings: sorted.length,
+        avgSessionMinutes,
+        totalTips,
         hairTypes,
         notes: latest.notes || 'No notes yet.',
         favoriteOrders,
@@ -525,14 +624,17 @@ function getPaidAmount(booking: SiteBookingRecord): number {
   const ps = booking.paymentStatus.toLowerCase().trim();
   const bs = booking.bookingStatus.toLowerCase().trim();
 
-  // Explicitly not Stripe money
-  if (!ps || ps === 'pending' || ps === 'in_person') return 0;
+  if (!ps || ps === 'pending') return 0;
 
-  // Full payment collected
-  if (ps === 'paid' || bs === 'completed') return booking.price;
+  const tip = booking.tipAmount > 0 ? booking.tipAmount : 0;
 
-  // Deposit captured, processing, or confirmed — return deposit if set, otherwise full price
-  // (covers: deposit_paid, pending_payment, confirmed, and any future statuses)
+  if (ps === 'paid' || bs === 'completed') return booking.price + tip;
+
+  if (ps === 'in_person') {
+    const balance = booking.balanceCollectedCents > 0 ? booking.balanceCollectedCents / 100 : 0;
+    return balance + tip;
+  }
+
   return booking.depositAmount > 0 ? booking.depositAmount : booking.price;
 }
 
@@ -687,13 +789,45 @@ export function getTodayJobStats(snapshot: SiteDataSnapshot) {
   const completed = todayBookings.filter(
     (booking) => mapBookingStatus(booking.bookingStatus, booking.startsAt) === 'completed',
   ).length;
+  const inProgress = todayBookings.filter(
+    (booking) => booking.bookingStatus.toLowerCase() === 'in_progress',
+  ).length;
   const total = todayBookings.length;
 
   return {
     completed,
+    inProgress,
     total,
     progress: total === 0 ? 0 : completed / total,
   };
+}
+
+export function getPendingApprovalAppointments(snapshot: SiteDataSnapshot, limit = 20): AppointmentDetail[] {
+  const now = Date.now();
+
+  return snapshot.bookings
+    .filter((booking) => booking.bookingStatus.toLowerCase() === 'pending_approval')
+    .filter((booking) => {
+      const start = booking.startsAt;
+      return !start || start.getTime() >= now;
+    })
+    .sort((a, b) => getBookingStartDate(a).getTime() - getBookingStartDate(b).getTime())
+    .slice(0, limit)
+    .map(toAppointmentDetail);
+}
+
+export function getActiveAppointments(snapshot: SiteDataSnapshot, limit = 10): AppointmentDetail[] {
+  const now = Date.now();
+
+  return snapshot.bookings
+    .filter((booking) => isBookingActiveNow(booking, now))
+    .sort((a, b) => {
+      const aStart = a.sessionStartedAt?.getTime() ?? a.startsAt?.getTime() ?? 0;
+      const bStart = b.sessionStartedAt?.getTime() ?? b.startsAt?.getTime() ?? 0;
+      return bStart - aStart;
+    })
+    .slice(0, limit)
+    .map(toAppointmentDetail);
 }
 
 export function getUpcomingAppointments(snapshot: SiteDataSnapshot, limit = 5): AppointmentDetail[] {
@@ -701,6 +835,7 @@ export function getUpcomingAppointments(snapshot: SiteDataSnapshot, limit = 5): 
 
   return snapshot.bookings
     .filter((booking) => mapBookingStatus(booking.bookingStatus, booking.startsAt) === 'upcoming')
+    .filter((booking) => !isBookingActiveNow(booking, now))
     .filter((booking) => {
       const start = booking.startsAt;
       return !start || start.getTime() >= now;

@@ -19,6 +19,11 @@ import {
   getClientEmailTemplate,
 } from '../../data/clientEmailTemplates';
 import { sendClientEmails } from '../../lib/clientEmail';
+import {
+  buildClientMergeContext,
+  previewWithSamplePlaceholders,
+} from '../../lib/messagePlaceholders';
+import MessagePlaceholderBar from './MessagePlaceholderBar';
 import { colors } from '../../theme';
 
 type ClientContactSheetProps = {
@@ -54,16 +59,20 @@ export default function ClientContactSheet({
   const missingEmail = clients.length - sendable.length;
   const template = getClientEmailTemplate(templateId);
   const isCustom = templateId === 'custom';
+  const siteLabel = siteUrl.replace(/^https?:\/\//, '');
 
   useEffect(() => {
     if (!visible) return;
     const next = getClientEmailTemplate(templateId);
-    if (templateId !== 'custom') {
-      setSubject(next.defaultSubject);
-    } else {
-      setSubject('');
-    }
+    setSubject(next.defaultSubject);
+    setMessage(next.defaultMessage);
   }, [visible, templateId]);
+
+  const insertInto = (field: 'subject' | 'message', token: string) => {
+    const current = field === 'subject' ? subject : message;
+    const setter = field === 'subject' ? setSubject : setMessage;
+    setter(`${current}${current ? ' ' : ''}${token}`);
+  };
 
   const handleClose = () => {
     if (sending) return;
@@ -84,7 +93,7 @@ export default function ClientContactSheet({
       return;
     }
 
-    if (isCustom && !message.trim()) {
+    if (!message.trim()) {
       Alert.alert('Message required', 'Write a message for your clients.');
       return;
     }
@@ -96,9 +105,14 @@ export default function ClientContactSheet({
         recipients: sendable.map((client) => ({
           email: client.email.trim(),
           name: client.name,
+          merge: {
+            ...buildClientMergeContext(client),
+            businessName: businessLabel,
+            siteUrl: siteLabel,
+          },
         })),
         subject: subject.trim(),
-        message: message.trim() || undefined,
+        message: message.trim(),
       });
 
       if (result.sent === 0) {
@@ -127,6 +141,9 @@ export default function ClientContactSheet({
     }
   };
 
+  const previewSubject = previewWithSamplePlaceholders(subject, businessLabel, siteUrl);
+  const previewMessage = previewWithSamplePlaceholders(message, businessLabel, siteUrl);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <Pressable style={styles.backdrop} onPress={handleClose}>
@@ -136,7 +153,7 @@ export default function ClientContactSheet({
           <Text style={styles.title}>Email clients</Text>
           <Text style={styles.subtitle}>
             Sending as {businessLabel}
-            {siteUrl ? ` · ${siteUrl.replace(/^https?:\/\//, '')}` : ''}
+            {siteLabel ? ` · ${siteLabel}` : ''}
           </Text>
 
           <View style={styles.recipientPill}>
@@ -174,37 +191,34 @@ export default function ClientContactSheet({
               })}
             </View>
 
-            {!isCustom && template.previewLine ? (
-              <View style={styles.previewBox}>
-                <Text style={styles.previewLabel}>Preview</Text>
-                <Text style={styles.previewText}>{template.previewLine}</Text>
-              </View>
-            ) : null}
-
             <Text style={styles.sectionLabel}>Subject</Text>
+            <MessagePlaceholderBar onInsert={(token) => insertInto('subject', token)} disabled={sending} />
             <TextInput
               style={styles.input}
               value={subject}
               onChangeText={setSubject}
-              placeholder="Email subject"
+              placeholder={isCustom ? 'Email subject' : template.defaultSubject}
               placeholderTextColor={colors.textMuted}
             />
 
-            {(isCustom || templateId === 'promo' || templateId === 'check_in') && (
-              <>
-                <Text style={styles.sectionLabel}>
-                  {isCustom ? 'Message' : 'Add a personal note (optional)'}
-                </Text>
-                <TextInput
-                  style={[styles.input, styles.messageInput]}
-                  value={message}
-                  onChangeText={setMessage}
-                  placeholder={isCustom ? 'Write your message…' : 'Extra details for this email…'}
-                  placeholderTextColor={colors.textMuted}
-                  multiline
-                  textAlignVertical="top"
-                />
-              </>
+            <Text style={styles.sectionLabel}>Message</Text>
+            <MessagePlaceholderBar onInsert={(token) => insertInto('message', token)} disabled={sending} />
+            <TextInput
+              style={[styles.input, styles.messageInput]}
+              value={message}
+              onChangeText={setMessage}
+              placeholder={isCustom ? 'Write your message…' : template.defaultMessage}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              textAlignVertical="top"
+            />
+
+            {(subject.trim() || message.trim()) && (
+              <View style={styles.previewBox}>
+                <Text style={styles.previewLabel}>Preview (sample data)</Text>
+                {subject.trim() ? <Text style={styles.previewSubject}>{previewSubject}</Text> : null}
+                {message.trim() ? <Text style={styles.previewText}>{previewMessage}</Text> : null}
+              </View>
             )}
 
             <View style={styles.recipientList}>
@@ -351,6 +365,7 @@ const BASE_STYLES = {
     borderColor: colors.cardBorder,
     padding: 14,
     marginTop: 4,
+    gap: 6,
   },
   previewLabel: {
     color: colors.textMuted,
@@ -358,7 +373,11 @@ const BASE_STYLES = {
     fontWeight: '700',
     letterSpacing: 0.08,
     textTransform: 'uppercase',
-    marginBottom: 6,
+  },
+  previewSubject: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
   },
   previewText: {
     color: colors.text,

@@ -10,6 +10,9 @@ import BookingPaymentScreen from '../screens/business/BookingPaymentScreen';
 import WalletScreen from '../screens/business/WalletScreen';
 import WorkingHoursScreen from '../screens/business/WorkingHoursScreen';
 import ReviewsSettingsScreen from '../screens/business/ReviewsSettingsScreen';
+import CertificationsSettingsScreen from '../screens/business/CertificationsSettingsScreen';
+import ProductsSettingsScreen from '../screens/business/ProductsSettingsScreen';
+import TapToPaySettingsScreen from '../screens/business/TapToPaySettingsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import ConnectedAccountsScreen from '../screens/ConnectedAccountsScreen';
 import AccountSettingsScreen from '../screens/AccountSettingsScreen';
@@ -21,6 +24,8 @@ export type ProfileStackParamList = {
   WorkingHours: undefined;
   BookingPayment: undefined;
   ReviewsSettings: undefined;
+  CertificationsSettings: undefined;
+  ProductsSettings: undefined;
   Wallet: undefined;
   AddAppointment: undefined;
   ScheduleManage: { tab?: ScheduleTab };
@@ -28,6 +33,7 @@ export type ProfileStackParamList = {
   BusinessStats: undefined;
   BusinessCalendar: undefined;
   ConnectedAccounts: undefined;
+  TapToPaySettings: undefined;
   AccountSettings: undefined;
   Paywall: undefined;
 };
@@ -45,11 +51,14 @@ export default function ProfileNavigator() {
       <Stack.Screen name="WorkingHours" component={WorkingHoursScreen} />
       <Stack.Screen name="BookingPayment" component={BookingPaymentScreen} />
       <Stack.Screen name="ReviewsSettings" component={ReviewsSettingsScreen} />
+      <Stack.Screen name="CertificationsSettings" component={CertificationsSettingsScreen} />
+      <Stack.Screen name="ProductsSettings" component={ProductsSettingsScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="AddAppointment" component={AddAppointmentScreen} />
       <Stack.Screen name="BusinessStats" component={BusinessStatsScreen} />
       <Stack.Screen name="BusinessCalendar" component={BusinessCalendarScreen} />
       <Stack.Screen name="ConnectedAccounts" component={ConnectedAccountsScreen} />
+      <Stack.Screen name="TapToPaySettings" component={TapToPaySettingsScreen} />
       <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
       <Stack.Screen name="Paywall" component={PaywallScreen} />
     </Stack.Navigator>

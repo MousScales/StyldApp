@@ -2,7 +2,13 @@ import { BrandPaletteKey } from '../theme/brandPalettes';
 import { DEFAULT_SITE_CONTENT, SiteContent } from './siteContent';
 import { HeroLayout } from './siteTheme';
 
-export type BusinessType = 'barber' | 'hair_salon' | 'makeup_artist' | 'nail_tech';
+export type BusinessType =
+  | 'barber'
+  | 'hair_salon'
+  | 'makeup_artist'
+  | 'nail_tech'
+  | 'lash_tech'
+  | 'other';
 
 const BUSINESS_TYPE_META: Record<
   BusinessType,
@@ -16,10 +22,10 @@ const BUSINESS_TYPE_META: Record<
     brandKey: 'barber',
   },
   hair_salon: {
-    label: 'Hair salon',
-    description: 'Color, cuts, treatments & styling',
-    specialty: 'Salon hair services',
-    taglineRole: 'salon',
+    label: 'Hairstylist/braider',
+    description: 'Braids, locs, silk press & natural styles',
+    specialty: 'Hairstyling & braiding',
+    taglineRole: 'stylist',
     brandKey: 'salon',
   },
   makeup_artist: {
@@ -35,6 +41,20 @@ const BUSINESS_TYPE_META: Record<
     specialty: 'Nail services',
     taglineRole: 'nails',
     brandKey: 'nail',
+  },
+  lash_tech: {
+    label: 'Lash tech',
+    description: 'Classic, volume, hybrid & lash lifts',
+    specialty: 'Lash extensions & lifts',
+    taglineRole: 'lashes',
+    brandKey: 'lash',
+  },
+  other: {
+    label: 'Other',
+    description: 'Esthetician, PMU, tattoo, wellness & more',
+    specialty: 'Professional services',
+    taglineRole: 'pro',
+    brandKey: 'salon',
   },
 };
 
@@ -65,8 +85,41 @@ export function labelForBusinessType(type: BusinessType): string {
   return BUSINESS_TYPE_META[type].label;
 }
 
+export function resolveBusinessTypeLabel(type: BusinessType | '', otherLabel?: string): string {
+  if (!type) return '';
+  if (type === 'other') return otherLabel?.trim() || labelForBusinessType('other');
+  return labelForBusinessType(type);
+}
+
+export function resolveSpecialty(type: BusinessType | '', otherLabel?: string): string {
+  if (!type) return '';
+  if (type === 'other') return otherLabel?.trim() || specialtyForBusinessType('other');
+  return specialtyForBusinessType(type);
+}
+
+export function resolveTaglineRole(type: BusinessType | '', otherLabel?: string): string {
+  if (!type) return 'stylist';
+  if (type === 'other') {
+    const custom = otherLabel?.trim();
+    if (custom) {
+      const word = custom.split(/\s+/)[0]?.toLowerCase();
+      return word || taglineRoleForBusinessType('other');
+    }
+    return taglineRoleForBusinessType('other');
+  }
+  return taglineRoleForBusinessType(type);
+}
+
+export function isBusinessTypeStepComplete(type: BusinessType | '', otherLabel?: string): boolean {
+  if (!type) return false;
+  if (type === 'other') return Boolean(otherLabel?.trim());
+  return true;
+}
+
 export type OnboardingSurvey = {
   businessType: BusinessType | '';
+  /** Custom label when businessType is `other`. */
+  businessTypeOther?: string;
   whyStyld: string[];
   heardFrom: string;
   excitedAbout: string[];
@@ -117,7 +170,9 @@ function normalizeBusinessType(value: unknown): BusinessType | '' {
   return value === 'barber' ||
     value === 'hair_salon' ||
     value === 'makeup_artist' ||
-    value === 'nail_tech'
+    value === 'nail_tech' ||
+    value === 'lash_tech' ||
+    value === 'other'
     ? value
     : '';
 }
@@ -126,6 +181,7 @@ export function normalizeOnboardingSurvey(value: unknown): OnboardingSurvey {
   if (!value || typeof value !== 'object') {
     return {
       businessType: '',
+      businessTypeOther: '',
       whyStyld: [],
       heardFrom: '',
       excitedAbout: [],
@@ -134,8 +190,13 @@ export function normalizeOnboardingSurvey(value: unknown): OnboardingSurvey {
     };
   }
   const source = value as Record<string, unknown>;
+  const businessType = normalizeBusinessType(source.businessType);
   return {
-    businessType: normalizeBusinessType(source.businessType),
+    businessType,
+    businessTypeOther:
+      businessType === 'other' && typeof source.businessTypeOther === 'string'
+        ? source.businessTypeOther.trim()
+        : '',
     whyStyld: asStringArray(source.whyStyld),
     heardFrom: typeof source.heardFrom === 'string' ? source.heardFrom : '',
     excitedAbout: asStringArray(source.excitedAbout),
@@ -204,6 +265,7 @@ export type OnboardingAnswers = {
   businessName: string;
   specialty: string;
   businessType?: BusinessType;
+  businessTypeOther?: string;
   phoneDisplay: string;
   email: string;
   instagramHandle: string;
@@ -222,9 +284,11 @@ export function buildSiteContentFromOnboarding(answers: OnboardingAnswers): Site
   const brandName = answers.businessName.trim() || DEFAULT_SITE_CONTENT.brandName;
   const specialty =
     answers.specialty.trim() ||
-    (answers.businessType ? specialtyForBusinessType(answers.businessType) : '');
+    (answers.businessType
+      ? resolveSpecialty(answers.businessType, answers.businessTypeOther)
+      : '');
   const defaultRole = answers.businessType
-    ? taglineRoleForBusinessType(answers.businessType)
+    ? resolveTaglineRole(answers.businessType, answers.businessTypeOther)
     : 'stylist';
   const cityLine = [answers.city.trim(), answers.state.trim()].filter(Boolean).join(', ');
   const serviceArea = answers.serviceArea.trim();
@@ -239,9 +303,9 @@ export function buildSiteContentFromOnboarding(answers: OnboardingAnswers): Site
       ? `${brandName} — ${specialty}. Book online.`
       : `${brandName} — book online.`,
     reelsTitle: 'Our work',
-    reelsBlurb: serviceArea
-      ? `Follow along for ${serviceArea.toLowerCase()} — see recent work on Instagram.`
-      : 'Follow us on Instagram for fresh styles, client features, and booking updates.',
+    reelsBlurb: specialty
+      ? `Recent ${specialty.toLowerCase()} from our chair.`
+      : 'Browse our latest styles and transformations.',
     menuTitle: 'Menu',
     menuBlurb: specialty
       ? `Browse ${specialty.toLowerCase()} and book your next appointment.`

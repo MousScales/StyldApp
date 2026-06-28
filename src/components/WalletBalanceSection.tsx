@@ -17,6 +17,7 @@ import {
   type StripeConnectSummary,
 } from '../lib/stripeConnect';
 import { colors, fonts } from '../theme';
+import MoneyAmountLoader from './MoneyAmountLoader';
 
 const LOGOKIT_TOKEN = process.env.EXPO_PUBLIC_LOGOKIT_TOKEN ?? '';
 function bankLogoUrl(bankName?: string): string | null {
@@ -43,6 +44,7 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
   const { privacyMode } = usePrivacyMode();
   const [summary, setSummary] = useState<StripeConnectSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const [busy, setBusy] = useState(false);
   const [connectUrl, setConnectUrl] = useState<string | null>(null);
   const [balanceError, setBalanceError] = useState<string | null>(null);
@@ -64,6 +66,7 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
       onSummaryChange?.(null);
     } finally {
       setLoading(false);
+      setInitialized(true);
     }
   }, [hasLinkedSite, onSummaryChange]);
 
@@ -165,8 +168,10 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
     );
   }
 
-  // In passive mode, hide the whole section until the account is active
-  if (showOnlyWhenActive && !loading && needsOnboarding) return null;
+  // In passive mode, hide the whole section until we know Stripe isn't set up yet
+  if (showOnlyWhenActive && initialized && !loading && needsOnboarding) return null;
+
+  const showLoader = loading || !initialized;
 
   const bank = summary?.bankAccount;
   const totalUnpaid = (summary?.balanceAvailableCents ?? 0) + (summary?.balancePendingCents ?? 0);
@@ -175,14 +180,18 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
     <>
       <View style={styles.wrap}>
         {/* Big centred amount */}
-        <Pressable onPress={() => void refresh()} hitSlop={16} disabled={loading} style={styles.amountWrap}>
-          <Text style={styles.amount}>
-            {loading ? '—' : (privacyMode ? '••••' : formatUsdFromCents(totalUnpaid))}
-          </Text>
+        <Pressable onPress={() => void refresh()} hitSlop={16} disabled={showLoader} style={styles.amountWrap}>
+          {showLoader ? (
+            <MoneyAmountLoader size="profile" showSubtitle />
+          ) : (
+            <Text style={styles.amount}>
+              {privacyMode ? '••••' : formatUsdFromCents(totalUnpaid)}
+            </Text>
+          )}
         </Pressable>
 
         {/* Small muted sub-line */}
-        {isReady && !loading && (
+        {isReady && !showLoader && (
           <Text style={styles.subLine}>
             {masked(summary?.balanceAvailableCents ?? 0)} available
             {(summary?.balancePendingCents ?? 0) > 0
