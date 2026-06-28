@@ -30,7 +30,7 @@ function bankLogoUrl(bankName?: string): string | null {
 
 type Props = {
   onSummaryChange?: (summary: StripeConnectSummary | null) => void;
-  /** When true, hides the component entirely if Stripe Connect is not yet set up */
+  /** When true, show a setup banner until Stripe Connect is ready; then show earnings UI */
   showOnlyWhenActive?: boolean;
 };
 
@@ -168,8 +168,89 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
     );
   }
 
-  // In passive mode, hide the whole section until we know Stripe isn't set up yet
-  if (showOnlyWhenActive && initialized && !loading && needsOnboarding) return null;
+  const showSetupOnly = Boolean(showOnlyWhenActive && !isReady);
+  const showSetupLoader = showSetupOnly && (loading || !initialized);
+
+  if (showSetupOnly) {
+    return (
+      <>
+        <View style={styles.setupBanner}>
+          {showSetupLoader ? (
+            <ActivityIndicator color={colors.accentPink} style={styles.setupBannerLoader} />
+          ) : (
+            <>
+              <View style={styles.setupBannerIcon}>
+                <Ionicons name="wallet-outline" size={22} color={colors.accentPink} />
+              </View>
+              <Text style={styles.setupBannerTitle}>
+                {needsOnboarding ? 'Set up Styld Pay' : 'Finish Styld Pay setup'}
+              </Text>
+              <Text style={styles.setupBannerSub}>
+                {needsOnboarding
+                  ? 'Connect your bank to accept online deposits and receive payouts.'
+                  : 'Complete verification in Stripe to start receiving payouts.'}
+              </Text>
+              <Pressable
+                style={[styles.setupBannerBtn, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={() => void handleSetupPayments()}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.setupBannerBtnText}>
+                    {summary?.hasAccount ? 'Continue in Stripe' : 'Set up Styld Pay'}
+                  </Text>
+                )}
+              </Pressable>
+              {isPending ? (
+                <Pressable style={styles.statusLink} disabled={busy} onPress={() => void handleSyncAfterOnboarding()}>
+                  <Text style={styles.statusLinkText}>Refresh status</Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
+        </View>
+
+        <Modal visible={!!connectUrl} animationType="slide" onRequestClose={() => setConnectUrl(null)}>
+          <SafeAreaView style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Pressable onPress={() => setConnectUrl(null)} hitSlop={12}>
+                <Ionicons name="close" size={22} color={colors.text} />
+              </Pressable>
+              <Text style={styles.modalTitle}>Styld Pay</Text>
+              <Pressable
+                onPress={() => {
+                  setConnectUrl(null);
+                  void handleSyncAfterOnboarding();
+                }}
+                hitSlop={12}
+              >
+                <Text style={styles.modalDone}>Done</Text>
+              </Pressable>
+            </View>
+            {connectUrl ? (
+              <WebView
+                source={{ uri: connectUrl }}
+                style={{ flex: 1 }}
+                onShouldStartLoadWithRequest={(request) => {
+                  if (
+                    request.url.includes(RETURN_URL) ||
+                    request.url.includes(REFRESH_URL)
+                  ) {
+                    setConnectUrl(null);
+                    void handleSyncAfterOnboarding();
+                    return false;
+                  }
+                  return true;
+                }}
+              />
+            ) : null}
+          </SafeAreaView>
+        </Modal>
+      </>
+    );
+  }
 
   const showLoader = loading || !initialized;
 
@@ -351,6 +432,53 @@ const BASE_STYLES = {
   btnDisabled: { opacity: 0.45 },
 
   emptyText: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
+
+  setupBanner: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.accentPinkBorder,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    marginBottom: 20,
+    gap: 8,
+  },
+  setupBannerLoader: {
+    paddingVertical: 12,
+  },
+  setupBannerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.accentPinkMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  setupBannerTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  setupBannerSub: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  setupBannerBtn: {
+    marginTop: 4,
+    backgroundColor: colors.accentPink,
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 28,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  setupBannerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   modalContainer: { flex: 1, backgroundColor: colors.background },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.cardBorder },
