@@ -23,9 +23,15 @@ function json(body: unknown, status = 200) {
 
 function labelForPath(path: string): string {
   const name = path.split('/').pop() ?? path;
-  if (name.startsWith('hair')) return 'Hair photo';
-  if (name.startsWith('ref')) return 'Reference';
+  if (name.startsWith('current-hair') || name.startsWith('hair')) return 'Hair photo';
+  if (name.startsWith('reference') || name.startsWith('ref')) return 'Reference';
   return 'Photo';
+}
+
+function dirname(path: string): string {
+  const normalized = path.replace(/^\/+/, '').trim();
+  const slash = normalized.lastIndexOf('/');
+  return slash >= 0 ? normalized.slice(0, slash) : '';
 }
 
 Deno.serve(async (req) => {
@@ -77,15 +83,27 @@ Deno.serve(async (req) => {
     const storageFolder = String(data.id ?? row.id ?? bookingId).trim();
 
     const pathSet = new Set<string>();
-    const hair = String(photoHairPath ?? data.photo_hair_path ?? '').trim();
-    const ref = String(photoRefPath ?? data.photo_ref_path ?? '').trim();
+    const hair = String(
+      photoHairPath ?? data.photo_hair_path ?? data.current_hair_photo_path ?? '',
+    ).trim();
+    const ref = String(
+      photoRefPath ?? data.photo_ref_path ?? data.reference_photo_path ?? '',
+    ).trim();
     if (hair) pathSet.add(hair);
     if (ref) pathSet.add(ref);
 
-    if (!pathSet.size && storageFolder) {
-      const { data: files } = await admin.storage.from('booking-photos').list(storageFolder);
-      for (const file of files ?? []) {
-        if (file.name) pathSet.add(`${storageFolder}/${file.name}`);
+    if (!pathSet.size) {
+      const folders = new Set<string>();
+      if (hair) folders.add(dirname(hair));
+      if (ref) folders.add(dirname(ref));
+      if (storageFolder) folders.add(storageFolder);
+
+      for (const folder of folders) {
+        if (!folder) continue;
+        const { data: files } = await admin.storage.from('booking-photos').list(folder);
+        for (const file of files ?? []) {
+          if (file.name) pathSet.add(`${folder}/${file.name}`);
+        }
       }
     }
 

@@ -110,11 +110,8 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const { data: userId, error: resolveErr } = await supabase.rpc(
-      'styld_resolve_published_user_id',
-      { p_subdomain: subdomain },
-    );
-    if (resolveErr || !userId) return json({ error: 'Site not found' }, 404);
+    const subdomainNorm = subdomain.trim().toLowerCase();
+    let userId: string;
 
     if (cancelledBy === 'stylist') {
       const authHeader = req.headers.get('Authorization');
@@ -125,11 +122,31 @@ Deno.serve(async (req) => {
         { global: { headers: { Authorization: authHeader } } },
       );
       const { data: authData, error: authErr } = await userClient.auth.getUser();
-      if (authErr || !authData.user || authData.user.id !== userId) {
+      if (authErr || !authData.user) {
         return json({ error: 'Unauthorized' }, 401);
       }
-    } else if (!contact) {
-      return json({ error: 'Missing contact' }, 400);
+      userId = authData.user.id;
+
+      const { data: subRow, error: subErr } = await supabase
+        .from('styld_site_subdomains')
+        .select('subdomain')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (subErr) return json({ error: subErr.message }, 500);
+      const ownerSub = String(subRow?.subdomain ?? '').trim().toLowerCase();
+      if (!ownerSub || ownerSub !== subdomainNorm) {
+        return json({ error: 'Site not found' }, 404);
+      }
+    } else {
+      const { data: resolvedUserId, error: resolveErr } = await supabase.rpc(
+        'styld_resolve_published_user_id',
+        { p_subdomain: subdomain },
+      );
+      if (resolveErr || !resolvedUserId) return json({ error: 'Site not found' }, 404);
+      userId = String(resolvedUserId);
+      if (!contact) {
+        return json({ error: 'Missing contact' }, 400);
+      }
     }
 
     const { data: bookingRow, error: bookingErr } = await supabase
@@ -164,6 +181,7 @@ Deno.serve(async (req) => {
       String(booking.appointment_starts_at ?? ''),
       String(booking.booking_status ?? ''),
       booking,
+      { allowPastCancellation: cancelledBy === 'stylist' },
     );
 
     if (!evaluation.canCancel) {

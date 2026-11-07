@@ -23,6 +23,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { getPaywallNotifs } from '../data/brandCopy';
 import { getPaywallContent } from '../data/paywallContent';
 import { getPlanPricing, type Plan } from '../lib/paywallPackages';
+import { getPaywallHeroImage } from '../lib/paywallHeroImage';
 import {
   ENTITLEMENT_CONFIRM_TIMEOUT_MS,
   PaywallTimeoutError,
@@ -42,7 +43,6 @@ type Props = NativeStackScreenProps<ProfileStackParamList, 'Paywall'> & {
   onSubscribed?: () => void | Promise<void>;
 };
 
-const HERO_IMAGE = require('../../assets/paywall-top.png');
 const BRAND_ICON = require('../../assets/icon.png');
 
 const NOTIF_VISIBLE_MS = 2800;
@@ -187,7 +187,8 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
   const { user } = useAuth();
   const { businessType, businessTypeOther } = useBrand();
   const layout = useMemo(() => makeScaleFns(width, height), [width, height]);
-  const heroHeight = Math.round(Math.min(height * 0.28, layout.rh(220))) + insets.top;
+  const heroTopChrome = insets.top + layout.rh(20);
+  const heroHeight = Math.round(Math.min(height * 0.26, layout.rh(200))) + insets.top;
   const {
     currentOffering,
     purchasePackage,
@@ -202,6 +203,10 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
   const content = useMemo(
     () => getPaywallContent(businessType, businessTypeOther),
     [businessType, businessTypeOther],
+  );
+  const heroImage = useMemo(
+    () => getPaywallHeroImage(businessType),
+    [businessType],
   );
   const [selectedPlan, setSelectedPlan] = useState<Plan>('yearly');
   const [busy, setBusy] = useState(false);
@@ -366,10 +371,13 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
     navigation.goBack();
   }
 
-  const featurePairs = [
-    content.features.slice(0, 2),
-    content.features.slice(2, 4),
-  ];
+  const featurePairs = useMemo(() => {
+    const pairs: string[][] = [];
+    for (let i = 0; i < content.features.length; i += 2) {
+      pairs.push(content.features.slice(i, i + 2));
+    }
+    return pairs;
+  }, [content.features]);
 
   return (
     <SafeAreaView style={styles.root} edges={['bottom']}>
@@ -378,9 +386,10 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
       <View style={styles.page}>
         <View style={[styles.heroWrap, { height: heroHeight }]}>
           <ExpoImage
-            source={HERO_IMAGE}
+            source={heroImage}
             style={styles.heroImage}
             contentFit="cover"
+            contentPosition={{ top: '18%' }}
             transition={200}
           />
           <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%" pointerEvents="none">
@@ -393,13 +402,13 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
             </Defs>
             <Rect width="100%" height="100%" fill="url(#heroBottomFade)" />
           </Svg>
-          <View style={[styles.heroBrandLockup, { top: insets.top + 10 }]}>
+          <View style={[styles.heroBrandLockup, { top: heroTopChrome }]}>
             <Image source={BRAND_ICON} style={styles.brandIcon} resizeMode="cover" />
             <Text style={styles.brandName}>Styld</Text>
           </View>
           {!mandatory ? (
             <Pressable
-              style={[styles.closeBtn, { top: insets.top + 8 }]}
+              style={[styles.closeBtn, { top: heroTopChrome - 2 }]}
               onPress={() => navigation.goBack()}
               hitSlop={12}
             >
@@ -456,7 +465,7 @@ export default function PaywallScreen({ navigation, mandatory = false, onSubscri
               <View style={styles.yearlyWrap}>
                 <View style={styles.popularBadge}>
                   <Text style={styles.popularBadgeText}>
-                    {pricing.savingsPercent > 0 ? `${pricing.savingsPercent}% OFF` : '50% OFF'}
+                    {pricing.savingsPercent > 0 ? `${pricing.savingsPercent}% OFF` : '33% OFF'}
                   </Text>
                 </View>
                 <Pressable
@@ -560,12 +569,13 @@ const BASE_STYLES = {
   body: {
     flex: 1,
     paddingHorizontal: 18,
-    paddingTop: 10,
+    paddingTop: 18,
     paddingBottom: 4,
     justifyContent: 'space-between',
   },
   copyBlock: {
     flexShrink: 1,
+    paddingTop: 6,
   },
   notifWrap: {
     flex: 1,
@@ -662,7 +672,7 @@ const BASE_STYLES = {
     marginBottom: 10,
   },
   features: {
-    gap: 6,
+    gap: 4,
   },
   featureRow: {
     flexDirection: 'row',

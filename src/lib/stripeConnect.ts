@@ -25,6 +25,24 @@ export type StripePayout = {
   description: string;
 };
 
+export type StripeBalanceTransaction = {
+  id: string;
+  amountCents: number;
+  netCents: number;
+  feeCents: number;
+  /** Stripe card processing fee (from fee_details when available). */
+  stripeFeeCents?: number;
+  /** Styld platform / application fee (from fee_details when available). */
+  platformFeeCents?: number;
+  type: string;
+  status: string;
+  createdAt: number;
+  availableOn: number;
+  reportingCategory: string;
+  sourceId: string | null;
+  description: string;
+};
+
 export type StripeConnectSummary = {
   hasAccount: boolean;
   accountId?: string | null;
@@ -40,6 +58,7 @@ export type StripeConnectSummary = {
   balanceError?: string;
   bankAccount?: StripeBankAccount | null;
   recentPayouts?: StripePayout[];
+  recentTransactions?: StripeBalanceTransaction[];
   error?: string;
 };
 
@@ -92,6 +111,13 @@ export async function fetchStripeConnectStatus(): Promise<StripeConnectSummary> 
     balanceAvailableCents: 0,
     balancePendingCents: 0,
   };
+}
+
+export async function openStripeConnectDashboard(): Promise<string> {
+  const result = await startStripeConnectOnboarding();
+  const url = resolveStripeConnectUrl(result);
+  if (!url) throw new Error('Could not open Stripe dashboard');
+  return url;
 }
 
 export async function startStripeConnectOnboarding(): Promise<StripeOnboardResult> {

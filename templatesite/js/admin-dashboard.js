@@ -227,19 +227,36 @@
 
   var ADMIN_STORAGE_BUCKET = "booking-photos";
 
-  function adminSanitizeFilename(name) {
-    var base = String(name || "").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
-    return base || "upload";
+  function adminBookingPhotoFileExtension(file) {
+    var name = String((file && file.name) || "");
+    var dot = name.lastIndexOf(".");
+    if (dot > 0 && dot < name.length - 1) {
+      return name.slice(dot).toLowerCase();
+    }
+    return ".jpg";
+  }
+
+  function adminBookingPhotoStoragePrefix(bookingId) {
+    var tenant = window.__STYLD_TENANT_BOOKING__;
+    var subdomain =
+      tenant && tenant.subdomain ? String(tenant.subdomain).trim().toLowerCase() : "";
+    if (!subdomain) return String(bookingId);
+    return subdomain + "/" + bookingId;
   }
 
   async function adminUploadBookingPhotos(sb, bookingId, hairFile, refFile) {
-    var out = { photo_hair_path: null, photo_ref_path: null };
+    var out = {
+      photo_hair_path: null,
+      photo_ref_path: null,
+      current_hair_photo_path: null,
+      reference_photo_path: null,
+    };
     if (!hairFile) return out;
 
-    var uploadOne = async function (file, kind) {
-      var ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
-      var safeBase = adminSanitizeFilename(file.name.replace(/\.[^.]+$/, ""));
-      var path = bookingId + "/" + kind + "-" + safeBase + ext;
+    var prefix = adminBookingPhotoStoragePrefix(bookingId);
+
+    var uploadOne = async function (file, baseName) {
+      var path = prefix + "/" + baseName + adminBookingPhotoFileExtension(file);
       var res = await sb.storage.from(ADMIN_STORAGE_BUCKET).upload(path, file, {
         upsert: false,
         contentType: file.type || "application/octet-stream",
@@ -248,8 +265,14 @@
       return path;
     };
 
-    out.photo_hair_path = await uploadOne(hairFile, "hair");
-    if (refFile) out.photo_ref_path = await uploadOne(refFile, "ref");
+    var hairPath = await uploadOne(hairFile, "current-hair");
+    out.photo_hair_path = hairPath;
+    out.current_hair_photo_path = hairPath;
+    if (refFile) {
+      var refPath = await uploadOne(refFile, "reference");
+      out.photo_ref_path = refPath;
+      out.reference_photo_path = refPath;
+    }
     return out;
   }
 

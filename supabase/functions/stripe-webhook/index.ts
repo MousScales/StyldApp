@@ -66,13 +66,57 @@ Deno.serve(async (req) => {
     const metadata = (data?.metadata as Record<string, string>) || {};
     const subdomain = metadata.subdomain;
     const bookingId = metadata.bookingId;
+    const source = metadata.source;
+    const paymentIntentId = data?.id as string;
 
-    if (subdomain && bookingId) {
+    if (subdomain && bookingId && source === 'styld_payment_link') {
+      const balanceCents = Math.max(0, Number(metadata.balance_cents ?? 0));
+      const tipCents = Math.max(0, Number(metadata.tip_cents ?? 0));
+      const tipAmount = tipCents / 100;
+
+      const { data: userId } = await supabase.rpc('styld_resolve_published_user_id', {
+        p_subdomain: subdomain,
+      });
+
+      if (userId) {
+        const { data: bookingRow } = await supabase
+          .from('styld_site_records')
+          .select('id, data')
+          .eq('user_id', userId)
+          .eq('record_type', 'booking')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+        if (bookingRow) {
+          const bookingData = (bookingRow.data ?? {}) as Record<string, unknown>;
+          await supabase
+            .from('styld_site_records')
+            .update({
+              data: {
+                ...bookingData,
+                payment_status: 'paid',
+                payment_method_at_service: 'payment_link',
+                balance_collected_cents: balanceCents,
+                tip_amount: tipAmount,
+                balance_collected_at: new Date().toISOString(),
+                in_person_payment_intent_id: paymentIntentId,
+                stripe_payment_intent_id:
+                  typeof bookingData.stripe_payment_intent_id === 'string' &&
+                    bookingData.stripe_payment_intent_id
+                    ? bookingData.stripe_payment_intent_id
+                    : paymentIntentId,
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', bookingId);
+        }
+      }
+    } else if (subdomain && bookingId && source !== 'styld_inperson') {
       await supabase.rpc('styld_tenant_mark_booking_paid', {
         p_subdomain: subdomain,
         p_booking_id: bookingId,
         p_payment_status: 'deposit_paid',
-        p_unit_payment_id: data?.id as string,
+        p_unit_payment_id: paymentIntentId,
       }).catch((err: unknown) => console.warn('mark_booking_paid:', err));
     }
 

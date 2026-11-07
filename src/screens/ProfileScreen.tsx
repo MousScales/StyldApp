@@ -186,7 +186,10 @@ export default function ProfileScreen({ navigation }: Props) {
         </View>
 
         {/* ── Earnings — only shown once Stripe account is active ── */}
-        <WalletBalanceSection showOnlyWhenActive />
+        <WalletBalanceSection
+          showOnlyWhenActive
+          onOpenPayouts={() => navigation.navigate('Payments', { tab: 'payouts' })}
+        />
 
         {/* ── Overview ── */}
         <SectionLabel title="Overview" />

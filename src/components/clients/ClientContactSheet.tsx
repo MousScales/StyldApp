@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Client } from '../../data/clients';
+import { Client, clientHasValidEmail, getClientEmails } from '../../data/clients';
 import {
   CLIENT_EMAIL_TEMPLATES,
   ClientEmailTemplateId,
@@ -36,8 +36,11 @@ type ClientContactSheetProps = {
 };
 
 function hasValidEmail(client: Client): boolean {
-  const email = client.email.trim();
-  return Boolean(email && email !== '—' && email.includes('@'));
+  return clientHasValidEmail(client);
+}
+
+function primaryEmail(client: Client): string {
+  return getClientEmails(client)[0] ?? client.email.trim();
 }
 
 export default function ClientContactSheet({
@@ -103,7 +106,7 @@ export default function ClientContactSheet({
       const result = await sendClientEmails({
         templateId,
         recipients: sendable.map((client) => ({
-          email: client.email.trim(),
+          email: primaryEmail(client),
           name: client.name,
           merge: {
             ...buildClientMergeContext(client),
@@ -226,7 +229,7 @@ export default function ClientContactSheet({
               {sendable.map((client) => (
                 <View key={client.id} style={styles.recipientRow}>
                   <Text style={styles.recipientName} numberOfLines={1}>{client.name}</Text>
-                  <Text style={styles.recipientEmail} numberOfLines={1}>{client.email}</Text>
+                  <Text style={styles.recipientEmail} numberOfLines={1}>{primaryEmail(client)}</Text>
                 </View>
               ))}
             </View>

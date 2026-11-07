@@ -91,6 +91,7 @@
         depositKind: 'percent',
         depositValue: 10,
         depositIncludedInPrice: true,
+        platformFeePayer: 'client',
         requireCurrentHairPhoto: true,
         requireReferencePhoto: false,
         onlinePaymentsEnabled: false,
@@ -134,6 +135,48 @@
         requireReferencePhoto: requireReferencePhoto,
         onlinePaymentsEnabled: onlinePaymentsEnabled,
         requireBookingApproval: requireBookingApproval,
+        platformFeePayer: raw.platformFeePayer === 'tenant' ? 'tenant' : 'client',
+      };
+    }
+
+    function normalizeTravelStylist(raw) {
+      var defaults = {
+        enabled: false,
+        bookingMode: 'optional',
+        feeMode: 'flat',
+        flatFeeUsd: 25,
+        perMileRateUsd: 2,
+        homeBaseAddress: '',
+        homeBaseLat: null,
+        homeBaseLng: null,
+        extraTravelMinutes: 30,
+      };
+      if (!raw || typeof raw !== 'object') return defaults;
+      var bookingMode = raw.bookingMode === 'primary' ? 'primary' : 'optional';
+      var feeMode = raw.feeMode === 'per_mile' ? 'per_mile' : 'flat';
+      var flatFeeUsd =
+        typeof raw.flatFeeUsd === 'number' && !Number.isNaN(raw.flatFeeUsd) ? raw.flatFeeUsd : defaults.flatFeeUsd;
+      var perMileRateUsd =
+        typeof raw.perMileRateUsd === 'number' && !Number.isNaN(raw.perMileRateUsd)
+          ? raw.perMileRateUsd
+          : defaults.perMileRateUsd;
+      var homeBaseAddress = typeof raw.homeBaseAddress === 'string' ? raw.homeBaseAddress.trim() : '';
+      var extraTravelMinutes =
+        typeof raw.extraTravelMinutes === 'number' && !Number.isNaN(raw.extraTravelMinutes)
+          ? Math.min(480, Math.max(0, Math.round(raw.extraTravelMinutes)))
+          : defaults.extraTravelMinutes;
+      return {
+        enabled: raw.enabled === true,
+        bookingMode: bookingMode,
+        feeMode: feeMode,
+        flatFeeUsd: Math.max(0, Math.round(flatFeeUsd * 100) / 100),
+        perMileRateUsd: Math.max(0, Math.round(perMileRateUsd * 100) / 100),
+        homeBaseAddress: homeBaseAddress,
+        homeBaseLat:
+          typeof raw.homeBaseLat === 'number' && !Number.isNaN(raw.homeBaseLat) ? raw.homeBaseLat : null,
+        homeBaseLng:
+          typeof raw.homeBaseLng === 'number' && !Number.isNaN(raw.homeBaseLng) ? raw.homeBaseLng : null,
+        extraTravelMinutes: extraTravelMinutes,
       };
     }
 
@@ -141,15 +184,17 @@
       site.cancellationPolicy && typeof site.cancellationPolicy === 'object'
         ? site.cancellationPolicy
         : {
-            fullRefundNoticeHours: 24,
-            refundAppliesTo: 'both',
+            preset: 'no_refunds',
+            fullRefundNoticeHours: 0,
+            refundAppliesTo: 'none',
             policySummary:
-              'You may cancel online anytime before your appointment. Online deposits and full payments are fully refunded when you cancel at least 24 hours before your appointment. Cancellations after that deadline are non-refundable.',
+              'You may cancel online anytime before your appointment. All online payments, including deposits, are non-refundable.',
           };
 
     window.__SALON_SITE_BOOKING = Object.assign({}, window.__SALON_SITE_BOOKING || {}, {
       payment: normalizeBookingPayment(site.bookingPayment),
       cancellationPolicy: cancellationPolicy,
+      travelStylist: normalizeTravelStylist(site.travelStylist),
       products: Array.isArray(site.productsCatalog) ? site.productsCatalog : [],
       productsSettings: site.productsSettings || null,
       salonTimeZone: site.content.timezone || 'America/New_York',
@@ -192,7 +237,7 @@
         availScript.src = '/js/booking-availability.js?v=3';
         availScript.onload = function () {
           var script = document.createElement('script');
-          script.src = '/js/booking.js?v=60';
+          script.src = '/js/booking.js?v=61';
           script.defer = true;
           document.body.appendChild(script);
         };

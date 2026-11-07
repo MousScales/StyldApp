@@ -7,7 +7,7 @@ export function formatElapsed(ms: number): string {
   if (hours > 0) {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 export const TIP_PRESETS = [0, 5, 10, 15, 20] as const;

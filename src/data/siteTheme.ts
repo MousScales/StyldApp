@@ -7,7 +7,16 @@ import {
 } from '../lib/heroImageFocus';
 import { normalizeSiteTextColors, ALL_SITE_TEXT_COLOR_KEYS } from '../lib/siteTextColors';
 
-export type HeroLayout = 'split' | 'stack' | 'cover' | 'image-below' | 'minimal';
+export type HeroLayout = 'banner' | 'stack' | 'cover' | 'minimal';
+
+/** Legacy `split` / `image-below` values map to `banner` (header photo only — content in main). */
+export function normalizeHeroLayout(value: unknown): HeroLayout {
+  if (value === 'stack' || value === 'cover' || value === 'minimal' || value === 'banner') {
+    return value;
+  }
+  if (value === 'split' || value === 'image-below') return 'banner';
+  return DEFAULT_SITE_THEME.heroLayout;
+}
 export type StyleCardLayout = 'card' | 'outlined';
 export type FontFamily = 'cormorant' | 'inter' | 'playfair' | 'dm-sans' | 'montserrat' | 'poppins' | 'lora' | 'nunito';
 export type TemplateId = 'profile';
@@ -298,6 +307,8 @@ export type SiteTheme = {
   hideBookNowButton: boolean;
   /** Soft blur on the full-screen cover splash background image. */
   heroCoverBlur: boolean;
+  /** When false, the portrait header photo is hidden (banner layout). Cover splash can still use the image. */
+  heroPhotoEnabled: boolean;
   /** Optional per-element text color overrides (hex). Used when textColorSources[key] is custom or unset. */
   textColors: SiteTextColors;
   /** Link element colors to brand palette colors so they stay in sync. */
@@ -309,7 +320,7 @@ export type SiteTheme = {
 };
 
 export const DEFAULT_SITE_THEME: SiteTheme = {
-  heroLayout: 'split',
+  heroLayout: 'banner',
   heroImagePath: null,
   logoImagePath: null,
   primaryColor: '#db2777',
@@ -328,6 +339,7 @@ export const DEFAULT_SITE_THEME: SiteTheme = {
   templateId: 'profile',
   hideBookNowButton: false,
   heroCoverBlur: false,
+  heroPhotoEnabled: true,
   textColors: {},
   textColorSources: {},
   portfolioItems: [],
@@ -374,19 +386,19 @@ export type HeroLayoutOption = {
 
 export const HERO_LAYOUT_OPTIONS: HeroLayoutOption[] = [
   {
-    id: 'split',
-    title: 'Text beside image',
-    description: 'Headline on both sides of a tall hero photo — great for bold branding.',
+    id: 'banner',
+    title: 'Header photo',
+    description: 'Portrait photo on top — About Me, Policies, and menu scroll below as separate sections.',
   },
   {
-    id: 'image-below',
-    title: 'Image first',
-    description: 'A large hero photo up top with your headline centered underneath.',
+    id: 'stack',
+    title: 'Photo collage',
+    description: 'Wide or tall banner images at the top, then your page sections below.',
   },
   {
     id: 'minimal',
-    title: 'Text only',
-    description: 'Skip the big photo and lead with a clean, typography-focused hero.',
+    title: 'No photo',
+    description: 'No header image — About Me, Policies, and menu only.',
   },
   {
     id: 'cover',
@@ -403,15 +415,7 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
   const source =
     value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 
-  const layout = source.heroLayout;
-  const heroLayout: HeroLayout =
-    layout === 'split' ||
-    layout === 'stack' ||
-    layout === 'cover' ||
-    layout === 'image-below' ||
-    layout === 'minimal'
-      ? layout
-      : DEFAULT_SITE_THEME.heroLayout;
+  const heroLayout = normalizeHeroLayout(source.heroLayout);
 
   const validFontIds: FontFamily[] = ['cormorant', 'inter', 'playfair', 'dm-sans', 'montserrat', 'poppins', 'lora', 'nunito'];
 
@@ -471,6 +475,7 @@ export function normalizeSiteTheme(value: unknown): SiteTheme {
     templateId: 'profile',
     hideBookNowButton: source.hideBookNowButton === true,
     heroCoverBlur: source.heroCoverBlur === true,
+    heroPhotoEnabled: source.heroPhotoEnabled !== false,
     textColors: normalizeSiteTextColors(source.textColors),
     textColorSources: normalizeSiteTextColorSources(source.textColorSources),
     portfolioItems: normalizePortfolioItems(source),

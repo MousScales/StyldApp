@@ -24,6 +24,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import SiteDesignEditor from '../components/site/SiteDesignEditor';
 import SitePortfolioEditor from '../components/site/SitePortfolioEditor';
 import SitePreviewWebView from '../components/site/SitePreviewWebView';
+import SiteSectionOrderEditor from '../components/site/SiteSectionOrderEditor';
+import SiteBookingEditor from '../components/site/SiteBookingEditor';
 import { useServiceCatalog } from '../context/ServiceCatalogContext';
 import { useSiteContent } from '../context/SiteContentContext';
 import { useSiteTheme } from '../context/SiteThemeContext';
@@ -31,10 +33,13 @@ import { useAppAccess } from '../context/AppAccessContext';
 import { useAuth } from '../context/AuthContext';
 import { useOnboarding } from '../context/OnboardingContext';
 import { usePurchases } from '../context/PurchasesContext';
-import { formatStylePriceRange } from '../data/siteStyles';
-import { LOCATION_PARTS, LocationPart, SITE_SECTIONS, SiteSection } from '../data/siteContent';
-import { DEFAULT_STYLE_DURATION_MINUTES, formatStyleDuration } from '../data/siteStyles';
+import { socialLinksPreviewText } from '../data/socialLinks';
+import { DEFAULT_REVIEWS_SETTINGS, ReviewsSettings, SiteReview } from '../data/reviewsSettings';
+import { DEFAULT_STYLE_DURATION_MINUTES, formatStyleDuration, formatStylePriceRange } from '../data/siteStyles';
+import { LOCATION_PARTS, LocationPart, portfolioPlacementFromOrder, resolveMainSectionOrder, SITE_SECTIONS, SiteContent, SiteSection, formatSiteAddress } from '../data/siteContent';
 import { buildSitePreviewInjection, buildSitePreviewTheme, SitePreviewTheme } from '../lib/sitePreviewHtml';
+import { loadReviewsSettings, loadSiteReviews } from '../lib/siteReviews';
+import { normalizeHeroLayout } from '../data/siteTheme';
 import { getSiteRootDomain, normalizeSubdomain } from '../data/sitePublish';
 import { checkSubdomainAvailability } from '../lib/sitePublish';
 import { openLiveSiteUrl } from '../lib/openLiveSite';
@@ -43,204 +48,208 @@ import { colors } from '../theme';
 
 type Props = NativeStackScreenProps<SiteStackParamList, 'SiteEditor'>;
 
-type EditorTab = 'style' | 'photos' | 'content' | 'location' | 'publish';
+type EditorTab = 'style' | 'photos' | 'content' | 'booking' | 'order' | 'publish';
 type PublishStep = 'idle' | 'publishing' | 'success' | 'error';
 type PreviewMode = 'split' | 'fullscreen' | 'hidden';
 
-function Field({
-  label,
-  value,
-  onChangeText,
-  multiline,
-  placeholder,
+function SectionHeadingFields({
+  title,
+  blurb,
+  onTitleChange,
+  onBlurbChange,
+  titlePlaceholder,
+  blurbPlaceholder,
 }: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  multiline?: boolean;
-  placeholder?: string;
+  title: string;
+  blurb: string;
+  onTitleChange: (value: string) => void;
+  onBlurbChange: (value: string) => void;
+  titlePlaceholder?: string;
+  blurbPlaceholder?: string;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
+  const titleRef = useRef<TextInput>(null);
+  const blurbRef = useRef<TextInput>(null);
 
   return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={[styles.input, multiline && styles.inputMultiline]}
-        value={value}
-        onChangeText={onChangeText}
-        multiline={multiline}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textMuted}
-      />
-    </View>
-  );
-}
-
-function InstagramField({
-  value,
-  onChangeText,
-}: {
-  value: string;
-  onChangeText: (v: string) => void;
-}) {
-  const styles = useResponsiveStyles(BASE_STYLES);
-
-  const clean = value.replace(/^@/, '');
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>Instagram</Text>
-      <View style={styles.igRow}>
-        <View style={styles.igPrefix}>
-          <Ionicons name="logo-instagram" size={14} color={colors.textMuted} />
-          <Text style={styles.igAt}>@</Text>
-        </View>
+    <View style={styles.sectionHeadingBlock}>
+      <View style={styles.sectionHeadingRow}>
         <TextInput
-          style={styles.igInput}
-          value={clean}
-          onChangeText={(v) => onChangeText(v.replace(/^@+/, ''))}
-          placeholder="yourhandle"
+          ref={titleRef}
+          style={styles.sectionHeadingTitle}
+          value={title}
+          onChangeText={onTitleChange}
+          placeholder={titlePlaceholder}
           placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
         />
+        <Pressable
+          onPress={() => titleRef.current?.focus()}
+          hitSlop={8}
+          style={styles.sectionHeadingEditBtn}
+          accessibilityLabel="Edit section title"
+        >
+          <Ionicons name="pencil-outline" size={14} color={colors.textMuted} />
+        </Pressable>
+      </View>
+      <View style={styles.sectionHeadingRow}>
+        <TextInput
+          ref={blurbRef}
+          style={styles.sectionHeadingBlurb}
+          value={blurb}
+          onChangeText={onBlurbChange}
+          placeholder={blurbPlaceholder}
+          placeholderTextColor={colors.textMuted}
+          multiline
+        />
+        <Pressable
+          onPress={() => blurbRef.current?.focus()}
+          hitSlop={8}
+          style={styles.sectionHeadingEditBtn}
+          accessibilityLabel="Edit section blurb"
+        >
+          <Ionicons name="pencil-outline" size={14} color={colors.textMuted} />
+        </Pressable>
       </View>
     </View>
   );
 }
 
-function SectionCard({
-  sectionId,
-  label,
-  icon,
-  visible,
-  onToggle,
+function ContentSection({
+  title,
+  hint,
   children,
 }: {
-  sectionId: SiteSection;
-  label: string;
-  icon: string;
-  visible: boolean;
-  onToggle: (id: SiteSection) => void;
+  title: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
-  const [expanded, setExpanded] = useState(false);
-
   return (
-    <View style={[styles.sectionCard, !visible && styles.sectionCardHidden]}>
-      <Pressable
-        style={styles.sectionCardHeader}
-        onPress={() => { if (visible) setExpanded((e) => !e); }}
-      >
-        <View style={styles.sectionCardLeft}>
-          <Ionicons
-            name={icon as keyof typeof Ionicons.glyphMap}
-            size={18}
-            color={visible ? colors.text : colors.textMuted}
-          />
-          <Text style={[styles.sectionCardTitle, !visible && styles.sectionCardTitleHidden]}>
-            {label}
-          </Text>
-        </View>
-        <View style={styles.sectionCardRight}>
-          <Pressable
-            hitSlop={10}
-            onPress={() => onToggle(sectionId)}
-            style={[styles.visibilityToggle, visible && styles.visibilityToggleOn]}
-          >
-            <Ionicons
-              name={visible ? 'eye-outline' : 'eye-off-outline'}
-              size={16}
-              color={visible ? colors.accentPink : colors.textMuted}
-            />
-          </Pressable>
-          {visible && (
-            <Ionicons
-              name={expanded ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={colors.textMuted}
-            />
-          )}
-        </View>
-      </Pressable>
-
-      {expanded && visible ? (
-        <View style={styles.sectionCardBody}>{children}</View>
-      ) : null}
+    <View style={styles.contentSection}>
+      <Text style={styles.contentSectionTitle}>{title}</Text>
+      {hint ? <Text style={styles.helper}>{hint}</Text> : null}
+      {children}
     </View>
   );
 }
 
-function LocationPartCard({
-  partId,
+function ContentNavRow({
   label,
-  icon,
-  visible,
-  onToggle,
-  children,
+  value,
+  onPress,
 }: {
-  partId: LocationPart;
   label: string;
-  icon: string;
-  visible: boolean;
-  onToggle: (id: LocationPart) => void;
-  children: React.ReactNode;
+  value: string;
+  onPress: () => void;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
-  const [expanded, setExpanded] = useState(false);
+  return (
+    <Pressable style={styles.contentNavRow} onPress={onPress}>
+      <View style={styles.navRowBody}>
+        <Text style={styles.navRowLabel}>{label}</Text>
+        <Text style={styles.navRowValue} numberOfLines={1}>
+          {value}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+    </Pressable>
+  );
+}
+
+function ContentShowToggle({
+  label,
+  visible,
+  onToggle,
+}: {
+  label: string;
+  visible: boolean;
+  onToggle: () => void;
+}) {
+  const styles = useResponsiveStyles(BASE_STYLES);
 
   return (
-    <View style={[styles.sectionCard, !visible && styles.sectionCardHidden]}>
-      <Pressable
-        style={styles.sectionCardHeader}
-        onPress={() => { if (visible) setExpanded((e) => !e); }}
-      >
-        <View style={styles.sectionCardLeft}>
-          <Ionicons
-            name={icon as keyof typeof Ionicons.glyphMap}
-            size={18}
-            color={visible ? colors.text : colors.textMuted}
-          />
-          <Text style={[styles.sectionCardTitle, !visible && styles.sectionCardTitleHidden]}>
-            {label}
+    <Pressable style={styles.contentShowToggle} onPress={onToggle}>
+      <Text style={styles.contentShowToggleLabel}>{label}</Text>
+      <View style={[styles.toggleBox, visible && styles.toggleBoxOn]}>
+        {visible ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function ContentItemRow({
+  label,
+  value,
+  visible,
+  onPress,
+  onToggleVisible,
+}: {
+  label: string;
+  value: string;
+  visible: boolean;
+  onPress: () => void;
+  onToggleVisible: () => void;
+}) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
+  return (
+    <View style={[styles.contentItemRow, !visible && styles.contentItemRowHidden]}>
+      <Pressable style={styles.contentItemTap} onPress={onPress}>
+        <View style={styles.navRowBody}>
+          <Text style={[styles.navRowLabel, !visible && styles.navRowLabelHidden]}>{label}</Text>
+          <Text style={styles.navRowValue} numberOfLines={1}>
+            {value}
           </Text>
         </View>
-        <View style={styles.sectionCardRight}>
-          <Pressable
-            hitSlop={10}
-            onPress={() => onToggle(partId)}
-            style={[styles.visibilityToggle, visible && styles.visibilityToggleOn]}
-          >
-            <Ionicons
-              name={visible ? 'eye-outline' : 'eye-off-outline'}
-              size={16}
-              color={visible ? colors.accentPink : colors.textMuted}
-            />
-          </Pressable>
-          {visible && (
-            <Ionicons
-              name={expanded ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={colors.textMuted}
-            />
-          )}
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </Pressable>
+      <Pressable hitSlop={10} onPress={onToggleVisible} style={styles.contentItemToggle}>
+        <View style={[styles.toggleBox, visible && styles.toggleBoxOn]}>
+          {visible ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
         </View>
       </Pressable>
-
-      {expanded && visible ? (
-        <View style={styles.sectionCardBody}>{children}</View>
-      ) : null}
     </View>
   );
+}
+
+function visitPartPreview(part: LocationPart, content: SiteContent): string {
+  switch (part) {
+    case 'address':
+      return formatSiteAddress(content).trim() || 'Not set';
+    case 'map':
+      if (content.mapEmbedUrl?.trim()) {
+        const url = content.mapEmbedUrl.trim();
+        return url.length > 48 ? `${url.slice(0, 48)}…` : url;
+      }
+      return formatSiteAddress(content).trim() ? 'Uses your address' : 'Not set';
+    case 'contact':
+      return [content.phoneDisplay, content.email].filter(Boolean).join(' · ') || 'Not set';
+    case 'social':
+      return socialLinksPreviewText(content.socialLinks);
+    default:
+      return 'Not set';
+  }
+}
+
+function aboutMeHint(heroLayout: string): string {
+  const layout = normalizeHeroLayout(heroLayout);
+  if (layout === 'cover') return 'Shown on your /book page after the splash screen.';
+  if (layout === 'minimal') return 'Shown in your page order — no header photo on this layout.';
+  return 'Always its own section — reorder it under Order (separate from Policies).';
+}
+
+function policiesHint(heroLayout: string): string {
+  const layout = normalizeHeroLayout(heroLayout);
+  if (layout === 'cover') return 'Shown as its own section on your /book page.';
+  return 'Always its own section — reorder it independently under Order.';
 }
 
 export default function SiteEditorScreen({ navigation }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
-  const { content, updateContent, isSaving, saveContentNow } = useSiteContent();
+  const { content, updateContent, isSaving, hasPendingChanges: hasContentPending, saveContentNow, flushPendingSave: flushContentSave } = useSiteContent();
   const { user } = useAuth();
   const { isBuildSiteOnly } = useAppAccess();
   const { isConfigured, isSubscriptionReady, forceCheckSubscriptionStatus } = usePurchases();
@@ -255,7 +264,9 @@ export default function SiteEditorScreen({ navigation }: Props) {
     uploadPortfolioMedia,
     removePortfolioItem,
     isSaving: isSavingTheme,
+    hasPendingChanges: hasThemePending,
     saveThemeNow,
+    flushPendingSave: flushThemeSave,
   } = useSiteTheme();
   const { catalogServices, getCoverUrl, getPrice, getStyleMeta, isSaving: isSavingStyles, refresh } =
     useServiceCatalog();
@@ -264,6 +275,8 @@ export default function SiteEditorScreen({ navigation }: Props) {
   const [previewKey, setPreviewKey] = useState(0);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [domainInputFocused, setDomainInputFocused] = useState(false);
+  const [siteReviews, setSiteReviews] = useState<SiteReview[]>([]);
+  const [reviewsSettings, setReviewsSettings] = useState<ReviewsSettings>(DEFAULT_REVIEWS_SETTINGS);
   const scrollRef = useRef<ScrollView>(null);
   const publishScrollY = useRef(0);
   const { height: windowHeight } = useWindowDimensions();
@@ -273,8 +286,27 @@ export default function SiteEditorScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       setPreviewKey((k) => k + 1);
-    }, []),
+      return () => {
+        void Promise.all([flushContentSave(), flushThemeSave()]);
+      };
+    }, [flushContentSave, flushThemeSave]),
   );
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    Promise.all([loadSiteReviews(user.id), loadReviewsSettings(user.id)])
+      .then(([reviews, settings]) => {
+        if (!cancelled) {
+          setSiteReviews(reviews);
+          setReviewsSettings(settings);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const scrollToDomainField = useCallback(() => {
     requestAnimationFrame(() => {
@@ -395,7 +427,7 @@ export default function SiteEditorScreen({ navigation }: Props) {
     setPublishStep('publishing');
     setPublishError(null);
     try {
-      await Promise.all([saveContentNow(content), saveThemeNow()]);
+      await Promise.all([flushContentSave(), flushThemeSave()]);
       await publishSite(slug);
       setPublishStep('success');
     } catch (err) {
@@ -460,6 +492,24 @@ export default function SiteEditorScreen({ navigation }: Props) {
     [catalogServices, getCoverUrl, getPrice, getStyleMeta],
   );
 
+  const previewLayoutKey = useMemo(
+    () =>
+      [
+        normalizeHeroLayout(theme.heroLayout),
+        theme.heroPhotoEnabled === false ? '0' : '1',
+        theme.heroCoverBlur ? '1' : '0',
+        theme.heroStackImageFormat ?? 'wide',
+        String(stackImageUrls.length),
+      ].join('-'),
+    [
+      theme.heroLayout,
+      theme.heroPhotoEnabled,
+      theme.heroCoverBlur,
+      theme.heroStackImageFormat,
+      stackImageUrls.length,
+    ],
+  );
+
   const previewTheme = useMemo<SitePreviewTheme>(
     () =>
       buildSitePreviewTheme(
@@ -470,7 +520,10 @@ export default function SiteEditorScreen({ navigation }: Props) {
           heroStackImageUrls: stackImageUrls,
           portfolioMedia: portfolioMediaUrls,
         },
-        { zoomedOut: previewMode === 'split' },
+        {
+          zoomedOut: previewMode === 'split',
+          coverPreviewOnBookPage: true,
+        },
       ),
     [heroImageUrl, logoImageUrl, portfolioMediaUrls, previewMode, stackImageUrls, theme],
   );
@@ -479,14 +532,22 @@ export default function SiteEditorScreen({ navigation }: Props) {
     () => ({
       ...previewTheme,
       zoomedOut: false,
+      embeddedPreview: false,
+      coverPreviewOnBookPage: true,
     }),
     [previewTheme],
   );
 
-  const isSavingAny = isSaving || isSavingStyles || isSavingTheme;
+  const isSavingAny = isSaving || isSavingStyles || isSavingTheme || hasContentPending || hasThemePending;
+
+  const flushAllPendingSaves = useCallback(async () => {
+    await Promise.all([flushContentSave(), flushThemeSave()]);
+    return true;
+  }, [flushContentSave, flushThemeSave]);
 
   const { unsavedChangesDialog } = useUnsavedChangesGuard({
     hasUnsavedChanges: isSavingAny,
+    onSave: flushAllPendingSaves,
     message: 'Your site is still saving. Wait a moment or leave without finishing?',
     title: 'Still saving',
   });
@@ -606,10 +667,12 @@ export default function SiteEditorScreen({ navigation }: Props) {
       {previewMode === 'split' ? (
         <View style={[styles.previewWrap, { height: splitPreviewHeight }]}>
           <SitePreviewWebView
-            key={previewKey}
+            key={`${previewKey}-${previewLayoutKey}`}
             content={content}
             styles={previewStyles}
             theme={previewTheme}
+            reviews={siteReviews}
+            reviewsEnabled={reviewsSettings.enabled}
             compact
           />
         </View>
@@ -626,7 +689,8 @@ export default function SiteEditorScreen({ navigation }: Props) {
             ['style', 'Style', 'color-palette-outline'],
             ['photos', 'Photos', 'images-outline'],
             ['content', 'Content', 'create-outline'],
-            ['location', 'Location', 'location-outline'],
+            ['booking', 'Booking', 'calendar-outline'],
+            ['order', 'Order', 'reorder-three-outline'],
             ['publish', 'Domain', 'globe-outline'],
           ] as const).map(([key, label, icon]) => (
             <Pressable
@@ -644,6 +708,31 @@ export default function SiteEditorScreen({ navigation }: Props) {
           ))}
         </View>
 
+        {tab === 'order' ? (
+          <ScrollView
+            style={styles.formScroll}
+            contentContainerStyle={styles.orderScrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Animated.View style={{ opacity: tabAnim }}>
+              <SiteSectionOrderEditor
+                order={resolveMainSectionOrder(content)}
+                hiddenSections={content.hiddenSections ?? []}
+                reviewsEnabled={reviewsSettings.enabled}
+                reviewCount={siteReviews.length}
+                onOrderChange={(mainSectionOrder) => {
+                  const portfolioPlacement = portfolioPlacementFromOrder(mainSectionOrder);
+                  const next = { ...content, mainSectionOrder, portfolioPlacement };
+                  updateContent({ mainSectionOrder, portfolioPlacement });
+                  void saveContentNow(next);
+                }}
+              />
+            </Animated.View>
+          </ScrollView>
+        ) : tab === 'booking' ? (
+          <SiteBookingEditor />
+        ) : (
         <ScrollView
           ref={scrollRef}
           style={styles.formScroll}
@@ -666,259 +755,139 @@ export default function SiteEditorScreen({ navigation }: Props) {
         {/* ── Content tab: bio, policy, menu ── */}
         {tab === 'content' ? (
           <>
-            {theme.heroLayout === 'split' || theme.heroLayout === 'cover' ? (
-              <>
-                <Text style={styles.groupTitle}>About & policy</Text>
-                <Text style={styles.helper}>
-                  {theme.heroLayout === 'cover'
-                    ? 'Shown on your /book page after the splash screen.'
-                    : 'Shown beside your header photo on the site.'}
-                </Text>
-                <Pressable style={styles.navRow} onPress={() => navigation.navigate('HeroAbout')}>
-                  <View style={styles.navRowIcon}>
-                    <Ionicons name="person-circle-outline" size={20} color={colors.accentPink} />
-                  </View>
-                  <View style={styles.navRowBody}>
-                    <Text style={styles.navRowLabel}>About Me</Text>
-                    <Text style={styles.navRowValue} numberOfLines={1}>
-                      {content.heroDescription ? content.heroDescription.slice(0, 48) + (content.heroDescription.length > 48 ? '…' : '') : 'Not set'}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                </Pressable>
-                <Pressable
-                  style={styles.toggleRow}
-                  onPress={() => toggleSection('aboutMe')}
+            <>
+                <ContentSection
+                  title="About Me"
+                  hint={aboutMeHint(theme.heroLayout)}
                 >
-                  <View style={styles.toggleRowBody}>
-                    <Text style={styles.toggleRowLabel}>Show About Me on site</Text>
-                    <Text style={styles.toggleRowSub}>Uncheck to hide this section from your live site</Text>
-                  </View>
-                  <View style={[styles.toggleBox, isSectionVisible('aboutMe') && styles.toggleBoxOn]}>
-                    {isSectionVisible('aboutMe') && <Ionicons name="checkmark" size={14} color="#fff" />}
-                  </View>
-                </Pressable>
-                <Pressable style={styles.navRow} onPress={() => navigation.navigate('HeroPolicy')}>
-                  <View style={styles.navRowIcon}>
-                    <Ionicons name="document-text-outline" size={20} color={colors.accentPink} />
-                  </View>
-                  <View style={styles.navRowBody}>
-                    <Text style={styles.navRowLabel}>Booking policy</Text>
-                    <Text style={styles.navRowValue} numberOfLines={1}>
-                      {content.bookingPolicy ? content.bookingPolicy.split('\n')[0].slice(0, 48) + '…' : 'Not set'}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                </Pressable>
-                <Pressable
-                  style={styles.toggleRow}
-                  onPress={() => toggleSection('policies')}
-                >
-                  <View style={styles.toggleRowBody}>
-                    <Text style={styles.toggleRowLabel}>Show policies on site</Text>
-                    <Text style={styles.toggleRowSub}>Uncheck to hide this section from your live site</Text>
-                  </View>
-                  <View style={[styles.toggleBox, isSectionVisible('policies') && styles.toggleBoxOn]}>
-                    {isSectionVisible('policies') && <Ionicons name="checkmark" size={14} color="#fff" />}
-                  </View>
-                </Pressable>
-              </>
-            ) : null}
+                  <ContentItemRow
+                    label="Bio"
+                    value={
+                      content.heroDescription
+                        ? content.heroDescription.slice(0, 48) +
+                          (content.heroDescription.length > 48 ? '…' : '')
+                        : 'Not set'
+                    }
+                    visible={isSectionVisible('aboutMe')}
+                    onPress={() => navigation.navigate('HeroAbout')}
+                    onToggleVisible={() => toggleSection('aboutMe')}
+                  />
+                </ContentSection>
 
-            <Text style={styles.groupTitle}>Previous work</Text>
-            <Pressable
-              style={styles.toggleRow}
-              onPress={() => toggleSection('portfolio')}
-            >
-              <View style={styles.toggleRowBody}>
-                <Text style={styles.toggleRowLabel}>Show previous work on site</Text>
-                <Text style={styles.toggleRowSub}>Photos and videos from past appointments</Text>
-              </View>
-              <View style={[styles.toggleBox, isSectionVisible('portfolio') && styles.toggleBoxOn]}>
-                {isSectionVisible('portfolio') && <Ionicons name="checkmark" size={14} color="#fff" />}
-              </View>
-            </Pressable>
-            <Field
-              label="Section title"
-              value={content.reelsTitle}
-              onChangeText={(reelsTitle) => updateContent({ reelsTitle })}
-              placeholder="Our work"
-            />
-            <Field
-              label="Section blurb"
-              value={content.reelsBlurb}
-              onChangeText={(reelsBlurb) => updateContent({ reelsBlurb })}
-              multiline
-              placeholder="Browse our latest styles and transformations."
-            />
-            <SitePortfolioEditor
-              placement={content.portfolioPlacement}
-              items={portfolioMediaUrls}
-              busy={isSavingTheme}
-              onPlacementChange={(portfolioPlacement) => updateContent({ portfolioPlacement })}
-              onAddMedia={uploadPortfolioMedia}
-              onRemoveMedia={removePortfolioItem}
-            />
+                <ContentSection title="Policies" hint={policiesHint(theme.heroLayout)}>
+                  <ContentItemRow
+                    label="Booking policy"
+                    value={
+                      content.bookingPolicy
+                        ? content.bookingPolicy.split('\n')[0].slice(0, 48) + '…'
+                        : 'Not set'
+                    }
+                    visible={isSectionVisible('policies')}
+                    onPress={() => navigation.navigate('HeroPolicy')}
+                    onToggleVisible={() => toggleSection('policies')}
+                  />
+                </ContentSection>
+            </>
 
-            <Text style={styles.groupTitle}>Services menu</Text>
-            <Text style={styles.helper}>Edit the heading and blurb shown above your services list.</Text>
-            <Field
-              label="Section title"
-              value={content.menuTitle}
-              onChangeText={(menuTitle) => updateContent({ menuTitle })}
-              placeholder="Menu"
-            />
-            <Field
-              label="Section blurb"
-              value={content.menuBlurb}
-              onChangeText={(menuBlurb) => updateContent({ menuBlurb })}
-              multiline
-              placeholder="Browse services & prices"
-            />
+            <ContentSection title="Services menu">
+              <SectionHeadingFields
+                title={content.menuTitle}
+                blurb={content.menuBlurb}
+                onTitleChange={(menuTitle) => updateContent({ menuTitle })}
+                onBlurbChange={(menuBlurb) => updateContent({ menuBlurb })}
+                titlePlaceholder="Menu"
+                blurbPlaceholder="Browse services & prices"
+              />
+              <Text style={styles.contentFootnote}>
+                Edit services and prices in Profile → Style menu.
+              </Text>
+            </ContentSection>
 
-            <Text style={styles.groupTitle}>FAQ</Text>
-            <Text style={styles.helper}>Shown below your services menu, above visit & contact.</Text>
-            <Pressable
-              style={styles.toggleRow}
-              onPress={() => toggleSection('faq')}
-            >
-              <View style={styles.toggleRowBody}>
-                <Text style={styles.toggleRowLabel}>Show FAQ on site</Text>
-                <Text style={styles.toggleRowSub}>Common questions and answers for clients</Text>
-              </View>
-              <View style={[styles.toggleBox, isSectionVisible('faq') && styles.toggleBoxOn]}>
-                {isSectionVisible('faq') && <Ionicons name="checkmark" size={14} color="#fff" />}
-              </View>
-            </Pressable>
-            <Field
-              label="Section title"
-              value={content.faqTitle}
-              onChangeText={(faqTitle) => updateContent({ faqTitle })}
-              placeholder="FAQ"
-            />
-            <Field
-              label="Section blurb"
-              value={content.faqBlurb}
-              onChangeText={(faqBlurb) => updateContent({ faqBlurb })}
-              multiline
-              placeholder="Common questions about booking and our services."
-            />
-            <Pressable style={styles.navRow} onPress={() => navigation.navigate('HeroFaq')}>
-              <View style={styles.navRowIcon}>
-                <Ionicons name="help-circle-outline" size={20} color={colors.accentPink} />
-              </View>
-              <View style={styles.navRowBody}>
-                <Text style={styles.navRowLabel}>Questions & answers</Text>
-                <Text style={styles.navRowValue} numberOfLines={1}>
-                  {content.faqItems.length > 0
+            <ContentSection title="Previous work">
+              <SectionHeadingFields
+                title={content.reelsTitle}
+                blurb={content.reelsBlurb}
+                onTitleChange={(reelsTitle) => updateContent({ reelsTitle })}
+                onBlurbChange={(reelsBlurb) => updateContent({ reelsBlurb })}
+                titlePlaceholder="Our work"
+                blurbPlaceholder="Browse our latest styles and transformations."
+              />
+              <ContentShowToggle
+                label="Show on site"
+                visible={isSectionVisible('portfolio')}
+                onToggle={() => toggleSection('portfolio')}
+              />
+              <SitePortfolioEditor
+                items={portfolioMediaUrls}
+                busy={isSavingTheme}
+                onAddMedia={uploadPortfolioMedia}
+                onRemoveMedia={removePortfolioItem}
+              />
+            </ContentSection>
+
+            <ContentSection title="FAQ">
+              <SectionHeadingFields
+                title={content.faqTitle}
+                blurb={content.faqBlurb}
+                onTitleChange={(faqTitle) => updateContent({ faqTitle })}
+                onBlurbChange={(faqBlurb) => updateContent({ faqBlurb })}
+                titlePlaceholder="FAQ"
+                blurbPlaceholder="Common questions about booking and our services."
+              />
+              <ContentShowToggle
+                label="Show on site"
+                visible={isSectionVisible('faq')}
+                onToggle={() => toggleSection('faq')}
+              />
+              <ContentNavRow
+                label="Questions & answers"
+                value={
+                  content.faqItems.length > 0
                     ? `${content.faqItems.length} question${content.faqItems.length === 1 ? '' : 's'}`
-                    : 'Not set'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-            </Pressable>
-
-            <Text style={styles.groupTitle}>Book Now button</Text>
-            <Pressable
-              style={styles.toggleRow}
-              onPress={() => updateTheme({ hideBookNowButton: !theme.hideBookNowButton })}
-            >
-              <View style={styles.toggleRowBody}>
-                <Text style={styles.toggleRowLabel}>Hide "Book Now" button</Text>
-                <Text style={styles.toggleRowSub}>
-                  {theme.heroLayout === 'cover'
-                    ? 'Hides the top-right nav button only — your splash page keeps its centered Book Now'
-                    : 'Remove the button from the top-right of your site'}
-                </Text>
-              </View>
-              <View style={[styles.toggleBox, theme.hideBookNowButton && styles.toggleBoxOn]}>
-                {theme.hideBookNowButton && <Ionicons name="checkmark" size={14} color="#fff" />}
-              </View>
-            </Pressable>
-          </>
-        ) : null}
-
-        {/* ── Location tab: address, contact, social, map ── */}
-        {tab === 'location' ? (
-          <>
-            {/* Address */}
-            <View style={styles.locationSection}>
-              <View style={styles.locationSectionHeader}>
-                <Ionicons name="home-outline" size={16} color={colors.accentPink} />
-                <Text style={styles.locationSectionTitle}>Address</Text>
-                <Pressable hitSlop={10} onPress={() => toggleLocationPart('address')} style={styles.locationToggle}>
-                  <Ionicons
-                    name={isLocationPartVisible('address') ? 'eye-outline' : 'eye-off-outline'}
-                    size={18}
-                    color={isLocationPartVisible('address') ? colors.accentPink : colors.textMuted}
-                  />
-                </Pressable>
-              </View>
-              <Field label="Address line 1" value={content.addressLine1} onChangeText={(addressLine1) => updateContent({ addressLine1 })} />
-              <Field label="Address line 2" value={content.addressLine2} onChangeText={(addressLine2) => updateContent({ addressLine2 })} />
-              <Field label="City" value={content.city} onChangeText={(city) => updateContent({ city })} />
-              <Field label="State" value={content.state} onChangeText={(state) => updateContent({ state })} />
-              <Field label="ZIP" value={content.zip} onChangeText={(zip) => updateContent({ zip })} />
-              <Field label="Timezone" value={content.timezone} onChangeText={(timezone) => updateContent({ timezone })} placeholder="America/New_York" />
-            </View>
-
-            {/* Map */}
-            <View style={styles.locationSection}>
-              <View style={styles.locationSectionHeader}>
-                <Ionicons name="map-outline" size={16} color={colors.accentPink} />
-                <Text style={styles.locationSectionTitle}>Map</Text>
-                <Pressable hitSlop={10} onPress={() => toggleLocationPart('map')} style={styles.locationToggle}>
-                  <Ionicons
-                    name={isLocationPartVisible('map') ? 'eye-outline' : 'eye-off-outline'}
-                    size={18}
-                    color={isLocationPartVisible('map') ? colors.accentPink : colors.textMuted}
-                  />
-                </Pressable>
-              </View>
-              <Field
-                label="Google Maps embed URL"
-                value={content.mapEmbedUrl}
-                onChangeText={(mapEmbedUrl) => updateContent({ mapEmbedUrl })}
-                placeholder="Paste your Google Maps embed link"
+                    : 'Not set'
+                }
+                onPress={() => navigation.navigate('HeroFaq')}
               />
-            </View>
+            </ContentSection>
 
-            {/* Contact */}
-            <View style={styles.locationSection}>
-              <View style={styles.locationSectionHeader}>
-                <Ionicons name="call-outline" size={16} color={colors.accentPink} />
-                <Text style={styles.locationSectionTitle}>Contact</Text>
-                <Pressable hitSlop={10} onPress={() => toggleLocationPart('contact')} style={styles.locationToggle}>
-                  <Ionicons
-                    name={isLocationPartVisible('contact') ? 'eye-outline' : 'eye-off-outline'}
-                    size={18}
-                    color={isLocationPartVisible('contact') ? colors.accentPink : colors.textMuted}
-                  />
-                </Pressable>
-              </View>
-              <Field label="Phone (display)" value={content.phoneDisplay} onChangeText={(phoneDisplay) => updateContent({ phoneDisplay })} />
-              <Field label="Phone (tel link)" value={content.phoneTel} onChangeText={(phoneTel) => updateContent({ phoneTel })} />
-              <Field label="Email" value={content.email} onChangeText={(email) => updateContent({ email })} />
-            </View>
-
-            {/* Social */}
-            <View style={styles.locationSection}>
-              <View style={styles.locationSectionHeader}>
-                <Ionicons name="logo-instagram" size={16} color={colors.accentPink} />
-                <Text style={styles.locationSectionTitle}>Social</Text>
-                <Pressable hitSlop={10} onPress={() => toggleLocationPart('social')} style={styles.locationToggle}>
-                  <Ionicons
-                    name={isLocationPartVisible('social') ? 'eye-outline' : 'eye-off-outline'}
-                    size={18}
-                    color={isLocationPartVisible('social') ? colors.accentPink : colors.textMuted}
-                  />
-                </Pressable>
-              </View>
-              <InstagramField
-                value={content.instagramHandle}
-                onChangeText={(instagramHandle) => updateContent({ instagramHandle })}
+            <ContentSection title="Visit & contact">
+              <SectionHeadingFields
+                title={content.visitTitle}
+                blurb={content.visitBody}
+                onTitleChange={(visitTitle) => updateContent({ visitTitle })}
+                onBlurbChange={(visitBody) => updateContent({ visitBody })}
+                titlePlaceholder="Visit & connect"
+                blurbPlaceholder="Share your studio address or how clients can find you."
               />
-            </View>
+              <ContentShowToggle
+                label="Show on site"
+                visible={isSectionVisible('visit')}
+                onToggle={() => toggleSection('visit')}
+              />
+              {LOCATION_PARTS.map((part) => (
+                <ContentItemRow
+                  key={part.id}
+                  label={part.label}
+                  value={visitPartPreview(part.id, content)}
+                  visible={isLocationPartVisible(part.id)}
+                  onPress={() => navigation.navigate('HeroVisitPart', { part: part.id })}
+                  onToggleVisible={() => toggleLocationPart(part.id)}
+                />
+              ))}
+            </ContentSection>
+
+            <ContentSection title="Book Now button">
+              <ContentShowToggle
+                label="Show Book Now button"
+                visible={!theme.hideBookNowButton}
+                onToggle={() => updateTheme({ hideBookNowButton: !theme.hideBookNowButton })}
+              />
+              <Text style={styles.contentFootnote}>
+                {theme.heroLayout === 'cover'
+                  ? 'Hides the top-right nav button only — your splash page keeps its centered Book Now.'
+                  : 'Controls the button in the top-right of your site.'}
+              </Text>
+            </ContentSection>
           </>
         ) : null}
 
@@ -932,7 +901,15 @@ export default function SiteEditorScreen({ navigation }: Props) {
                   <Text style={styles.publishLiveText}>Live</Text>
                 </View>
                 <Text style={styles.publishUrl} numberOfLines={1}>{sitePublish.publicUrl}</Text>
-                <Pressable onPress={() => openLiveSiteUrl(sitePublish)} hitSlop={8}>
+                <Pressable
+                  onPress={() => {
+                    void (async () => {
+                      await Promise.all([flushContentSave(), flushThemeSave()]);
+                      await openLiveSiteUrl(sitePublish);
+                    })();
+                  }}
+                  hitSlop={8}
+                >
                   <Ionicons name="open-outline" size={16} color={colors.accentPink} />
                 </Pressable>
               </View>
@@ -1003,6 +980,7 @@ export default function SiteEditorScreen({ navigation }: Props) {
         ) : null}
         </Animated.View>
         </ScrollView>
+        )}
       </KeyboardAvoidingView>
 
       {/* Fullscreen preview modal */}
@@ -1026,10 +1004,12 @@ export default function SiteEditorScreen({ navigation }: Props) {
           </View>
           <View style={styles.fullscreenWebView}>
             <SitePreviewWebView
-              key={previewKey}
+              key={`${previewKey}-${previewLayoutKey}-full`}
               content={content}
               styles={previewStyles}
               theme={fullscreenTheme}
+              reviews={siteReviews}
+              reviewsEnabled={reviewsSettings.enabled}
             />
           </View>
         </View>
@@ -1208,6 +1188,11 @@ const BASE_STYLES = {
     paddingHorizontal: 16,
     paddingBottom: 120,
   },
+  orderScrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    flexGrow: 1,
+  },
   groupTitle: {
     color: colors.textMuted,
     fontSize: 11,
@@ -1217,39 +1202,101 @@ const BASE_STYLES = {
     marginTop: 10,
     marginBottom: 10,
   },
+  contentSection: {
+    marginBottom: 28,
+  },
+  contentSectionTitle: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  contentNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
+    gap: 8,
+  },
+  contentShowToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  contentShowToggleLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  contentItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
+  },
+  contentItemRowHidden: {
+    opacity: 0.65,
+  },
+  contentItemTap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingRight: 8,
+    gap: 8,
+  },
+  contentItemToggle: {
+    paddingVertical: 12,
+    paddingLeft: 4,
+  },
+  contentFootnote: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
+  },
   helper: {
     color: colors.textMuted,
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 12,
   },
-  field: {
-    marginBottom: 12,
+  sectionHeadingBlock: {
+    marginBottom: 14,
   },
-  toggleRow: {
+  sectionHeadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
   },
-  toggleRowBody: {
+  sectionHeadingTitle: {
     flex: 1,
-    gap: 2,
-  },
-  toggleRowLabel: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
+    paddingVertical: 10,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
   },
-  toggleRowSub: {
+  sectionHeadingBlurb: {
+    flex: 1,
     color: colors.textMuted,
-    fontSize: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
+    minHeight: 36,
+    textAlignVertical: 'top',
+  },
+  sectionHeadingEditBtn: {
+    paddingLeft: 8,
+    paddingVertical: 8,
   },
   toggleBox: {
     width: 22,
@@ -1284,25 +1331,6 @@ const BASE_STYLES = {
   locationToggle: {
     padding: 2,
   },
-  fieldLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: colors.text,
-    fontSize: 15,
-    backgroundColor: colors.card,
-  },
-  inputMultiline: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
   igRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1333,65 +1361,6 @@ const BASE_STYLES = {
     color: colors.text,
     fontSize: 15,
     backgroundColor: 'transparent',
-  },
-  // Section cards
-  sectionCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    marginBottom: 8,
-    overflow: 'hidden',
-  },
-  sectionCardHidden: {
-    opacity: 0.5,
-  },
-  sectionCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-  },
-  sectionCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  sectionCardTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  sectionCardTitleHidden: {
-    color: colors.textMuted,
-  },
-  sectionCardRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  visibilityToggle: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  visibilityToggleOn: {
-    backgroundColor: colors.accentPinkMuted,
-    borderColor: colors.accentPinkBorder,
-  },
-  sectionCardBody: {
-    paddingHorizontal: 14,
-    paddingBottom: 14,
-    borderTopWidth: 1,
-    borderTopColor: colors.cardBorder,
-    paddingTop: 12,
-    gap: 0,
   },
   // Fullscreen modal
   fullscreenContainer: {
@@ -1561,26 +1530,6 @@ const BASE_STYLES = {
     fontSize: 13,
     fontWeight: '500',
   },
-  navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 12,
-    marginBottom: 10,
-  },
-  navRowIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: colors.accentPinkMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   navRowBody: {
     flex: 1,
     gap: 2,
@@ -1589,6 +1538,9 @@ const BASE_STYLES = {
     color: colors.text,
     fontSize: 14,
     fontWeight: '600',
+  },
+  navRowLabelHidden: {
+    color: colors.textMuted,
   },
   navRowValue: {
     color: colors.textMuted,

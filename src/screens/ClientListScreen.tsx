@@ -13,8 +13,9 @@ import { useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ClientContactSheet from '../components/clients/ClientContactSheet';
+import ClientAvatar from '../components/clients/ClientAvatar';
 import ScreenGradient from '../components/ScreenGradient';
-import { Client } from '../data/clients';
+import { Client, clientHasValidEmail, getClientEmails, getClientPhones } from '../data/clients';
 import { useOnboarding } from '../context/OnboardingContext';
 import { useSiteData } from '../context/SiteDataContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
@@ -24,23 +25,18 @@ import { maskMoney } from '../utils/money';
 
 type Props = NativeStackScreenProps<ClientStackParamList, 'ClientList'>;
 
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
-const AVATAR_COLORS = ['#f0c4d8', '#f5b8ce', '#e8a8bf', '#f2c8d8', '#ebb5c8', '#f8cfe0'];
-
-function avatarColor(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
 function hasValidEmail(client: Client): boolean {
-  const email = client.email.trim();
-  return Boolean(email && email !== '—' && email.includes('@'));
+  return clientHasValidEmail(client);
+}
+
+function contactSummary(client: Client): string | null {
+  const emails = getClientEmails(client);
+  const phones = getClientPhones(client);
+  if (emails.length > 1) return `${emails.length} emails`;
+  if (phones.length > 1) return `${phones.length} phone numbers`;
+  if (emails[0]) return emails[0];
+  if (phones[0]) return phones[0];
+  return null;
 }
 
 function ClientRow({
@@ -64,8 +60,8 @@ function ClientRow({
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
-  const bg = avatarColor(client.name);
   const canEmail = hasValidEmail(client);
+  const summary = contactSummary(client);
 
   return (
     <Pressable
@@ -91,14 +87,18 @@ function ClientRow({
         </Pressable>
       ) : null}
 
-      <View style={[styles.avatar, { backgroundColor: bg }]}>
-        <Text style={styles.avatarText}>{initials(client.name)}</Text>
-      </View>
+      <ClientAvatar
+        name={client.name}
+        photoHairPath={client.photoHairPath}
+        storageBookingId={client.photoStorageBookingId}
+        size={42}
+      />
 
       <View style={styles.rowBody}>
         <Text style={styles.clientName} numberOfLines={1}>{client.name}</Text>
         <Text style={styles.clientMeta} numberOfLines={1}>
           {client.totalBookings} booking{client.totalBookings === 1 ? '' : 's'}
+          {summary ? ` · ${summary}` : ''}
           {selectionMode && !canEmail ? ' · No email on file' : ''}
         </Text>
       </View>
@@ -124,9 +124,14 @@ export default function ClientListScreen({ navigation }: Props) {
   const [contactOpen, setContactOpen] = useState(false);
 
   const filtered = query.trim()
-    ? clients.filter((c) =>
-        c.name.toLowerCase().includes(query.toLowerCase()),
-      )
+    ? clients.filter((c) => {
+        const q = query.toLowerCase();
+        return (
+          c.name.toLowerCase().includes(q) ||
+          getClientEmails(c).some((email) => email.toLowerCase().includes(q)) ||
+          getClientPhones(c).some((phone) => phone.replace(/\D/g, '').includes(q.replace(/\D/g, '')))
+        );
+      })
     : clients;
 
   const selectedClients = useMemo(

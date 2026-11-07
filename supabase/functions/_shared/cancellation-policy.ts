@@ -9,12 +9,12 @@ export type CancellationPolicySettings = {
 };
 
 export const DEFAULT_CANCELLATION_POLICY: CancellationPolicySettings = {
-  preset: '24_hours',
+  preset: 'no_refunds',
   cancelNoticeHours: 0,
-  fullRefundNoticeHours: 24,
-  refundAppliesTo: 'both',
+  fullRefundNoticeHours: 0,
+  refundAppliesTo: 'none',
   policySummary:
-    'You may cancel online anytime before your appointment. Online deposits and full payments are fully refunded when you cancel at least 24 hours before your appointment. Cancellations after that deadline are non-refundable.',
+    'You may cancel online anytime before your appointment. All online payments, including deposits, are non-refundable.',
 };
 
 export function normalizeCancellationPolicy(value: unknown): CancellationPolicySettings {
@@ -84,6 +84,7 @@ export function evaluateCancellationPolicy(
   startsAtIso: string | null | undefined,
   bookingStatus?: string | null,
   booking?: Record<string, unknown> | null,
+  options?: { allowPastCancellation?: boolean },
 ): {
   hoursUntilAppointment: number | null;
   canCancel: boolean;
@@ -112,7 +113,7 @@ export function evaluateCancellationPolicy(
   }
 
   const hoursLeft = hoursUntilAppointment(startsAtIso);
-  if (hoursLeft !== null && hoursLeft <= 0) {
+  if (hoursLeft !== null && hoursLeft <= 0 && !options?.allowPastCancellation) {
     return {
       hoursUntilAppointment: hoursLeft,
       canCancel: false,
@@ -131,7 +132,9 @@ export function evaluateCancellationPolicy(
   const hasPaidOnline = paidAmountCents(booking ?? {}) > 0;
 
   const canCancel = true;
-  const qualifiesForRefund = withinRefundWindow && scopeMatches && hasPaidOnline;
+  const pastAppointment = hoursLeft !== null && hoursLeft <= 0;
+  const qualifiesForRefund =
+    !pastAppointment && withinRefundWindow && scopeMatches && hasPaidOnline;
 
   const scopeLabel =
     policy.refundAppliesTo === 'none'
@@ -144,7 +147,9 @@ export function evaluateCancellationPolicy(
 
   const refundBlockedReason = qualifiesForRefund
     ? null
-    : !hasPaidOnline
+    : pastAppointment
+      ? 'Past appointments are not refundable.'
+      : !hasPaidOnline
       ? 'No online payment was collected for this booking.'
       : !scopeMatches
         ? policy.refundAppliesTo === 'full' && paymentType === 'deposit'

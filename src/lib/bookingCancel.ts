@@ -1,3 +1,4 @@
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 export type BookingCancelResult = {
@@ -6,6 +7,20 @@ export type BookingCancelResult = {
   refundAmountCents?: number;
   error?: string;
 };
+
+async function readFunctionError(error: unknown): Promise<string | null> {
+  if (!(error instanceof FunctionsHttpError)) return null;
+  try {
+    const body = await error.context.json();
+    if (body && typeof body === 'object') {
+      if ('error' in body && body.error) return String(body.error);
+      if ('message' in body && body.message) return String(body.message);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
 
 export async function cancelBookingViaEdge(
   bookingId: string,
@@ -32,7 +47,8 @@ export async function cancelBookingViaEdge(
   >('booking-cancel', { body });
 
   if (error) {
-    return { ok: false, error: error.message || 'Cancellation failed' };
+    const detail = await readFunctionError(error);
+    return { ok: false, error: detail || error.message || 'Cancellation failed' };
   }
   if (!data?.ok) {
     return { ok: false, error: data?.error || 'Cancellation failed' };

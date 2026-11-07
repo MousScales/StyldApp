@@ -57,6 +57,75 @@ Suggested copy:
 
 ---
 
+## Main page section order
+
+Stylists reorder home/book page sections in the app **Site editor → Order** tab (drag handles). Order is saved on `site_content.mainSectionOrder`.
+
+### Data sources (`styld_site_records` / `site_content`)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `mainSectionOrder` | `('aboutMe' \| 'policies' \| 'reviews' \| 'portfolio' \| 'menu' \| 'faq' \| 'visit')[]` | Top-to-bottom order on home/book pages. Default: `['aboutMe','policies','reviews','portfolio','menu','faq','visit']` |
+| `portfolioPlacement` | `'above_menu' \| 'below_menu'` | **Legacy** — still written when order changes (portfolio before/after menu). Prefer `mainSectionOrder` for new work. |
+| `hiddenSections` | string[] | Hidden sections stay in order but do not render |
+
+### Reorderable sections
+
+| ID | Site section |
+|----|----------------|
+| `aboutMe` | About Me (`#profile-about-block`) |
+| `policies` | Booking policies (`#profile-policy-block`) |
+| `reviews` | Client reviews marquee (`#profile-reviews-section`) |
+| `portfolio` | Previous work carousel (`#profile-portfolio-section`) |
+| `menu` | Services menu (`#profile-menu-section`) |
+| `faq` | FAQ accordion (`#profile-faq-section`) |
+| `visit` | Visit & contact (`#profile-location-section`) |
+
+Hero blocks (About Me, policies) and nav pages (certifications, products, portfolio catalog) are **not** separate pages — About Me and policies are in this list.
+
+### About Me & Policies (always separate)
+
+**About Me** (`aboutMe`, `heroDescription`) and **Policies** (`policies`, `bookingPolicy`) are always **separate sections** in `mainSectionOrder`. They never sit beside the header photo.
+
+After populate, call **`reorderMainSections(content, theme)`** — moves both blocks into `<main>` in order, each wrapped in `.profile-ordered-block-section`.
+
+Legacy `heroLayout: 'split'` and `'image-below'` are treated as **`banner`** (portrait photo on top, all sections below).
+
+### Header layouts (`site_theme.heroLayout`)
+
+| Layout | Header | About / Policies |
+|--------|--------|------------------|
+| `banner` | Portrait photo on top (photo-only hero) | `<main>` per order |
+| `stack` | Collage banner | `<main>` per order |
+| `cover` | Splash on `/`; book page has no hero photo | `<main>` on `/book` per order |
+| `minimal` | No hero | `<main>` per order |
+
+### JS (`profile-content.js`)
+
+- `normalizeHeroLayout()` — maps legacy split/image-below → banner
+- `reorderMainSections(content, theme)` — all sections in `<main>`; hero holds photo only (banner/stack/cover)
+
+**Do not** place About Me or Policies in `.profile-hero .profile-info` or group them in the Order UI.
+
+### Removed
+
+- Split layout (photo beside About Me)
+- `heroAboutBesidePhoto`
+- `#profile-header-main-section` / hero sidebar placement
+
+**Do not** use `insertBefore` in `populatePortfolio()` for menu/portfolio placement — ordering is centralized in `reorderMainSections`.
+
+### App preview (`sitePreviewHtml.ts`)
+
+`orderMainSections()` concatenates section HTML using `resolveMainSectionOrder(content)`.
+
+### App editor
+
+- **Site editor → Order tab** — drag to reorder; saves `mainSectionOrder` + synced `portfolioPlacement`
+- Visibility toggles remain on **Content** and **Location** tabs
+
+---
+
 ## Previous work (portfolio) section
 
 Stylists upload photos/videos in the app **Site editor → Content → Previous work**. On the live site this is a **horizontal carousel preview** on the home/book pages, plus a **full catalog page** at `/portfolio`.
@@ -67,7 +136,8 @@ Stylists upload photos/videos in the app **Site editor → Content → Previous 
 |-------------|-------|------|-------|
 | `site_content` | `reelsTitle` | string | Section heading (default: "Our work") |
 | `site_content` | `reelsBlurb` | string | Optional subtitle |
-| `site_content` | `portfolioPlacement` | `'above_menu' \| 'below_menu'` | Default `above_menu` |
+| `site_content` | `mainSectionOrder` | string[] | See **Main page section order** — includes `'portfolio'` |
+| `site_content` | `portfolioPlacement` | `'above_menu' \| 'below_menu'` | Legacy; derived from order |
 | `site_content` | `hiddenSections` | string[] | Include `'portfolio'` to hide carousel + catalog |
 | `site_theme` | `portfolioItems` | `{ storagePath, mediaType: 'image' \| 'video' }[]` | Up to 24 items |
 
@@ -79,7 +149,7 @@ Add tenant route: `'/portfolio': '/tenant/portfolio.html'`
 
 ### Home / book pages (`tenant/profile.html`, `tenant/book.html`)
 
-Carousel section (JS reorders vs menu based on `portfolioPlacement`):
+Carousel section (JS reorders via `reorderMainSections()` — see **Main page section order**):
 
 ```html
 <section class="profile-portfolio-section" id="profile-portfolio-section" data-site-section="portfolio" hidden>
@@ -134,7 +204,7 @@ Videos need mime types + 50MB limit on `style-covers` (migration `20260609120000
 
 ## FAQ section
 
-Stylists add questions and answers in the app **Site editor → Content → FAQ**. On the live site this appears **below the services menu** and **above Visit & contact** (after Previous work when that section is set to below menu).
+Stylists add questions and answers in the app **Site editor → Content → FAQ**. On the live site this appears in the order set on the **Order** tab (default: after menu, before visit).
 
 ### Data sources (Supabase `styld_site_records`)
 
@@ -143,14 +213,12 @@ Stylists add questions and answers in the app **Site editor → Content → FAQ*
 | `site_content` | `faqTitle` | string | Section heading (default: "FAQ") |
 | `site_content` | `faqBlurb` | string | Optional subtitle |
 | `site_content` | `faqItems` | `{ question: string, answer: string }[]` | Both fields required per item to display |
+| `site_content` | `mainSectionOrder` | string[] | Position of `'faq'` among main sections |
 | `site_content` | `hiddenSections` | string[] | Include `'faq'` to hide the section |
 
 ### Page order (home / book)
 
-Static HTML slot is between menu and visit. `populatePortfolio()` may move Previous work above or below menu; FAQ stays after menu (and after portfolio when portfolio is below menu):
-
-- `portfolioPlacement: 'above_menu'` → portfolio → menu → **FAQ** → visit
-- `portfolioPlacement: 'below_menu'` → menu → portfolio → **FAQ** → visit
+Static HTML includes all four main sections inside `<main>`. `reorderMainSections()` moves them to match `mainSectionOrder` (default: portfolio → menu → FAQ → visit).
 
 ### HTML (`tenant/profile.html`, `tenant/book.html`)
 
@@ -291,6 +359,105 @@ Menu/catalog price range when `variants.length > 0`: min/max of **[base price, �
 - `buildBookingStyles()` passes `defaultVariantLabel`, `variants` (extras only), and `base`
 - `getStyleVariantsForStyle()` prepends `{ id: "default", label, price: base }` when extras exist
 - `formatStylePriceRange(base, addons, variants)` includes base in range when extras exist
+
+---
+
+## Travel stylist (`travel_stylist`)
+
+Stylists enable this in the app: **Profile → Form & Payments → Booking → Travel** → **I'm a travel stylist** → configure mode, fee + home base → **Save**.
+
+### Data source
+
+| Setting key | Field | Type | Notes |
+|-------------|-------|------|-------|
+| `travel_stylist` | `value.enabled` | `boolean` | Default `false`. When `true`, booking form shows travel UI. |
+| `travel_stylist` | `value.bookingMode` | `'optional' \| 'primary'` | Default `'optional'`. See modes below. |
+| `travel_stylist` | `value.feeMode` | `'flat' \| 'per_mile'` | Flat = fixed fee; per mile = `perMileRateUsd × driving miles`. |
+| `travel_stylist` | `value.flatFeeUsd` | `number` | Used when `feeMode === 'flat'`. **May be `0`.** |
+| `travel_stylist` | `value.perMileRateUsd` | `number` | Used when `feeMode === 'per_mile'`. **May be `0`** (skips distance lookup for billing). |
+| `travel_stylist` | `value.homeBaseAddress` | `string` | **Required** when enabled. Origin for distance calculation. |
+| `travel_stylist` | `value.homeBaseLat` / `homeBaseLng` | `number \| null` | Optional coords from app autocomplete. |
+| `travel_stylist` | `value.extraTravelMinutes` | `number` | Added to `duration_minutes` on travel bookings. |
+
+Loaded via `styld-tenant-shared.js` → `styld-tenant-booking.js` → `window.__SALON_SITE_BOOKING.travelStylist` → `booking.js` `TRAVEL`.
+
+### Booking modes
+
+| Mode | App label | Booking form behavior |
+|------|-----------|----------------------|
+| `optional` | Travel add-on | Checkbox **"I want the stylist to travel to me"** for non–house-call styles. Client opts in. |
+| `primary` | Travel-only artist | **No travel checkbox.** Every style requires **Your service address** (`#travel-address-field-wrap`) as soon as a style is selected. All bookings are travel. |
+
+Helpers in `booking.js`:
+
+- `isPrimaryTravelArtist()` → `TRAVEL.enabled && homeBaseAddress && TRAVEL.bookingMode === 'primary'`
+- `isTravelBooking()` → primary mode + style selected, OR house-call style, OR optional checkbox checked
+- `usesTravelAddressFields()` → primary mode always uses travel address fields (not house-call address fields)
+
+When `bookingMode === 'primary'`:
+
+1. Hide `#travel-request-wrap` (checkbox block).
+2. Show `#travel-address-field-wrap` whenever a style is selected.
+3. Hide `#house-address-field-wrap` even for `house-*` style ids — use travel address fields instead.
+4. Do **not** require Distance Matrix when `perMileRateUsd === 0`.
+
+### Booking form (`booking.html` + `booking.js`)
+
+When `TRAVEL.enabled` and home base is set:
+
+**Optional mode (`bookingMode !== 'primary'`):**
+
+1. Show checkbox **"I want the stylist to travel to me"** (`#travel-request-toggle`) for non–house-call styles.
+2. When checked, show travel address fields and live **travel fee preview**.
+
+**Primary mode (`bookingMode === 'primary'`):**
+
+1. Skip the checkbox — address fields appear for every style.
+2. Legend stays **Your service address** on `#travel-address-field-wrap`.
+
+**Both modes:**
+
+3. House-call styles (`house-*` ids) in **optional** mode still use house address fields and count as travel when travel stylist is enabled.
+4. Travel fee is added to `estimated_total` when `travelFeeUsd > 0`; preview may say **No travel fee** when fee is `$0`.
+5. Per-mile fee uses Google **Distance Matrix** when `perMileRateUsd > 0`. Requires `googleMapsApiKey` in booking config.
+6. Flat fee (including `$0`) shows immediately without distance lookup.
+
+### Booking row fields (travel)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `is_travel_booking` | `boolean` | `true` when travel checkbox or house-call style with travel enabled |
+| `travel_fee_usd` | `number` | Calculated fee |
+| `travel_distance_miles` | `number \| null` | Set for per-mile mode |
+| `travel_extra_minutes` | `number` | Copy of stylist's buffer setting |
+| `service_address` | `string` | Client address (same format as house calls) |
+
+### Approval rules
+
+Travel bookings **always** require approval, even when `requireBookingApproval` is `false`.
+
+`booking.js` uses `requiresBookingApproval()`:
+
+```js
+function requiresBookingApproval() {
+  if (PAYMENT.requireBookingApproval === true) return true;
+  if (isTravelBooking()) return true;
+  return false;
+}
+```
+
+- `resolveBookingStatus()` must return `pending_approval` for travel bookings.
+- Skip `booking-client-email` on submit when `requiresBookingApproval()` is true.
+- Success redirect must include `pending_approval=1` for travel bookings.
+
+RPC `styld_tenant_mark_booking_paid` also sets `pending_approval` when `data.is_travel_booking === true`.
+
+### Online payments
+
+Include travel fee in server-side charge recompute:
+
+- `subtotalCents` sent to `stripe-booking-pay` = `(rawSubtotal - promoDiscount + travelFee) × 100`
+- Promo applies to service subtotal only, not travel fee.
 
 ---
 

@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import PeriodSelector from '../components/PeriodSelector';
 import BrandLogo from '../components/BrandLogo';
 import MoneyAmountLoader from '../components/MoneyAmountLoader';
+import StripeBalanceSubline from '../components/stripe/StripeBalanceSubline';
 import NotificationsPanel from '../components/NotificationsPanel';
 import ScreenGradient from '../components/ScreenGradient';
 import ServiceImage from '../components/ServiceImage';
@@ -18,7 +19,7 @@ import { getDashboardVibeMessages } from '../data/brandCopy';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { usePushNotifications } from '../context/PushNotificationsContext';
 import { useSiteData } from '../context/SiteDataContext';
-import { fetchStripeConnectStatus, formatUsdFromCents, type StripeConnectSummary } from '../lib/stripeConnect';
+import { fetchStripeConnectStatus, type StripeConnectSummary } from '../lib/stripeConnect';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
 import { getCalendarEventColors } from '../lib/styleEventColors';
 import { colors, fonts } from '../theme';
@@ -50,6 +51,7 @@ function timeAgo(date: Date): string {
 
 function bookingStatusLabel(status: string, depositPaid: boolean): string {
   if (status === 'in_progress') return 'In session';
+  if (status === 'assumed_finished') return 'Assumed finished';
   if (status === 'pending_approval') return 'Pending approval';
   if (status === 'confirmed') return 'Confirmed';
   if (status === 'cancelled' || status === 'canceled') return 'Cancelled';
@@ -61,11 +63,17 @@ function bookingStatusLabel(status: string, depositPaid: boolean): string {
 
 function bookingStatusColor(status: string, depositPaid: boolean, accent: string): string {
   if (status === 'in_progress') return accent;
+  if (status === 'assumed_finished') return '#a16207';
   if (status === 'pending_approval') return '#f59e0b';
   if (status === 'completed') return '#15803d';
   if (status === 'cancelled' || status === 'canceled') return '#dc2626';
   if (depositPaid || status === 'confirmed') return accent;
   return colors.textMuted;
+}
+
+function isCancelledBooking(booking: SiteBookingRecord): boolean {
+  const status = booking.bookingStatus.toLowerCase();
+  return status === 'cancelled' || status === 'canceled';
 }
 
 // ─── Skeleton shimmer ────────────────────────────────────────────────────────
@@ -391,21 +399,30 @@ function ActiveBookingRow({
   isLast?: boolean;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
-  const inSession = booking?.bookingStatus.toLowerCase() === 'in_progress';
+  const status = booking?.bookingStatus.toLowerCase() ?? '';
+  const inSession = status === 'in_progress';
+  const assumedFinished = status === 'assumed_finished';
+  const sessionStart = booking?.sessionStartedAt ?? booking?.startsAt ?? null;
 
   return (
     <Pressable style={[styles.activeRow, isLast && styles.bookingRowLast]} onPress={onPress}>
       <View style={styles.activeRowTop}>
-        <View style={styles.activePulse} />
+        <View style={[styles.activePulse, assumedFinished && styles.activePulseMuted]} />
         <Text style={styles.activeRowTitle}>
-          {inSession ? 'In session' : 'Starting soon'} · {appointment.clientName}
+          {assumedFinished
+            ? 'Assumed finished'
+            : inSession
+              ? 'In session'
+              : 'Starting soon'}{' '}
+          · {appointment.clientName}
         </Text>
       </View>
       <Text style={styles.activeRowService} numberOfLines={1}>{appointment.service}</Text>
-      {booking?.sessionStartedAt ? (
+      {sessionStart ? (
         <SessionTimer
-          startedAt={booking.sessionStartedAt}
-          endedAt={booking.sessionEndedAt}
+          startedAt={sessionStart}
+          endedAt={booking?.sessionEndedAt}
+          live={inSession}
           compact
         />
       ) : (
@@ -513,7 +530,8 @@ export default function DashboardScreen({ navigation }: Props) {
     getRevenueForPeriod,
     getTodayJobStats,
     getPendingApprovalAppointments,
-    getActiveAppointments,
+    getLiveNowAppointments,
+    getAssumedFinishedTodayAppointments,
     getUpcomingAppointments,
   } = useSiteData();
 
@@ -522,7 +540,8 @@ export default function DashboardScreen({ navigation }: Props) {
   const revenueValue = getRevenueForPeriod(selectedPeriod);
   const jobStats = getTodayJobStats();
   const pendingAppointments = getPendingApprovalAppointments(20);
-  const activeAppointments = getActiveAppointments(5);
+  const liveNowAppointments = getLiveNowAppointments(5);
+  const assumedFinishedToday = getAssumedFinishedTodayAppointments(10);
   const upcomingAppointments = getUpcomingAppointments(100);
   const businessInitials = getInitials(businessLabel || 'Styld');
 
@@ -546,10 +565,22 @@ export default function DashboardScreen({ navigation }: Props) {
     return { groupedUpcoming: trimmed, totalUpcoming: total, previewCount };
   }, [upcomingAppointments]);
 
-  // Recent bookings: sorted by when they were PLACED, newest first — show 4 on dashboard
-  const { recentBookings, totalBookings } = useMemo(() => {
+  // Recent bookings: active only; cancelled shown in a separate section below
+  const {
+    recentBookings,
+    cancelledBookings,
+    totalActiveBookings,
+    totalCancelledBookings,
+  } = useMemo(() => {
     const sorted = [...bookings].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    return { recentBookings: sorted.slice(0, 4), totalBookings: sorted.length };
+    const active = sorted.filter((b) => !isCancelledBooking(b));
+    const cancelled = sorted.filter(isCancelledBooking);
+    return {
+      recentBookings: active.slice(0, 4),
+      cancelledBookings: cancelled.slice(0, 4),
+      totalActiveBookings: active.length,
+      totalCancelledBookings: cancelled.length,
+    };
   }, [bookings]);
 
   const rafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
@@ -681,7 +712,11 @@ export default function DashboardScreen({ navigation }: Props) {
           {/* Revenue */}
           <View style={styles.revenueSection}>
             <PeriodSelector selectedPeriod={selectedPeriod} onPeriodChange={switchPeriod} />
-            <View style={styles.revenueAmountWrap}>
+            <Pressable
+              style={styles.revenueAmountWrap}
+              onPress={showRevenueAmount && hasLinkedSite ? openStyldPaySetup : undefined}
+              disabled={!showRevenueAmount || !hasLinkedSite}
+            >
               {!stripeKnown ? (
                 <MoneyAmountLoader size="dashboard" showSubtitle />
               ) : showRevenueAmount ? (
@@ -695,13 +730,16 @@ export default function DashboardScreen({ navigation }: Props) {
                   </Text>
                 </Pressable>
               )}
-            </View>
+            </Pressable>
             {showRevenueAmount && stripeSummary ? (
-              <Text style={styles.stripeBalanceLine}>
-                {privacyMode
-                  ? '•••• available · •••• processing'
-                  : `${formatUsdFromCents(stripeSummary.balanceAvailableCents)} available · ${formatUsdFromCents(stripeSummary.balancePendingCents)} processing`}
-              </Text>
+              <Pressable onPress={openStyldPaySetup} hitSlop={8}>
+                <StripeBalanceSubline
+                  availableCents={stripeSummary.balanceAvailableCents}
+                  pendingCents={stripeSummary.balancePendingCents}
+                  privacyMode={privacyMode}
+                  style={styles.stripeBalanceLine}
+                />
+              </Pressable>
             ) : stripeKnown ? (
               <Text style={styles.stripeBalanceLine}>
                 {hasLinkedSite
@@ -713,6 +751,34 @@ export default function DashboardScreen({ navigation }: Props) {
 
           {/* Today's vibe card */}
           <DayVibeCard jobStats={jobStats} />
+
+          {hasLinkedSite && liveNowAppointments.length > 0 ? (
+            <>
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionTitle}>Now</Text>
+              </View>
+              <View style={styles.listGroup}>
+                {liveNowAppointments.map((appt, index) => (
+                  <ActiveBookingRow
+                    key={appt.id}
+                    appointment={appt}
+                    booking={bookings.find((b) => b.id === appt.id)}
+                    isLast={index === liveNowAppointments.length - 1}
+                    onPress={() => {
+                      const rowBooking = bookings.find((b) => b.id === appt.id);
+                      const status = rowBooking?.bookingStatus.toLowerCase() ?? '';
+                      const openLive =
+                        status === 'in_progress' || status === 'assumed_finished';
+                      navigation.navigate(
+                        openLive ? 'AppointmentSession' : 'AppointmentDetail',
+                        { appointmentId: appt.id },
+                      );
+                    }}
+                  />
+                ))}
+              </View>
+            </>
+          ) : null}
 
           {hasLinkedSite && pendingAppointments.length > 0 ? (
             <>
@@ -738,26 +804,22 @@ export default function DashboardScreen({ navigation }: Props) {
             </>
           ) : null}
 
-          {hasLinkedSite && activeAppointments.length > 0 ? (
+          {hasLinkedSite && assumedFinishedToday.length > 0 ? (
             <>
               <View style={styles.sectionRow}>
-                <Text style={styles.sectionTitle}>Now</Text>
+                <Text style={styles.sectionTitle}>Today</Text>
+                <Text style={styles.sectionCount}>{assumedFinishedToday.length}</Text>
               </View>
               <View style={styles.listGroup}>
-                {activeAppointments.map((appt, index) => (
+                {assumedFinishedToday.map((appt, index) => (
                   <ActiveBookingRow
                     key={appt.id}
                     appointment={appt}
                     booking={bookings.find((b) => b.id === appt.id)}
-                    isLast={index === activeAppointments.length - 1}
-                    onPress={() => {
-                      const rowBooking = bookings.find((b) => b.id === appt.id);
-                      const inSession = rowBooking?.bookingStatus.toLowerCase() === 'in_progress';
-                      navigation.navigate(
-                        inSession ? 'AppointmentSession' : 'AppointmentDetail',
-                        { appointmentId: appt.id },
-                      );
-                    }}
+                    isLast={index === assumedFinishedToday.length - 1}
+                    onPress={() =>
+                      navigation.navigate('AppointmentSession', { appointmentId: appt.id })
+                    }
                   />
                 ))}
               </View>
@@ -821,9 +883,9 @@ export default function DashboardScreen({ navigation }: Props) {
             <>
               <View style={styles.sectionRow}>
                 <Text style={styles.sectionTitle}>Recent bookings</Text>
-                {!isLoading && totalBookings > 4 && (
+                {!isLoading && totalActiveBookings > 4 && (
                   <Pressable onPress={() => navigation.navigate('AllBookings')} style={styles.seeAllBtn}>
-                    <Text style={styles.seeAllText}>See all {totalBookings}</Text>
+                    <Text style={styles.seeAllText}>See all {totalActiveBookings}</Text>
                     <Ionicons name="chevron-forward" size={13} color={colors.accentPink} />
                   </Pressable>
                 )}
@@ -853,6 +915,31 @@ export default function DashboardScreen({ navigation }: Props) {
                   ))}
                 </View>
               )}
+
+              {!isLoading && totalCancelledBookings > 0 ? (
+                <>
+                  <View style={[styles.sectionRow, styles.sectionRowSpaced]}>
+                    <Text style={styles.sectionTitle}>Cancelled bookings</Text>
+                    {totalCancelledBookings > 4 ? (
+                      <Pressable onPress={() => navigation.navigate('AllBookings')} style={styles.seeAllBtn}>
+                        <Text style={styles.seeAllText}>See all {totalCancelledBookings}</Text>
+                        <Ionicons name="chevron-forward" size={13} color={colors.accentPink} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <View style={styles.listGroup}>
+                    {cancelledBookings.map((booking, index) => (
+                      <RecentBookingRow
+                        key={booking.id}
+                        booking={booking}
+                        privacyMode={privacyMode}
+                        isLast={index === cancelledBookings.length - 1}
+                        onPress={() => navigation.navigate('BookingDetail', { bookingId: booking.id })}
+                      />
+                    ))}
+                  </View>
+                </>
+              ) : null}
             </>
           )}
         </ScrollView>
@@ -978,6 +1065,9 @@ const BASE_STYLES = {
     marginBottom: 10,
     marginTop: 8,
   },
+  sectionRowSpaced: {
+    marginTop: 20,
+  },
   sectionTitle: {
     color: colors.textMuted,
     fontSize: 12,
@@ -1062,6 +1152,9 @@ const BASE_STYLES = {
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.accentPink,
+  },
+  activePulseMuted: {
+    backgroundColor: '#a16207',
   },
   activeRowTitle: { color: colors.text, fontSize: 14, fontWeight: '700', flex: 1 },
   activeRowService: { color: colors.textMuted, fontSize: 13 },

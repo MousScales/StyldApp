@@ -8,6 +8,7 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { normalizeCancellationPolicy } from '../_shared/cancellation-policy.ts';
+import { computePlatformFeeCents, loadPlatformFeePayer } from '../_shared/booking-service-fee.ts';
 import {
   buildBookingManageUrl,
   buildConfirmationCancellationNote,
@@ -72,6 +73,7 @@ function buildEmail(
     depositCents: number;
     depositPaid: boolean;
     isInPerson: boolean;
+    platformFeePayer: 'client' | 'tenant';
     bookingId: string;
     manageUrl: string;
     policySummary: string;
@@ -79,7 +81,7 @@ function buildEmail(
 ): string {
   const {
     clientName, coverUrl, service, startsAt, durationMinutes, location,
-    priceCents, depositCents, depositPaid, isInPerson, bookingId, manageUrl, policySummary,
+    priceCents, depositCents, depositPaid, isInPerson, platformFeePayer, bookingId, manageUrl, policySummary,
   } = opts;
 
   const remaining = priceCents - (depositPaid ? depositCents : 0);
@@ -102,6 +104,23 @@ function buildEmail(
     <tr>
       <td style="padding:10px 0;color:${branding.softTextColor};font-size:14px;">Due at service</td>
       <td style="padding:10px 0;color:${branding.primaryColor};font-size:14px;font-weight:700;text-align:right;">${money(remaining)}</td>
+    </tr>`
+      : '';
+
+  const onlineDepositFeeCents =
+    platformFeePayer === 'client' && !isInPerson && depositPaid && depositCents > 0
+      ? computePlatformFeeCents(depositCents, 'client')
+      : 0;
+  const onlineDepositFeeRow =
+    onlineDepositFeeCents > 0
+      ? `
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid ${rowBorder};color:${branding.softTextColor};font-size:14px;">Platform fee</td>
+      <td style="padding:10px 0;border-bottom:1px solid ${rowBorder};color:${branding.textColor};font-size:14px;font-weight:600;text-align:right;">${money(onlineDepositFeeCents)}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid ${rowBorder};color:${branding.softTextColor};font-size:14px;">Paid online</td>
+      <td style="padding:10px 0;border-bottom:1px solid ${rowBorder};color:${branding.textColor};font-size:14px;font-weight:700;text-align:right;">${money(depositCents + onlineDepositFeeCents)}</td>
     </tr>`
       : '';
 
@@ -151,6 +170,7 @@ function buildEmail(
               <td style="padding:14px 0 10px;border-bottom:1px solid ${rowBorder};color:${branding.primaryColor};font-size:18px;font-weight:800;text-align:right;">${money(priceCents)}</td>
             </tr>
             ${depositRow}
+            ${onlineDepositFeeRow}
           </table>
         </div>
         <div style="background:${branding.innerCardBg};border-radius:12px;border:1px solid ${branding.borderColor};padding:14px 16px;margin-bottom:20px;">
@@ -256,6 +276,7 @@ Deno.serve(async (req) => {
           cancellationPolicyRow.data.data
         : null;
     const policySummary = normalizeCancellationPolicy(cancellationRaw).policySummary;
+    const platformFeePayer = await loadPlatformFeePayer(supabase, userId);
 
     // 5. Get style cover image signed URL (best-effort)
     const styleId = String(b.style_id ?? '');
@@ -300,6 +321,7 @@ Deno.serve(async (req) => {
       depositCents,
       depositPaid,
       isInPerson,
+      platformFeePayer,
       bookingId,
       manageUrl,
       policySummary,

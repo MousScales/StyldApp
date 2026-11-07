@@ -1201,9 +1201,19 @@
     window.location.replace(buildBookingDetailsUrl(q));
   }
 
-  function sanitizeFilename(name) {
-    const base = name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
-    return base || "upload";
+  function bookingPhotoFileExtension(file) {
+    const name = String(file?.name || "");
+    const dot = name.lastIndexOf(".");
+    if (dot > 0 && dot < name.length - 1) {
+      return name.slice(dot).toLowerCase();
+    }
+    return ".jpg";
+  }
+
+  function bookingPhotoStoragePrefix(bookingId) {
+    const subdomain = getBookingSubdomain();
+    if (!subdomain) return String(bookingId);
+    return `${subdomain}/${bookingId}`;
   }
 
   function saveLocalBooking(row) {
@@ -1223,13 +1233,18 @@
   }
 
   async function uploadBookingFiles(sb, bookingId, hairFile, refFile) {
-    const out = { photo_hair_path: null, photo_ref_path: null };
+    const out = {
+      photo_hair_path: null,
+      photo_ref_path: null,
+      current_hair_photo_path: null,
+      reference_photo_path: null,
+    };
     if (!hairFile) return out;
 
-    const uploadOne = async (file, kind) => {
-      const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
-      const safeBase = sanitizeFilename(file.name.replace(/\.[^.]+$/, ""));
-      const path = `${bookingId}/${kind}-${safeBase}${ext}`;
+    const prefix = bookingPhotoStoragePrefix(bookingId);
+
+    const uploadOne = async (file, baseName) => {
+      const path = `${prefix}/${baseName}${bookingPhotoFileExtension(file)}`;
       const { error } = await sb.storage.from(STORAGE_BUCKET).upload(path, file, {
         upsert: false,
         contentType: file.type || "application/octet-stream",
@@ -1238,8 +1253,14 @@
       return path;
     };
 
-    out.photo_hair_path = await uploadOne(hairFile, "hair");
-    if (refFile) out.photo_ref_path = await uploadOne(refFile, "ref");
+    const hairPath = await uploadOne(hairFile, "current-hair");
+    out.photo_hair_path = hairPath;
+    out.current_hair_photo_path = hairPath;
+    if (refFile) {
+      const refPath = await uploadOne(refFile, "reference");
+      out.photo_ref_path = refPath;
+      out.reference_photo_path = refPath;
+    }
     return out;
   }
 

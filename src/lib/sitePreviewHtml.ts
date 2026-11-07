@@ -3,10 +3,19 @@ import {
   buildGoogleMapsSearchUrl,
   formatSiteAddress,
   LocationPart,
+  resolveMainSectionOrder,
   SiteContent,
   SiteSection,
+  MainSiteSection,
 } from '../data/siteContent';
-import { DEFAULT_SITE_THEME, FontFamily, FONT_FAMILY_OPTIONS, GOOGLE_FONTS_URL, HeroLayout, PortfolioMediaType, SiteTextColors, SiteTextColorSources, StyleCardLayout, TemplateId, SiteTheme } from '../data/siteTheme';
+import {
+  buildSocialLinksHtml,
+  hasAnySocialLink,
+  listActiveSocialLinks,
+  formatSocialDisplay,
+  buildSocialUrl,
+} from '../data/socialLinks';
+import { DEFAULT_SITE_THEME, FontFamily, FONT_FAMILY_OPTIONS, GOOGLE_FONTS_URL, HeroLayout, normalizeHeroLayout, PortfolioMediaType, SiteTextColors, SiteTextColorSources, StyleCardLayout, TemplateId, SiteTheme } from '../data/siteTheme';
 import { buildTextColorsCssFromTheme } from './siteTextColors';
 import { focusToBackgroundPosition, HeroImageFocus } from './heroImageFocus';
 
@@ -87,12 +96,12 @@ const SITE_PREVIEW_CSS = `
 .profile-nav{background:var(--nav-bg,var(--pink));border-bottom:none;padding:.875rem 0;position:sticky;top:0;z-index:100}
 .profile-nav__inner{display:flex;align-items:center;justify-content:space-between;gap:1rem}
 .profile-nav__links{display:none;align-items:center;justify-content:center;flex:1;min-width:0;margin:0 .35rem}
-.profile-nav__tabs{display:inline-flex;align-items:stretch;max-width:100%;padding:.2rem;border-radius:999px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.1);box-shadow:inset 0 1px 2px rgba(0,0,0,.06);overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.profile-nav__tabs{display:inline-flex;align-items:center;gap:1.75rem;max-width:100%;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
 .profile-nav__tabs::-webkit-scrollbar{display:none}
-.profile-nav__link,.profile-nav__drawer-link{display:inline-flex;align-items:center;padding:.45rem .95rem;border-radius:999px;font-family:var(--font-body);font-size:.875rem;font-weight:600;color:rgba(255,255,255,.88);text-decoration:none;background:transparent;border:none;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.profile-nav__link,.profile-nav__drawer-link{display:inline-flex;align-items:center;padding:0;border-radius:0;font-family:var(--font-body);font-size:.875rem;font-weight:700;color:rgba(255,255,255,.88);text-decoration:none;background:transparent;border:none;white-space:nowrap;transition:color .15s,opacity .15s}
 .profile-nav__link[hidden],.profile-nav__drawer-link[hidden]{display:none!important}
-.profile-nav__link:hover{background:rgba(255,255,255,.1)}
-.profile-nav__link.is-active{background:var(--text-nav-button-bg,var(--ink));color:var(--text-nav-button,var(--pink));box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.profile-nav__link:hover{color:#fff;background:transparent}
+.profile-nav__link.is-active{color:#fff;background:transparent;box-shadow:none;text-decoration:underline;text-underline-offset:4px}
 .profile-nav__actions{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
 .profile-nav__menu-btn{display:inline-flex;align-items:center;justify-content:center;width:2.35rem;height:2.35rem;padding:0;border:1px solid rgba(255,255,255,.22);border-radius:10px;background:rgba(255,255,255,.08);color:var(--nav-text,#fff);cursor:pointer}
 .profile-nav__menu-icon{display:block;width:1.05rem;height:2px;background:currentColor;position:relative;border-radius:1px}
@@ -122,6 +131,8 @@ const SITE_PREVIEW_CSS = `
 .profile-photo__bg{width:100%;height:100%;background-size:cover;background-position:center;min-height:240px}
 .profile-info{display:flex;flex-direction:column;gap:1.75rem;padding-top:.5rem}
 .profile-section-block{display:flex;flex-direction:column;gap:.5rem}
+.profile-ordered-block-section{padding-block:2.5rem}
+.profile-ordered-block-section .profile-section-block{max-width:48rem}
 .profile-about-head,.profile-policy-head{font-family:var(--font-display);color:var(--ink);margin:0}
 .profile-about-head{font-size:1.5rem;font-weight:700;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
 .profile-policy-head{font-size:1.5rem;font-weight:700;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
@@ -159,9 +170,9 @@ const SITE_PREVIEW_CSS = `
 .profile-menu-head h2{font-family:var(--font-display);font-size:clamp(1.5rem,3vw,2.1rem);font-weight:700;color:var(--ink);margin:0 0 .3rem;border-bottom:2px solid var(--pink);display:inline-block;padding-bottom:.2rem}
 .profile-menu-blurb{color:var(--muted);font-size:.9rem;margin:0}
 .profile-menu-filters{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid rgba(0,0,0,.08);margin-bottom:1.25rem}
-.profile-menu-filter{padding:.45rem .9rem;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;font-family:var(--font-body);font-size:.875rem;font-weight:600;color:var(--muted);cursor:pointer;transition:color .15s,border-color .15s;white-space:nowrap}
-.profile-menu-filter:hover{color:var(--pink)}
-.profile-menu-filter--active{color:var(--pink);border-bottom-color:var(--pink)}
+.profile-menu-filter{padding:.45rem .9rem;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;font-family:var(--font-body);font-size:.875rem;font-weight:600;color:var(--ink);cursor:pointer;transition:color .15s,border-color .15s;white-space:nowrap}
+.profile-menu-filter:hover{color:var(--ink)}
+.profile-menu-filter--active{color:var(--ink);border-bottom-color:var(--pink)}
 .profile-service-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:.875rem}
 .profile-service-card{display:flex;align-items:center;gap:.85rem;padding:.75rem;border-radius:14px;background:var(--cream,#fff);border:1px solid rgba(0,0,0,.07);text-decoration:none;color:inherit;transition:box-shadow .15s}
 .profile-service-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08);border-color:rgba(219,39,119,.2)}.profile-service-card--outlined{background:var(--cream);border:1.5px solid var(--card-outline,var(--ink))}.profile-service-card--outlined:hover{box-shadow:0 4px 16px rgba(0,0,0,.1);border-color:var(--ink)}
@@ -180,6 +191,9 @@ const SITE_PREVIEW_CSS = `
 .profile-location-col a{color:var(--pink);text-decoration:none}
 .profile-location-col a:hover{text-decoration:underline}
 .profile-ig-link a{display:inline-flex;align-items:center;gap:.35rem}
+.profile-social-link{margin:.2rem 0}
+.profile-social-link a{color:var(--text-link,var(--pink));text-decoration:none}
+.profile-social-link a:hover{text-decoration:underline}
 .profile-ig-icon{width:15px;height:15px;flex-shrink:0;vertical-align:middle;color:var(--pink)}
 .profile-location-map{width:100%;height:240px;border:0;border-top:1px solid rgba(0,0,0,.06);display:block}
 .profile-location-map--preview{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.05);color:var(--muted);font-size:.85rem;font-weight:600}
@@ -234,18 +248,55 @@ html{scroll-behavior:smooth}
 .profile-hero-stack--tall .profile-hero-stack__img{aspect-ratio:4/9;width:min(92vw,400px);max-width:400px}
 .profile-hero--stack .profile-hero__grid{grid-template-columns:1fr;padding-top:1.5rem}
 .profile-hero--stack .profile-photo{display:none}
-.profile-about-head,.profile-policy-head,.profile-menu-head h2,.profile-location-head h2,.profile-reviews-head h2,.profile-faq-head h2{color:var(--text-heading,var(--ink));border-bottom-color:var(--text-accent,var(--pink))}
+.profile-about-head,.profile-policy-head,.profile-menu-head h2,.profile-location-head h2,.profile-faq-head h2{color:var(--text-heading,var(--ink));border-bottom-color:var(--text-accent,var(--pink))}
 .profile-about-body,.profile-policy-body{color:var(--text-body,var(--muted))}
 .profile-menu-blurb,.profile-service-card__duration,.profile-service-card__expand-btn,.profile-service-card__desc,.profile-faq-item__answer{color:var(--text-muted,var(--muted))}
 .profile-service-card__name,.profile-faq-item__question-text{color:var(--text-service-name,var(--ink))}
 .profile-service-card__price{color:var(--text-price,var(--ink))}
-.profile-menu-filter:hover{border-color:var(--text-accent,var(--pink));color:var(--text-accent,var(--pink))}
-.profile-menu-filter--active{background:var(--text-accent,var(--pink));border-color:var(--text-accent,var(--pink))}
+.profile-menu-filter{color:var(--text-heading,var(--ink))}
+.profile-menu-filter:hover{color:var(--text-heading,var(--ink))}
+.profile-menu-filter--active{color:var(--text-heading,var(--ink));border-bottom-color:var(--text-accent,var(--pink))}
 .profile-location-col a,.profile-ig-link a{color:var(--text-link,var(--pink))}
 .profile-brand{color:var(--text-nav,var(--nav-text,#fff))}
 .profile-book-btn:not(.profile-book-btn--cover-splash){color:var(--text-nav-button,var(--pink));background:var(--text-nav-button-bg,var(--ink))}
 .profile-cover-overlay .profile-cover-brand{color:var(--text-splash-brand,#fff)}
 .profile-cover-overlay .profile-book-btn{color:var(--text-splash-button,var(--ink));background:var(--text-splash-button-bg,#fff)}
+.profile-hero__grid--photo-only{grid-template-columns:1fr}
+.profile-hero__grid--photo-only .profile-photo{max-width:min(520px,100%);margin:0 auto;justify-self:center}
+.profile-hero__grid--no-photo{grid-template-columns:1fr}
+.profile-hero--hidden{display:none!important}
+.profile-hero__grid--in-main{margin:0}
+.profile-header-main-section .profile-photo{aspect-ratio:3/4;max-height:320px}
+.profile-reviews-section{padding:2.5rem 0 1.75rem;background:var(--review-surface,var(--cream,#fff));border-top:1px solid rgba(0,0,0,.06)}
+.profile-reviews-head.profile-menu-head{margin-bottom:1.35rem;text-align:center}
+.profile-reviews-head.profile-menu-head h2{color:var(--text-heading,var(--ink));border-bottom:none;display:block;padding-bottom:0}
+.profile-reviews-marquee{overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.profile-reviews-marquee__track{display:flex;gap:.875rem;width:max-content;animation:profile-reviews-scroll 42s linear infinite}
+.profile-reviews-marquee__track:hover{animation-play-state:paused}
+@keyframes profile-reviews-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.profile-review-card{flex:0 0 300px;display:flex;flex-direction:column;align-items:stretch;gap:0;text-align:left;padding:1rem 1.05rem;border-radius:12px;background:var(--review-surface,var(--cream,#fff));border:1px solid rgba(0,0,0,.1);font-family:var(--font-body);color:inherit;cursor:pointer;transition:border-color .15s}
+.profile-review-card:hover{border-color:rgba(0,0,0,.16)}
+.profile-review-card__stars{display:flex;gap:.12rem;margin:0 0 .55rem}
+.profile-review-star{color:rgba(0,0,0,.18);font-size:.82rem;line-height:1}
+.profile-review-star.is-filled{color:#facc15}
+.profile-review-card__message{margin:0;color:var(--text-body,var(--muted));font-size:.84rem;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.profile-review-card__name{margin:0 0 .4rem;font-weight:700;font-size:.95rem;color:var(--text-heading,var(--ink));line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.profile-review-modal{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:1.25rem}
+.profile-review-modal[hidden]{display:none!important}
+.profile-review-modal__backdrop{position:absolute;inset:0;background:rgba(10,10,10,.55)}
+.profile-review-modal__card{position:relative;z-index:1;width:min(520px,100%);background:var(--cream,#fff);border-radius:14px;padding:1.35rem 1.25rem 1.25rem;border:1px solid rgba(0,0,0,.08);box-shadow:0 20px 60px rgba(0,0,0,.18);font-family:var(--font-body)}
+.profile-review-modal__close{position:absolute;top:.65rem;right:.75rem;border:none;background:none;font-size:1.6rem;line-height:1;color:var(--muted);cursor:pointer}
+.profile-review-modal__name{margin:0 0 .4rem;font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--ink)}
+.profile-review-modal__stars{margin:0 0 .75rem;display:flex;gap:.12rem}
+.profile-review-modal__message{margin:0;color:var(--muted);font-size:.95rem;line-height:1.55;white-space:pre-wrap}
+body.styld-preview-desktop{overflow-x:hidden}
+body.styld-preview-embedded:not(.styld-preview-desktop) .profile-hero{padding:1.25rem 0 1rem}
+body.styld-preview-embedded:not(.styld-preview-desktop) .profile-hero__grid{gap:1rem}
+body.styld-preview-embedded:not(.styld-preview-desktop) .profile-photo{max-height:220px}
+body.styld-preview-embedded:not(.styld-preview-desktop) .profile-header-main-section .profile-photo{max-height:220px}
+body.styld-preview-embedded.page-cover-splash{height:100%;min-height:100%}
+body.styld-preview-embedded.page-cover-splash .profile-hero--cover .profile-photo{height:100%;min-height:280px;max-height:none}
+body.styld-preview-embedded.page-cover-splash .profile-hero--cover .profile-photo__bg{min-height:280px}
 `;
 
 function escapeHtml(value: string): string {
@@ -260,6 +311,17 @@ function escapeHtml(value: string): string {
 function formatFaqAnswer(value: string): string {
   return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 }
+
+export type SitePreviewReview = {
+  clientName: string;
+  rating: number;
+  message: string;
+};
+
+export type SitePreviewContext = {
+  reviews?: SitePreviewReview[];
+  reviewsEnabled?: boolean;
+};
 
 export type SitePreviewStyle = {
   id?: string;
@@ -298,14 +360,17 @@ export type SitePreviewTheme = {
   hideBookNowButton?: boolean;
   /** True when rendered inside the compact editor WebView (Desktop preview pane). */
   embeddedPreview?: boolean;
+  /** Cover layout: open on the scrollable book/home page instead of the splash screen. */
+  coverPreviewOnBookPage?: boolean;
   heroCoverBlur?: boolean;
+  heroPhotoEnabled?: boolean;
   textColors?: SiteTextColors;
   textColorSources?: SiteTextColorSources;
   portfolioMedia?: SitePreviewPortfolioMedia[];
 };
 
 export const DEFAULT_PREVIEW_THEME: SitePreviewTheme = {
-  heroLayout: 'split',
+  heroLayout: 'banner',
   heroImageUrl: null,
   logoImageUrl: null,
   primaryColor: '#db2777',
@@ -324,10 +389,14 @@ export function buildSitePreviewTheme(
     heroStackImageUrls?: string[];
     portfolioMedia?: SitePreviewPortfolioMedia[];
   },
-  options?: { zoomedOut?: boolean; embeddedPreview?: boolean },
+  options?: {
+    zoomedOut?: boolean;
+    embeddedPreview?: boolean;
+    coverPreviewOnBookPage?: boolean;
+  },
 ): SitePreviewTheme {
   return {
-    heroLayout: theme.heroLayout,
+    heroLayout: normalizeHeroLayout(theme.heroLayout),
     heroImageUrl: assets.heroImageUrl,
     logoImageUrl: assets.logoImageUrl,
     heroStackImageUrls: assets.heroStackImageUrls,
@@ -345,11 +414,13 @@ export function buildSitePreviewTheme(
     templateId: theme.templateId,
     hideBookNowButton: theme.hideBookNowButton,
     heroCoverBlur: theme.heroCoverBlur,
+    heroPhotoEnabled: theme.heroPhotoEnabled,
     textColors: theme.textColors,
     textColorSources: theme.textColorSources,
     portfolioMedia: assets.portfolioMedia ?? [],
     zoomedOut: options?.zoomedOut ?? false,
     embeddedPreview: options?.embeddedPreview ?? false,
+    coverPreviewOnBookPage: options?.coverPreviewOnBookPage ?? false,
   };
 }
 
@@ -444,7 +515,20 @@ export const STYLD_PREVIEW_INTERACTIONS_SCRIPT = `
 (function(){
   if(window.__styldPreviewBound) return;
   window.__styldPreviewBound = true;
+  function renderReviewStars(rating){
+    var n=Math.max(1,Math.min(5,Math.round(Number(rating)||5)));
+    var html='';
+    for(var i=1;i<=5;i+=1){
+      html+='<span class="profile-review-star'+(i<=n?' is-filled':'')+'">★</span>';
+    }
+    return html;
+  }
   document.addEventListener('click', function(e){
+    if(e.target&&e.target.classList&&e.target.classList.contains('profile-review-modal__backdrop')){
+      var modalBackdrop=e.target.closest('.profile-review-modal');
+      if(modalBackdrop) modalBackdrop.hidden=true;
+      return;
+    }
     var link = e.target && e.target.closest ? e.target.closest('a') : null;
     if(link){
       var action = link.getAttribute('data-styld-preview') || '';
@@ -491,10 +575,30 @@ export const STYLD_PREVIEW_INTERACTIONS_SCRIPT = `
         }
         return;
       }
+      if(btn.classList.contains('profile-review-card')){
+        e.preventDefault();
+        var reviewModal=document.getElementById('profile-review-modal');
+        if(!reviewModal) return;
+        var starsEl=document.getElementById('profile-review-modal-stars');
+        var nameEl=document.getElementById('profile-review-modal-name');
+        var messageEl=document.getElementById('profile-review-modal-message');
+        if(starsEl) starsEl.innerHTML=renderReviewStars(btn.getAttribute('data-review-rating'));
+        if(nameEl) nameEl.textContent=btn.getAttribute('data-review-name')||'Client';
+        if(messageEl) messageEl.textContent=btn.getAttribute('data-review-message')||'';
+        reviewModal.hidden=false;
+        return;
+      }
+      if(btn.classList.contains('profile-review-modal__close')){
+        e.preventDefault();
+        var closeModal=document.getElementById('profile-review-modal');
+        if(closeModal) closeModal.hidden=true;
+        return;
+      }
       if(!btn.getAttribute('onclick')){
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
     }
   }, true);
   document.addEventListener('submit', function(e){ e.preventDefault(); }, true);
@@ -505,10 +609,13 @@ export function buildSitePreviewInjection(
   content: SiteContent,
   styles: SitePreviewStyle[] = [],
   theme: SitePreviewTheme = DEFAULT_PREVIEW_THEME,
+  context: SitePreviewContext = {},
 ): string {
   const colorCss = buildColorOverrideCss(theme);
   const colorInject = `(function(){var s=document.createElement('style');s.textContent=${JSON.stringify(colorCss)};document.head.appendChild(s);})();`;
-  return `window.__STYLD_SITE_CONTENT__=${JSON.stringify(content)};window.__STYLD_SITE_STYLES__=${JSON.stringify(styles)};window.__STYLD_SITE_THEME__=${JSON.stringify(theme)};${colorInject}`;
+  const reviewsJson = JSON.stringify(context.reviews ?? []);
+  const reviewsSettingsJson = JSON.stringify({ enabled: context.reviewsEnabled !== false });
+  return `window.__STYLD_SITE_CONTENT__=${JSON.stringify(content)};window.__STYLD_SITE_STYLES__=${JSON.stringify(styles)};window.__STYLD_SITE_THEME__=${JSON.stringify(theme)};window.__STYLD_SITE_REVIEWS__=${reviewsJson};window.__STYLD_REVIEWS_SETTINGS__=${reviewsSettingsJson};${colorInject}`;
 }
 
 function heroImageAttr(url: string | null | undefined, focus?: HeroImageFocus): string {
@@ -551,7 +658,7 @@ function buildHeroInnerHtml(content: SiteContent, theme: SitePreviewTheme): stri
 </span></span></h1>${ctas}</div>`;
   }
 
-  if (theme.heroLayout === 'image-below') {
+  if (theme.heroLayout === 'banner') {
     return `<div class="hero-scale-layout hero-layout--image-below">
 <span class="${visualClass}"${img}></span>
 <h1 class="hero-scale-title"><span class="hero-scale-col hero-scale-col--center">
@@ -561,13 +668,12 @@ function buildHeroInnerHtml(content: SiteContent, theme: SitePreviewTheme): stri
 </span></h1>${ctas}</div>`;
   }
 
-  return `<div class="hero-scale-layout hero-layout--split">
-<h1 class="hero-scale-title"><span class="hero-scale-title__grid">
-<span class="hero-scale-col hero-scale-col--left"><span class="hero-scale-kicker">${brand}</span>
-<span class="hero-scale-display hero-scale-display--ink">${left}</span></span>
+  return `<div class="hero-scale-layout hero-layout--image-below">
 <span class="${visualClass}"${img}></span>
-<span class="hero-scale-col hero-scale-col--right"><span class="hero-scale-display hero-scale-display--brand">
-<span class="hero-scale-display__line">${r1}</span><span class="hero-scale-display__line">${r2}</span></span></span>
+<h1 class="hero-scale-title"><span class="hero-scale-col hero-scale-col--center">
+<span class="hero-scale-kicker">${brand}</span>
+<span class="hero-scale-display hero-scale-display--ink">${left}</span>
+<span class="hero-scale-display hero-scale-display--brand"><span class="hero-scale-display__line">${r1}</span><span class="hero-scale-display__line">${r2}</span></span>
 </span></h1>${ctas}</div>`;
 }
 
@@ -752,19 +858,101 @@ function buildFaqSectionHtml(content: SiteContent): string {
   return `<section class="profile-faq-section" data-site-section="faq"><div class="container"><div class="profile-menu-head profile-faq-head"><h2>${escapeHtml(content.faqTitle || 'FAQ')}</h2>${blurb}</div><div class="profile-faq-list">${listHtml}</div></div></section>`;
 }
 
+function buildAboutMainSectionHtml(content: SiteContent, aboutBodyHtml: string): string {
+  if (isSectionHidden(content, 'aboutMe')) return '';
+  return `<section class="profile-ordered-block-section" data-site-section="aboutMe"><div class="container"><div class="profile-section-block" id="profile-about-block"><h2 class="profile-about-head" id="profile-about-title">About Me</h2>${aboutBodyHtml}</div></div></section>`;
+}
+
+function buildPoliciesMainSectionHtml(content: SiteContent, policyBodyHtml: string): string {
+  if (isSectionHidden(content, 'policies')) return '';
+  return `<section class="profile-ordered-block-section" data-site-section="policies"><div class="container"><div class="profile-section-block" id="profile-policy-block"><h3 class="profile-policy-head">Policies</h3>${policyBodyHtml}</div></div></section>`;
+}
+
+function heroPhotoVisibleInPreview(theme: SitePreviewTheme): boolean {
+  const layout = normalizeHeroLayout(theme.heroLayout);
+  if (layout === 'minimal' || layout === 'stack') return false;
+  return theme.heroPhotoEnabled !== false;
+}
+
 function orderMainSections(
   content: SiteContent,
   theme: SitePreviewTheme,
   menuSection: string,
   visitSection: string,
+  aboutBodyHtml: string,
+  policyBodyHtml: string,
+  options?: {
+    sectionOrder?: MainSiteSection[];
+    reviews?: SitePreviewReview[];
+    reviewsEnabled?: boolean;
+  },
 ): string {
-  const portfolioSection = buildPortfolioSectionHtml(content, theme);
-  const faqSection = buildFaqSectionHtml(content);
-  const placement = content.portfolioPlacement === 'below_menu' ? 'below_menu' : 'above_menu';
-  if (placement === 'below_menu') {
-    return `${menuSection}${portfolioSection}${faqSection}${visitSection}`;
+  const order = options?.sectionOrder ?? resolveMainSectionOrder(content);
+  const reviews = options?.reviews ?? [];
+  const reviewsEnabled = options?.reviewsEnabled ?? true;
+
+  const sections: Record<MainSiteSection, string> = {
+    aboutMe: buildAboutMainSectionHtml(content, aboutBodyHtml),
+    policies: buildPoliciesMainSectionHtml(content, policyBodyHtml),
+    reviews: buildReviewsMainSectionHtml(content, theme, reviews, reviewsEnabled),
+    portfolio: buildPortfolioSectionHtml(content, theme),
+    menu: menuSection,
+    faq: buildFaqSectionHtml(content),
+    visit: visitSection,
+  };
+
+  const parts: string[] = [];
+  for (const sectionId of order) {
+    const html = sections[sectionId];
+    if (html) parts.push(html);
   }
-  return `${portfolioSection}${menuSection}${faqSection}${visitSection}`;
+  return parts.join('');
+}
+
+function renderReviewStars(rating: number): string {
+  const n = Math.max(1, Math.min(5, Math.round(Number(rating) || 5)));
+  return Array.from({ length: 5 }, (_, i) =>
+    `<span class="profile-review-star${i + 1 <= n ? ' is-filled' : ''}">★</span>`,
+  ).join('');
+}
+
+function truncateReviewMessage(message: string, max: number): string {
+  const text = String(message || '').trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max).trim()}…`;
+}
+
+function buildReviewCardHtml(
+  review: SitePreviewReview,
+  index: number,
+): string {
+  const preview = escapeHtml(truncateReviewMessage(review.message, 72));
+  const name = escapeHtml(review.clientName || 'Client');
+  const fullMessage = escapeHtml(review.message);
+  return `<button type="button" class="profile-review-card" data-review-index="${index}" data-review-rating="${review.rating}" data-review-name="${name}" data-review-message="${fullMessage}"><p class="profile-review-card__name">${name}</p><div class="profile-review-card__stars" aria-hidden="true">${renderReviewStars(review.rating)}</div><p class="profile-review-card__message">${preview}</p></button>`;
+}
+
+function buildReviewsMainSectionHtml(
+  content: SiteContent,
+  theme: SitePreviewTheme,
+  reviews: SitePreviewReview[],
+  reviewsEnabled: boolean,
+): string {
+  if (isSectionHidden(content, 'reviews')) return '';
+  const show = reviewsEnabled !== false && reviews.length > 0;
+  if (!show) return '';
+
+  const title = escapeHtml(
+    (content as SiteContent & { reviewsTitle?: string }).reviewsTitle || 'Client Reviews',
+  );
+  const cards = reviews.map((review, index) => buildReviewCardHtml(review, index)).join('');
+  const track = `<div class="profile-reviews-marquee__track">${cards}${cards}</div>`;
+
+  return `<section class="profile-reviews-section" id="profile-reviews-section" data-site-section="reviews"><div class="container"><div class="profile-reviews-head profile-menu-head"><h2 id="profile-reviews-title">${title}</h2></div></div><div class="profile-reviews-marquee" id="profile-reviews-marquee" aria-label="Client reviews">${track}</div></section>`;
+}
+
+function buildReviewModalHtml(): string {
+  return `<div id="profile-review-modal" class="profile-review-modal" hidden><div class="profile-review-modal__backdrop" role="presentation"></div><div class="profile-review-modal__card"><button type="button" class="profile-review-modal__close" aria-label="Close">&times;</button><p class="profile-review-modal__name" id="profile-review-modal-name"></p><div class="profile-review-modal__stars" id="profile-review-modal-stars"></div><p class="profile-review-modal__message" id="profile-review-modal-message"></p></div></div>`;
 }
 
 function buildProfileServiceCardHtml(style: SitePreviewStyle, outlined = false): string {
@@ -807,18 +995,22 @@ export function buildProfileSitePreviewHtml(
   content: SiteContent,
   styles: SitePreviewStyle[] = [],
   theme: SitePreviewTheme = DEFAULT_PREVIEW_THEME,
+  context: SitePreviewContext = {},
 ): string {
   const colorOverrideCss = buildColorOverrideCss(theme);
   const viewportContent = theme.zoomedOut
-    ? 'width=800'
+    ? 'width=1120'
     : 'width=device-width,initial-scale=1,maximum-scale=1';
 
   const logoHtml = theme.logoImageUrl
     ? `<img class="profile-brand__logo-img" src="${theme.logoImageUrl.replace(/"/g, '%22')}" alt="" width="38" height="38" decoding="async"/>`
     : `<div class="profile-brand__logo" aria-hidden="true"></div>`;
 
-  const isStack = theme.heroLayout === 'stack';
-  const isCover = theme.heroLayout === 'cover';
+  const layout = normalizeHeroLayout(theme.heroLayout);
+  const isStack = layout === 'stack';
+  const isCover = layout === 'cover';
+  const isMinimal = layout === 'minimal';
+  const isBanner = layout === 'banner';
   const stackUrls = theme.heroStackImageUrls ?? [];
   const focusStyle =
     theme.heroImageFocusX != null && theme.heroImageFocusY != null
@@ -867,17 +1059,14 @@ export function buildProfileSitePreviewHtml(
     ? `<div class="profile-location-col"><h3>Address</h3><p><a href="${escapeHtml(mapsSearchUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(address)}</a></p></div>`
     : '';
 
-  const instagram = content.instagramHandle.replace(/^@/, '').trim();
   const hasContact = !isLocationPartHidden(content, 'contact') && !!(content.phoneDisplay || content.email);
   const contactColHtml = hasContact
     ? `<div class="profile-location-col"><h3>Contact</h3>${content.phoneDisplay ? `<p>${escapeHtml(content.phoneDisplay)}</p>` : ''}${content.email ? `<p>${escapeHtml(content.email)}</p>` : ''}</div>`
     : '';
 
-  const hasSocial = !isLocationPartHidden(content, 'social') && instagram.length > 0;
-  const igUrl = hasSocial ? `https://www.instagram.com/${encodeURIComponent(instagram)}/` : '';
-  const socialColHtml = hasSocial
-    ? `<div class="profile-location-col"><h3>Social</h3><p class="profile-ig-link"><a href="${escapeHtml(igUrl)}" target="_blank" rel="noopener noreferrer"><svg class="profile-ig-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>@${escapeHtml(instagram)}</a></p></div>`
-    : '';
+  const hasSocial =
+    !isLocationPartHidden(content, 'social') && hasAnySocialLink(content.socialLinks);
+  const socialColHtml = hasSocial ? buildSocialLinksHtml(content.socialLinks, escapeHtml) : '';
 
   const mapHtml = !isLocationPartHidden(content, 'map') && mapSrc
     ? `<div class="profile-location-map profile-location-map--preview" aria-hidden="true">Map preview</div>`
@@ -899,39 +1088,49 @@ export function buildProfileSitePreviewHtml(
     ? `<div class="profile-hero-stack profile-hero-stack--${stackFormat}">${stackUrls.map((u, i) => stackImageTag(u, stackFocus[i])).join('')}</div>`
     : '';
 
-  const isSplit = theme.heroLayout === 'split';
-  const showAbout = !isSectionHidden(content, 'aboutMe');
-  const showPolicies = !isSectionHidden(content, 'policies');
-  const aboutBlockHtml = showAbout
-    ? `<div class="profile-section-block" id="profile-about-block" data-site-section="aboutMe"><h2 class="profile-about-head" id="profile-about-title">About Me</h2>${aboutHtml}</div>`
-    : '';
-  const policyBlockHtml = showPolicies
-    ? `<div class="profile-section-block" id="profile-policy-block" data-site-section="policies"><h3 class="profile-policy-head">Policies</h3>${policyHtml}</div>`
-    : '';
-  const infoHtml =
-    isSplit && (aboutBlockHtml || policyBlockHtml)
-      ? `<div class="profile-info" id="site-main-content">
-${aboutBlockHtml}
-${policyBlockHtml}
-</div>`
-      : '';
+  const showTopHero = !isCover && !isMinimal && (isBanner || isStack);
+  const showHeroPhoto = isCover || (showTopHero && heroPhotoVisibleInPreview(theme));
+  const showTopHeroSection = isCover || (showTopHero && (isStack || showHeroPhoto));
+  const heroGridClass =
+    showTopHeroSection && isBanner
+      ? !showHeroPhoto
+        ? ' profile-hero__grid--no-photo'
+        : ' profile-hero__grid--photo-only'
+      : showTopHeroSection && !showHeroPhoto
+        ? ' profile-hero__grid--no-photo'
+        : '';
+  const infoHtml = '';
+  const photoColumnHidden = showHeroPhoto ? '' : ' hidden';
+  const bookIntroHtml = '';
+
+  const reviews = context.reviews ?? [];
+  const reviewsEnabled = context.reviewsEnabled ?? true;
+  const mainSectionOptions = {
+    reviews,
+    reviewsEnabled,
+  };
 
   const heroSectionClass = isStack
     ? 'profile-hero profile-hero--stack'
     : isCover
       ? 'profile-hero profile-hero--cover'
-      : 'profile-hero';
+      : !showTopHeroSection
+        ? 'profile-hero profile-hero--hidden'
+        : 'profile-hero';
 
-  const bodyClass = isCover
-    ? 'tpl-profile page-home page-splash page-cover-splash hero-layout-cover'
-    : 'tpl-profile page-home';
+  const coverStartOnBook = isCover && theme.coverPreviewOnBookPage === true;
 
-  const bookIntroHtml =
-    isCover && (aboutBlockHtml || policyBlockHtml)
-      ? `<section class="profile-book-intro"><div class="container"><div class="profile-info" id="site-main-content">${aboutBlockHtml}${policyBlockHtml}</div></div></section>`
-      : isCover
-        ? ''
-        : '';
+  const bodyClass = [
+    isCover
+      ? coverStartOnBook
+        ? 'tpl-profile page-home page-book preview-cover-on-book hero-layout-cover'
+        : 'tpl-profile page-home page-splash page-cover-splash hero-layout-cover'
+      : 'tpl-profile page-home',
+    theme.zoomedOut ? 'styld-preview-desktop' : '',
+    theme.embeddedPreview ? 'styld-preview-embedded' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   const footerHtml = `<footer class="site-footer site-footer--home-promo"><div class="container footer-bottom">
 <p>&copy; ${escapeHtml(content.brandName)}</p>
@@ -939,15 +1138,20 @@ ${policyBlockHtml}
 
   const bookPageMainHtml =
     isCover
-      ? `<main>${orderMainSections(content, theme, menuSection, visitSection)}</main>${footerHtml}`
+      ? `<main>${orderMainSections(content, theme, menuSection, visitSection, aboutHtml, policyHtml, {
+          ...mainSectionOptions,
+        })}</main>${footerHtml}${buildReviewModalHtml()}`
       : '';
 
   const belowHeroHtml = isCover
     ? ''
     : `<main>
-${orderMainSections(content, theme, menuSection, visitSection)}
+${orderMainSections(content, theme, menuSection, visitSection, aboutHtml, policyHtml, {
+  ...mainSectionOptions,
+})}
 </main>
-${footerHtml}`;
+${footerHtml}
+${buildReviewModalHtml()}`;
 
   const bookPageNavHtml = buildProfilePreviewNavHtml(content, logoHtml, {
     brandHref: '#',
@@ -956,21 +1160,24 @@ ${footerHtml}`;
   });
 
   const coverBookPageHtml = isCover
-    ? `<div id="preview-cover-book" class="preview-cover-book" hidden>
+    ? `<div id="preview-cover-book" class="preview-cover-book"${coverStartOnBook ? '' : ' hidden'}>
 ${bookPageNavHtml}
 ${bookIntroHtml}
 ${bookPageMainHtml}
 </div>`
     : '';
 
-  const splashWrapOpen = isCover ? '<div id="preview-cover-splash" class="preview-cover-splash">' : '';
+  const splashWrapOpen = isCover
+    ? `<div id="preview-cover-splash" class="preview-cover-splash"${coverStartOnBook ? ' hidden' : ''}>`
+    : '';
   const splashWrapClose = isCover ? '</div>' : '';
 
   const navBookHref = '#';
 
-  const previewBannerHtml = isCover
-    ? ''
-    : '<div class="preview-banner">Styld preview — this is how your booking site will look</div>';
+  const previewBannerHtml =
+    isCover && !coverStartOnBook
+      ? ''
+      : '<div class="preview-banner">Styld preview — this is how your booking site will look</div>';
 
   const navHtml = isCover
     ? buildProfilePreviewNavHtml(content, logoHtml, { coverSplash: true })
@@ -1032,10 +1239,28 @@ ${bookPageMainHtml}
     fitCoverPreview();
     window.addEventListener('resize',fitCoverPreview);
   }
+  function fitEmbeddedDesktopPreview(){
+    if(!document.body.classList.contains('styld-preview-embedded')) return;
+    if(!document.body.classList.contains('styld-preview-desktop')) return;
+    var target=1120;
+    var vw=window.innerWidth||document.documentElement.clientWidth||target;
+    var scale=Math.min(1,vw/target);
+    var meta=document.querySelector('meta[name=viewport]');
+    if(meta){
+      meta.setAttribute('content','width='+target+',initial-scale='+scale+',maximum-scale='+scale+',user-scalable=no');
+    }
+  }
+  window.fitEmbeddedDesktopPreview=fitEmbeddedDesktopPreview;
+  function bootEmbeddedDesktopPreview(){
+    fitEmbeddedDesktopPreview();
+    window.addEventListener('resize',fitEmbeddedDesktopPreview);
+  }
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded',bootCoverPreview);
+    document.addEventListener('DOMContentLoaded',bootEmbeddedDesktopPreview);
   }else{
     bootCoverPreview();
+    bootEmbeddedDesktopPreview();
   }
 })();
 ${STYLD_PREVIEW_INTERACTIONS_SCRIPT}
@@ -1045,8 +1270,8 @@ ${STYLD_PREVIEW_INTERACTIONS_SCRIPT}
 ${previewBannerHtml}
 ${splashWrapOpen}
 ${navHtml}
-<section class="${heroSectionClass}">${stackImagesHtml}<div class="container profile-hero__grid">
-<div class="profile-photo" id="profile-photo-wrap"><div class="${photoBgClass}" id="profile-hero-photo"${photoBgStyle}>${coverOverlayHtml}</div></div>
+<section class="${heroSectionClass}">${stackImagesHtml}<div class="container profile-hero__grid${heroGridClass}">
+<div class="profile-photo" id="profile-photo-wrap"${photoColumnHidden}><div class="${photoBgClass}" id="profile-hero-photo"${photoBgStyle}>${coverOverlayHtml}</div></div>
 ${infoHtml}
 </div></section>
 ${splashWrapClose}
@@ -1059,14 +1284,25 @@ export function buildSitePreviewHtml(
   content: SiteContent,
   styles: SitePreviewStyle[] = [],
   theme: SitePreviewTheme = DEFAULT_PREVIEW_THEME,
+  context: SitePreviewContext = {},
 ): string {
   if (theme.templateId !== 'classic') {
-    return buildProfileSitePreviewHtml(content, styles, theme);
+    return buildProfileSitePreviewHtml(content, styles, theme, context);
   }
   const address = formatSiteAddress(content);
-  const instagram = content.instagramHandle.replace(/^@/, '');
   const mapsSearchUrl = buildGoogleMapsSearchUrl(address);
   const mapSrc = buildGoogleMapsEmbedUrl(content);
+  const socialLines = !isLocationPartHidden(content, 'social')
+    ? listActiveSocialLinks(content.socialLinks)
+        .map(({ platform, value }) => {
+          const url = buildSocialUrl(platform.id, value);
+          if (!url) return '';
+          const label = formatSocialDisplay(platform, value);
+          return `<p><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a></p>`;
+        })
+        .filter(Boolean)
+        .join('')
+    : '';
 
   const viewportContent = theme.zoomedOut
     ? 'width=800'
@@ -1106,7 +1342,9 @@ ${menuInner}</div></section>`;
 
   const contactBlock = isLocationPartHidden(content, 'contact')
     ? ''
-    : `<p>${escapeHtml(content.phoneDisplay)}</p><p>@${escapeHtml(instagram)}</p>${content.email ? `<p>${escapeHtml(content.email)}</p>` : ''}`;
+    : `${content.phoneDisplay ? `<p>${escapeHtml(content.phoneDisplay)}</p>` : ''}${content.email ? `<p>${escapeHtml(content.email)}</p>` : ''}`;
+
+  const socialBlock = isLocationPartHidden(content, 'social') ? '' : socialLines;
 
   const mapBlock =
     isLocationPartHidden(content, 'map') || !mapSrc
@@ -1119,7 +1357,7 @@ ${menuInner}</div></section>`;
 <h2>${escapeHtml(content.visitTitle)}</h2><p>${escapeHtml(content.visitBody)}</p></div>
 <div class="info-cards info-cards--location-layout">
 <article class="info-card info-card--location"><h3>Location</h3><div class="info-card-body">
-${addressBlock}${contactBlock}${mapBlock}
+${addressBlock}${contactBlock}${socialBlock}${mapBlock}
 </div></article></div></div></section>`;
 
   return `<!DOCTYPE html>

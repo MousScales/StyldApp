@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import BusinessScreenLayout, { BusinessSection } from '../../components/business/BusinessScreenLayout';
+import PlatformFeePayerEditor from '../../components/business/PlatformFeePayerEditor';
 import { useServiceCatalog } from '../../context/ServiceCatalogContext';
 import { useSiteData } from '../../context/SiteDataContext';
 import {
@@ -36,7 +37,7 @@ import {
   bookingPaymentToSave,
 } from '../../data/bookingPayment';
 import { useUnsavedChangesGuard } from '../../hooks/useUnsavedChangesGuard';
-import { computeServiceFee, totalChargeWithServiceFee } from '../../lib/bookingServiceFee';
+import { computePlatformFee, totalChargeWithPlatformFee, PLATFORM_FEE_LABEL } from '../../lib/bookingServiceFee';
 import {
   loadBookingPayment,
   loadCancellationPolicy,
@@ -184,8 +185,14 @@ function ClientPreview({ payment }: { payment: BookingPaymentSettings }) {
     () => computePreview(payment, previewService.price),
     [payment, previewService.price],
   );
-  const serviceFee = payment.mode === 'in_person' ? 0 : computeServiceFee(preview.dueNow);
-  const chargeTotal = payment.mode === 'in_person' ? 0 : totalChargeWithServiceFee(preview.dueNow);
+  const platformFee =
+    payment.mode === 'in_person'
+      ? 0
+      : computePlatformFee(preview.dueNow, payment.platformFeePayer);
+  const chargeTotal =
+    payment.mode === 'in_person'
+      ? 0
+      : totalChargeWithPlatformFee(preview.dueNow, payment.platformFeePayer);
 
   return (
     <View style={styles.previewWrap}>
@@ -203,10 +210,10 @@ function ClientPreview({ payment }: { payment: BookingPaymentSettings }) {
               <Text style={styles.styleCardPaymentLabel}>{preview.dueNowLabel}</Text>
               <Text style={styles.styleCardPaymentValue}>{formatMoney(preview.dueNow)}</Text>
             </View>
-            {serviceFee > 0 ? (
+            {platformFee > 0 ? (
               <View style={styles.styleCardPaymentRow}>
-                <Text style={styles.styleCardPaymentLabel}>Service fee</Text>
-                <Text style={styles.styleCardPaymentValue}>{formatMoney(serviceFee)}</Text>
+                <Text style={styles.styleCardPaymentLabel}>{PLATFORM_FEE_LABEL}</Text>
+                <Text style={styles.styleCardPaymentValue}>{formatMoney(platformFee)}</Text>
               </View>
             ) : null}
             {chargeTotal > 0 ? (
@@ -593,6 +600,13 @@ export default function BookingPaymentScreen({ navigation }: Props) {
         </Text>
       ) : null}
 
+      <BusinessSection title="Platform fee">
+        <PlatformFeePayerEditor
+          value={payment.platformFeePayer}
+          onChange={(platformFeePayer) => updatePayment({ ...payment, platformFeePayer })}
+        />
+      </BusinessSection>
+
       <BusinessSection title="Cancellation policy">
         <Text style={styles.sectionLead}>
           Clients can cancel online anytime before the appointment. Refunds depend on your refund
@@ -607,8 +621,10 @@ export default function BookingPaymentScreen({ navigation }: Props) {
             onPress={() => handlePresetPress(preset.id)}
           />
         ))}
+        {cancellationPolicy.preset !== 'no_refunds' ? (
+          <>
         <Text style={styles.policyFieldLabel}>Refunds apply to</Text>
-        {REFUND_APPLIES_TO_OPTIONS.map((option) => (
+        {REFUND_APPLIES_TO_OPTIONS.filter((option) => option.id !== 'none').map((option) => (
           <CancellationPresetCard
             key={option.id}
             selected={cancellationPolicy.refundAppliesTo === option.id}
@@ -617,6 +633,8 @@ export default function BookingPaymentScreen({ navigation }: Props) {
             onPress={() => handleRefundScopePress(option.id)}
           />
         ))}
+          </>
+        ) : null}
         <Text style={styles.policyFieldLabel}>Policy text (shown at checkout)</Text>
         <TextInput
           style={styles.policySummaryInput}

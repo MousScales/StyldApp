@@ -1,5 +1,13 @@
 import { AppointmentDetail } from '../data/appointments';
 import { Booking, Client, FavoriteOrder } from '../data/clients';
+import {
+  buildClientIdentityKey,
+  groupBookingsByClient,
+  normalizeClientEmail,
+  normalizeClientName,
+  normalizeClientPhone,
+  uniqueContactValues,
+} from './clientMerge';
 import { CalendarEvent } from '../data/calendarEvents';
 import { Period } from '../data/periods';
 import {
@@ -44,6 +52,9 @@ export type SiteBookingRecord = {
   hairType: string;
   notes: string;
   location: string;
+  isTravelBooking: boolean;
+  travelFeeUsd: number;
+  travelDistanceMiles: number | null;
   price: number;
   depositAmount: number;
   depositPaid: boolean;
@@ -57,6 +68,8 @@ export type SiteBookingRecord = {
   createdAt: Date;
   sessionStartedAt: Date | null;
   sessionEndedAt: Date | null;
+  sessionAssumedFinishedAt: Date | null;
+  sessionLiveEngagedAt: Date | null;
   actualDurationMinutes: number;
   stylistNotes: string;
   tipAmount: number;
@@ -64,6 +77,14 @@ export type SiteBookingRecord = {
   balanceCollectedAt: Date | null;
   completedAt: Date | null;
   paymentMethodAtService: string;
+  paymentLinkUrl: string;
+  paymentLinkSentAt: Date | null;
+  paymentLinkTotalCents: number;
+  paymentLinkBalanceCents: number;
+  paymentLinkTipCents: number;
+  paymentLinkPlatformFeeCents: number;
+  paymentLinkPlatformFeePayer: string;
+  platformFeePayer: string;
   orderProducts: OrderProductLine[];
   productsSubtotal: number;
   shippingAmount: number;
@@ -81,6 +102,23 @@ export type SiteDataSnapshot = {
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+/** Hair/reference paths — live bookings may use either key naming scheme. */
+export function resolveBookingPhotoHairPath(data: Record<string, unknown>): string {
+  return (
+    asString(data.photo_hair_path) ||
+    asString(data.current_hair_photo_path) ||
+    asString(data.photoHairPath)
+  );
+}
+
+export function resolveBookingPhotoRefPath(data: Record<string, unknown>): string {
+  return (
+    asString(data.photo_ref_path) ||
+    asString(data.reference_photo_path) ||
+    asString(data.photoRefPath)
+  );
 }
 
 function asNumber(value: unknown, fallback = 0): number {
@@ -179,6 +217,8 @@ function parseSessionFields(data: Record<string, unknown>) {
   return {
     sessionStartedAt: parseDate(data.session_started_at),
     sessionEndedAt: parseDate(data.session_ended_at),
+    sessionAssumedFinishedAt: parseDate(data.session_assumed_finished_at),
+    sessionLiveEngagedAt: parseDate(data.session_live_engaged_at),
     actualDurationMinutes: asNumber(data.actual_duration_minutes),
     stylistNotes: asString(data.stylist_notes),
     tipAmount: asNumber(data.tip_amount),
@@ -186,6 +226,14 @@ function parseSessionFields(data: Record<string, unknown>) {
     balanceCollectedAt: parseDate(data.balance_collected_at),
     completedAt: parseDate(data.completed_at),
     paymentMethodAtService: asString(data.payment_method_at_service),
+    paymentLinkUrl: asString(data.payment_link_url),
+    paymentLinkSentAt: parseDate(data.payment_link_sent_at),
+    paymentLinkTotalCents: asNumber(data.payment_link_total_cents),
+    paymentLinkBalanceCents: asNumber(data.payment_link_balance_cents),
+    paymentLinkTipCents: asNumber(data.payment_link_tip_cents),
+    paymentLinkPlatformFeeCents: asNumber(data.payment_link_platform_fee_cents),
+    paymentLinkPlatformFeePayer: asString(data.payment_link_platform_fee_payer, 'client'),
+    platformFeePayer: asString(data.platform_fee_payer, 'client'),
   };
 }
 
@@ -193,6 +241,7 @@ function mapBookingStatus(bookingStatus: string, _startsAt: Date | null): Appoin
   const normalized = bookingStatus.toLowerCase();
   if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
   if (normalized === 'completed') return 'completed';
+  if (normalized === 'assumed_finished') return 'assumed_finished';
   if (normalized === 'in_progress') return 'in_progress';
   if (normalized === 'pending_approval') return 'pending_approval';
   return 'upcoming';
@@ -201,6 +250,7 @@ function mapBookingStatus(bookingStatus: string, _startsAt: Date | null): Appoin
 function mapClientBookingStatus(status: AppointmentDetail['status']): Booking['status'] {
   if (status === 'cancelled') return 'cancelled';
   if (status === 'completed') return 'completed';
+  if (status === 'assumed_finished') return 'assumed_finished';
   if (status === 'in_progress') return 'in_progress';
   if (status === 'pending_approval') return 'pending';
   return 'upcoming';
@@ -210,7 +260,33 @@ export function isBookingInProgress(booking: Pick<SiteBookingRecord, 'bookingSta
   return booking.bookingStatus.toLowerCase() === 'in_progress';
 }
 
-export function isBookingActiveNow(booking: SiteBookingRecord, now = Date.now()): boolean {
+export function isBookingAssumedFinished(booking: Pick<SiteBookingRecord, 'bookingStatus'>): boolean {
+  return booking.bookingStatus.toLowerCase() === 'assumed_finished';
+}
+
+export function isBookingLiveSession(booking: Pick<SiteBookingRecord, 'bookingStatus'>): boolean {
+  const status = booking.bookingStatus.toLowerCase();
+  return status === 'in_progress' || status === 'assumed_finished';
+}
+
+export function isSameLocalDay(left: Date, right: Date): boolean {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+export function isBookingScheduledToday(
+  booking: Pick<SiteBookingRecord, 'startsAt'>,
+  today = new Date(),
+): boolean {
+  if (!booking.startsAt) return false;
+  return isSameLocalDay(booking.startsAt, today);
+}
+
+/** In session or within the pre/post appointment window — excludes assumed finished. */
+export function isBookingLiveNow(booking: SiteBookingRecord, now = Date.now()): boolean {
   if (isBookingInProgress(booking)) return true;
   const status = booking.bookingStatus.toLowerCase();
   if (status !== 'confirmed') return false;
@@ -221,11 +297,29 @@ export function isBookingActiveNow(booking: SiteBookingRecord, now = Date.now())
   return now >= startMs - graceMs && now <= endMs + graceMs;
 }
 
+export function isBookingActiveNow(booking: SiteBookingRecord, now = Date.now()): boolean {
+  if (isBookingLiveNow(booking, now)) return true;
+  if (isBookingAssumedFinished(booking) && isBookingScheduledToday(booking, new Date(now))) {
+    return true;
+  }
+  return false;
+}
+
 export function getBalanceDue(booking: SiteBookingRecord): number {
   const ps = booking.paymentStatus.toLowerCase().trim();
-  if (ps === 'paid' || booking.bookingStatus.toLowerCase() === 'completed') return 0;
+  if (ps === 'paid') return 0;
+  if (booking.balanceCollectedCents > 0) return 0;
   const deposit = booking.depositPaid ? booking.depositAmount : 0;
   return Math.max(0, booking.price - deposit);
+}
+
+export function isPaymentLinkPending(booking: Pick<
+  SiteBookingRecord,
+  'paymentStatus' | 'paymentLinkUrl' | 'balanceCollectedCents'
+>): boolean {
+  const ps = booking.paymentStatus.toLowerCase().trim();
+  if (ps === 'paid' || booking.balanceCollectedCents > 0) return false;
+  return ps === 'payment_link_sent' || Boolean(booking.paymentLinkUrl.trim());
 }
 
 export function getSessionElapsedMs(booking: SiteBookingRecord, now = Date.now()): number {
@@ -234,10 +328,127 @@ export function getSessionElapsedMs(booking: SiteBookingRecord, now = Date.now()
   return Math.max(0, end - booking.sessionStartedAt.getTime());
 }
 
-function getClientKey(email: string, phone: string): string {
-  const normalizedEmail = email.trim().toLowerCase();
-  const normalizedPhone = phone.replace(/\D/g, '');
-  return normalizedEmail || normalizedPhone || 'unknown-client';
+function getClientCollectedAmount(booking: SiteBookingRecord): number {
+  const paid = getPaidAmount(booking);
+  const refund =
+    booking.refundAmountCents > 0 && booking.refundStatus !== 'none'
+      ? booking.refundAmountCents / 100
+      : 0;
+  return Math.max(0, paid - refund);
+}
+
+function buildClients(bookings: SiteBookingRecord[]): Client[] {
+  const groups = groupBookingsByClient(bookings);
+
+  return groups
+    .map((indices) => {
+      const clientBookings = indices.map((index) => bookings[index]);
+      const sorted = [...clientBookings].sort((a, b) => {
+        const aTime = (a.startsAt ?? a.createdAt).getTime();
+        const bTime = (b.startsAt ?? b.createdAt).getTime();
+        return bTime - aTime;
+      });
+
+      const latest = sorted[0];
+      const emails = uniqueContactValues(
+        sorted.map((booking) => booking.email),
+        normalizeClientEmail,
+      );
+      const phones = uniqueContactValues(
+        sorted.map((booking) => booking.phone),
+        normalizeClientPhone,
+      );
+      const nameKey = normalizeClientName(latest.fullName) || 'unknown-client';
+      const clientId = buildClientIdentityKey(emails, phones, nameKey);
+
+      const activeBookings = sorted.filter((booking) => {
+        const status = booking.bookingStatus.toLowerCase().trim();
+        return status !== 'cancelled' && status !== 'canceled';
+      });
+
+      const completedBookings = sorted.filter(
+        (booking) => mapBookingStatus(booking.bookingStatus, booking.startsAt) === 'completed',
+      );
+
+      const completedWithDuration = completedBookings.filter((b) => b.actualDurationMinutes > 0);
+      const avgSessionMinutes =
+        completedWithDuration.length > 0
+          ? Math.round(
+              completedWithDuration.reduce((sum, b) => sum + b.actualDurationMinutes, 0) /
+                completedWithDuration.length,
+            )
+          : 0;
+      const totalTips = activeBookings.reduce(
+        (sum, b) => sum + (b.tipAmount > 0 ? b.tipAmount : 0),
+        0,
+      );
+
+      const serviceCounts = new Map<string, { count: number; styleId?: string }>();
+      for (const booking of sorted) {
+        const existing = serviceCounts.get(booking.service);
+        serviceCounts.set(booking.service, {
+          count: (existing?.count ?? 0) + 1,
+          styleId: existing?.styleId ?? booking.styleId ?? undefined,
+        });
+      }
+
+      const favoriteOrders: FavoriteOrder[] = Array.from(serviceCounts.entries())
+        .map(([service, { count, styleId }]) => ({ service, styleId, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3);
+
+      const hairTypes = Array.from(
+        new Set(sorted.map((booking) => booking.hairType).filter((value) => value && value !== '—')),
+      );
+
+      const earliest = sorted.reduce(
+        (min, booking) => (booking.createdAt.getTime() < min.getTime() ? booking.createdAt : min),
+        sorted[0].createdAt,
+      );
+
+      const latestHairBooking = sorted.find((booking) => booking.photoHairPath.trim());
+
+      const pastBookings: Booking[] = sorted.map((booking) => {
+        const appointment = toAppointmentDetail(booking);
+        return {
+          id: booking.id,
+          service: booking.service,
+          styleId: booking.styleId || undefined,
+          date: appointment.date,
+          time: appointment.time,
+          amount: getClientCollectedAmount(booking) || booking.price,
+          hairType: booking.hairType,
+          status: mapClientBookingStatus(appointment.status),
+          productCount: booking.orderProducts.length,
+          bookingStatus: booking.bookingStatus,
+        };
+      });
+
+      return {
+        id: clientId,
+        name: latest.fullName,
+        email: emails[0] || latest.email || '—',
+        phone: phones[0] || latest.phone || '—',
+        emails,
+        phones,
+        photoHairPath: latestHairBooking?.photoHairPath || undefined,
+        photoStorageBookingId: latestHairBooking?.storageBookingId || undefined,
+        location: latest.location,
+        memberSince: earliest.toLocaleDateString('default', { month: 'short', year: 'numeric' }),
+        totalSpent: activeBookings.reduce(
+          (sum, booking) => sum + getClientCollectedAmount(booking),
+          0,
+        ),
+        totalBookings: sorted.length,
+        avgSessionMinutes,
+        totalTips,
+        hairTypes,
+        notes: latest.notes || 'No notes yet.',
+        favoriteOrders,
+        pastBookings,
+      };
+    })
+    .sort((a, b) => b.totalBookings - a.totalBookings);
 }
 
 function isUnifiedRecord(row: unknown): row is UnifiedSiteRecord {
@@ -262,8 +473,8 @@ function parseUnifiedBooking(record: UnifiedSiteRecord): SiteBookingRecord | nul
   return {
     id: record.id,
     storageBookingId,
-    photoHairPath: asString(data.photo_hair_path),
-    photoRefPath: asString(data.photo_ref_path),
+    photoHairPath: resolveBookingPhotoHairPath(data),
+    photoRefPath: resolveBookingPhotoRefPath(data),
     fullName: asString(data.full_name, 'Unknown client'),
     email: asString(data.email),
     phone: asString(data.phone),
@@ -272,6 +483,12 @@ function parseUnifiedBooking(record: UnifiedSiteRecord): SiteBookingRecord | nul
     hairType: [asString(data.hair_length), asString(data.hair_option)].filter(Boolean).join(' · ') || '—',
     notes: asString(data.notes),
     location: asString(data.service_address, ''),
+    isTravelBooking: data.is_travel_booking === true,
+    travelFeeUsd: asNumber(data.travel_fee_usd),
+    travelDistanceMiles:
+      typeof data.travel_distance_miles === 'number' && Number.isFinite(data.travel_distance_miles)
+        ? data.travel_distance_miles
+        : null,
     price: asNumber(data.estimated_total),
     depositAmount: asNumber(data.deposit_amount),
     paymentStatus: asString(data.payment_status),
@@ -339,8 +556,8 @@ function parseFlatBooking(record: FlatBookingRecord): SiteBookingRecord | null {
   return {
     id: String(record.id),
     storageBookingId,
-    photoHairPath: asString(record.photo_hair_path),
-    photoRefPath: asString(record.photo_ref_path),
+    photoHairPath: resolveBookingPhotoHairPath(record),
+    photoRefPath: resolveBookingPhotoRefPath(record),
     fullName: asString(record.full_name, 'Unknown client'),
     email: asString(record.email),
     phone: asString(record.phone),
@@ -349,6 +566,12 @@ function parseFlatBooking(record: FlatBookingRecord): SiteBookingRecord | null {
     hairType: [asString(record.hair_length), asString(record.hair_option)].filter(Boolean).join(' · ') || '—',
     notes: asString(record.notes),
     location: asString(record.service_address, ''),
+    isTravelBooking: record.is_travel_booking === true,
+    travelFeeUsd: asNumber(record.travel_fee_usd),
+    travelDistanceMiles:
+      typeof record.travel_distance_miles === 'number' && Number.isFinite(record.travel_distance_miles)
+        ? record.travel_distance_miles
+        : null,
     price: asNumber(record.estimated_total),
     depositAmount: asNumber(record.deposit_amount),
     paymentStatus: asString(record.payment_status),
@@ -428,100 +651,6 @@ function toCalendarEvent(booking: SiteBookingRecord): CalendarEvent | null {
     endMinute: end.getMinutes(),
     completed: status === 'completed',
   };
-}
-
-function buildClients(bookings: SiteBookingRecord[]): Client[] {
-  const grouped = new Map<string, SiteBookingRecord[]>();
-
-  for (const booking of bookings) {
-    const key = getClientKey(booking.email, booking.phone);
-    const current = grouped.get(key) ?? [];
-    current.push(booking);
-    grouped.set(key, current);
-  }
-
-  return Array.from(grouped.entries())
-    .map(([key, clientBookings]) => {
-      const sorted = [...clientBookings].sort((a, b) => {
-        const aTime = (a.startsAt ?? a.createdAt).getTime();
-        const bTime = (b.startsAt ?? b.createdAt).getTime();
-        return bTime - aTime;
-      });
-
-      const latest = sorted[0];
-      const completedBookings = sorted.filter(
-        (booking) => mapBookingStatus(booking.bookingStatus, booking.startsAt) === 'completed',
-      );
-
-      const completedWithDuration = completedBookings.filter((b) => b.actualDurationMinutes > 0);
-      const avgSessionMinutes =
-        completedWithDuration.length > 0
-          ? Math.round(
-              completedWithDuration.reduce((sum, b) => sum + b.actualDurationMinutes, 0) /
-                completedWithDuration.length,
-            )
-          : 0;
-      const totalTips = completedBookings.reduce((sum, b) => sum + (b.tipAmount > 0 ? b.tipAmount : 0), 0);
-
-      const serviceCounts = new Map<string, { count: number; styleId?: string }>();
-      for (const booking of sorted) {
-        const existing = serviceCounts.get(booking.service);
-        serviceCounts.set(booking.service, {
-          count: (existing?.count ?? 0) + 1,
-          styleId: existing?.styleId ?? booking.styleId ?? undefined,
-        });
-      }
-
-      const favoriteOrders: FavoriteOrder[] = Array.from(serviceCounts.entries())
-        .map(([service, { count, styleId }]) => ({ service, styleId, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 3);
-
-      const hairTypes = Array.from(
-        new Set(sorted.map((booking) => booking.hairType).filter((value) => value && value !== '—')),
-      );
-
-      const earliest = sorted.reduce((min, booking) =>
-        booking.createdAt.getTime() < min.getTime() ? booking.createdAt : min,
-      sorted[0].createdAt);
-
-      const pastBookings: Booking[] = sorted.map((booking) => {
-        const appointment = toAppointmentDetail(booking);
-        return {
-          id: booking.id,
-          service: booking.service,
-          styleId: booking.styleId || undefined,
-          date: appointment.date,
-          time: appointment.time,
-          amount: booking.price,
-          hairType: booking.hairType,
-          status: mapClientBookingStatus(appointment.status),
-          productCount: booking.orderProducts.length,
-          bookingStatus: booking.bookingStatus,
-        };
-      });
-
-      return {
-        id: key,
-        name: latest.fullName,
-        email: latest.email || '—',
-        phone: latest.phone || '—',
-        location: latest.location,
-        memberSince: earliest.toLocaleDateString('default', { month: 'short', year: 'numeric' }),
-        totalSpent: completedBookings.reduce(
-          (sum, booking) => sum + booking.price + (booking.tipAmount > 0 ? booking.tipAmount : 0),
-          0,
-        ),
-        totalBookings: sorted.length,
-        avgSessionMinutes,
-        totalTips,
-        hairTypes,
-        notes: latest.notes || 'No notes yet.',
-        favoriteOrders,
-        pastBookings,
-      };
-    })
-    .sort((a, b) => b.totalBookings - a.totalBookings);
 }
 
 function buildSnapshot(linkedSite: LinkedSite | null, bookings: SiteBookingRecord[]): SiteDataSnapshot {
@@ -790,7 +919,10 @@ export function getTodayJobStats(snapshot: SiteDataSnapshot) {
     (booking) => mapBookingStatus(booking.bookingStatus, booking.startsAt) === 'completed',
   ).length;
   const inProgress = todayBookings.filter(
-    (booking) => booking.bookingStatus.toLowerCase() === 'in_progress',
+    (booking) => {
+      const status = booking.bookingStatus.toLowerCase();
+      return status === 'in_progress' || status === 'assumed_finished';
+    },
   ).length;
   const total = todayBookings.length;
 
@@ -816,11 +948,11 @@ export function getPendingApprovalAppointments(snapshot: SiteDataSnapshot, limit
     .map(toAppointmentDetail);
 }
 
-export function getActiveAppointments(snapshot: SiteDataSnapshot, limit = 10): AppointmentDetail[] {
+export function getLiveNowAppointments(snapshot: SiteDataSnapshot, limit = 10): AppointmentDetail[] {
   const now = Date.now();
 
   return snapshot.bookings
-    .filter((booking) => isBookingActiveNow(booking, now))
+    .filter((booking) => isBookingLiveNow(booking, now))
     .sort((a, b) => {
       const aStart = a.sessionStartedAt?.getTime() ?? a.startsAt?.getTime() ?? 0;
       const bStart = b.sessionStartedAt?.getTime() ?? b.startsAt?.getTime() ?? 0;
@@ -828,6 +960,31 @@ export function getActiveAppointments(snapshot: SiteDataSnapshot, limit = 10): A
     })
     .slice(0, limit)
     .map(toAppointmentDetail);
+}
+
+export function getAssumedFinishedTodayAppointments(
+  snapshot: SiteDataSnapshot,
+  limit = 10,
+): AppointmentDetail[] {
+  const today = new Date();
+
+  return snapshot.bookings
+    .filter(
+      (booking) =>
+        isBookingAssumedFinished(booking) && isBookingScheduledToday(booking, today),
+    )
+    .sort((a, b) => {
+      const aEnd = a.sessionAssumedFinishedAt?.getTime() ?? a.startsAt?.getTime() ?? 0;
+      const bEnd = b.sessionAssumedFinishedAt?.getTime() ?? b.startsAt?.getTime() ?? 0;
+      return bEnd - aEnd;
+    })
+    .slice(0, limit)
+    .map(toAppointmentDetail);
+}
+
+/** @deprecated Use getLiveNowAppointments for dashboard "Now" rows. */
+export function getActiveAppointments(snapshot: SiteDataSnapshot, limit = 10): AppointmentDetail[] {
+  return getLiveNowAppointments(snapshot, limit);
 }
 
 export function getUpcomingAppointments(snapshot: SiteDataSnapshot, limit = 5): AppointmentDetail[] {

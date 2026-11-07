@@ -2,7 +2,7 @@
   "expo": {
     "name": "Styld",
     "slug": "styld",
-    "version": "1.0.2",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.crmstyld.app",
-      "buildNumber": "9",
+      "buildNumber": "18",
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -25,7 +25,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.crmstyld.app",
-      "versionCode": 9,
+      "versionCode": 18,
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO"
@@ -41,7 +41,7 @@
       [
         "@stripe/stripe-terminal-react-native",
         {
-          "bluetoothBackgroundMode": true,
+          "bluetoothBackgroundMode": false,
           "tapToPayCheck": false,
           "locationWhenInUsePermission": "Styld uses your location to accept in-person Tap to Pay payments.",
           "bluetoothPeripheralPermission": "Styld uses Bluetooth to connect to supported card readers.",
@@ -71,6 +71,12 @@
         "expo-image-picker",
         {
           "photosPermission": "Styld uses your photo library so you can upload photos and videos of your work, business logo, and portfolio media to your booking website."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Styld adds your appointments to your phone calendar so they stay in sync with Apple Calendar or Google Calendar."
         }
       ],
       "expo-font"

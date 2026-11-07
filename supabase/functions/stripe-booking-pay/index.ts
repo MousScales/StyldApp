@@ -1,5 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { computeOnlineChargeCents, validateBookingPromo } from '../_shared/booking-promo.ts';
+import {
+  computeChargeBreakdown,
+  loadPlatformFeePayer,
+  resolvePlatformRatePercent,
+} from '../_shared/booking-service-fee.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,6 +49,7 @@ Deno.serve(async (req) => {
     }
 
     let chargeBaseCents = Math.round(Number(amountCents) || 0);
+    let platformFeePayer = await loadPlatformFeePayer(supabase, String(userId));
 
     if (subtotalCents != null) {
       let discountedSubtotalCents = Math.max(0, Math.round(Number(subtotalCents) || 0));
@@ -70,6 +76,9 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       const payValue = (payRow?.data as { value?: Record<string, unknown> } | undefined)?.value ?? {};
+      if (payValue.platformFeePayer === 'tenant' || payValue.platformFeePayer === 'client') {
+        platformFeePayer = payValue.platformFeePayer;
+      }
       chargeBaseCents = computeOnlineChargeCents(
         payValue,
         discountedSubtotalCents,
@@ -105,13 +114,11 @@ Deno.serve(async (req) => {
     //   chargeAmount = (amountCents × (1 + platformRate) + 30) / (1 − 0.029)
     //   application_fee_amount = chargeAmount − amountCents
     //   platform net = application_fee_amount − stripeFeeCents = platformRate × amountCents ✓
-    const platformRate = parseFloat(Deno.env.get('STYLD_PLATFORM_FEE_PERCENT') ?? '1') / 100;
+    const platformRate = resolvePlatformRatePercent();
     const base = Math.round(chargeBaseCents);
-    const chargeAmount = Math.round((base * (1 + platformRate) + 30) / (1 - 0.029));
-    const stripeFeeCents = Math.round(chargeAmount * 0.029 + 30);
-    const platformFeeCents = Math.round(base * platformRate); // Styld profit
-    const applicationFeeCents = chargeAmount - base;          // covers stripe + profit
-    const safeAppFee = Math.max(0, Math.min(applicationFeeCents, chargeAmount - 50));
+    const fees = computeChargeBreakdown(base, platformFeePayer, platformRate);
+    const chargeAmount = fees.chargeCents;
+    const safeAppFee = fees.applicationFeeCents;
 
     // Create a PaymentIntent on the platform, routing funds to the connected account.
     // We do NOT confirm server-side — the frontend confirms with the card element
@@ -124,8 +131,9 @@ Deno.serve(async (req) => {
     params.set('description', `Styld booking — ${subdomain}`);
     params.set('metadata[subdomain]', subdomain);
     params.set('metadata[source]', 'styld_booking');
-    params.set('metadata[stripe_fee_cents]', String(stripeFeeCents));
-    params.set('metadata[platform_fee_cents]', String(platformFeeCents));
+    params.set('metadata[stripe_fee_cents]', String(fees.stripeFeeCents));
+    params.set('metadata[platform_fee_cents]', String(fees.platformProfitCents));
+    params.set('metadata[platform_fee_payer]', platformFeePayer);
     if (bookingId) params.set('metadata[bookingId]', String(bookingId));
     if (customerEmail) params.set('receipt_email', String(customerEmail));
 
@@ -160,11 +168,13 @@ Deno.serve(async (req) => {
       subdomain,
       bookingId: bookingId ?? null,
       fees: {
-        bookingAmountCents: base,        // what stylist earns
-        serviceFeeCents: safeAppFee,     // what customer pays extra (covers Stripe + Styld)
-        totalChargeCents: chargeAmount,  // total on customer card
-        stripeFeeCents,
-        platformFeeCents,               // Styld net profit
+        bookingAmountCents: base,
+        serviceFeeCents: fees.displayPlatformFeeCents,
+        totalChargeCents: chargeAmount,
+        stripeFeeCents: fees.stripeFeeCents,
+        platformFeeCents: fees.platformProfitCents,
+        platformFeePayer,
+        stylistNetCents: fees.stylistNetCents,
       },
     });
   } catch (err: unknown) {

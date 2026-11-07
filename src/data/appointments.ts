@@ -2,7 +2,7 @@ export type AppointmentDetail = {
   id: string;
   service: string;
   styleId?: string;
-  status: 'upcoming' | 'pending_approval' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'upcoming' | 'pending_approval' | 'in_progress' | 'assumed_finished' | 'completed' | 'cancelled';
   date: string;
   time: string;
   duration: string;

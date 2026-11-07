@@ -523,13 +523,14 @@
               '&select=record_type,record_key,data',
           ).then(function (records) {
             var content = null;
-            var theme = { heroLayout: 'split' };
+            var theme = { heroLayout: 'banner' };
             var meta = {};
             var prices = {};
             var covers = {};
             var bookingHours = null;
             var bookingPayment = null;
             var cancellationPolicy = null;
+            var travelStylist = null;
             var productsCatalog = [];
             var productsSettings = null;
 
@@ -553,6 +554,9 @@
               }
               if (record.record_type === 'site_setting' && record.record_key === 'cancellation_policy') {
                 cancellationPolicy = value;
+              }
+              if (record.record_type === 'site_setting' && record.record_key === 'travel_stylist') {
+                travelStylist = value;
               }
               if (record.record_type === 'site_setting' && record.record_key === 'products_catalog') {
                 productsCatalog = Array.isArray(value) ? value : [];
@@ -579,6 +583,7 @@
               bookingHours: normalizeBookingHours(bookingHours),
               bookingPayment: bookingPayment,
               cancellationPolicy: cancellationPolicy,
+              travelStylist: travelStylist,
               productsCatalog: productsCatalog,
               productsSettings: productsSettings,
               bookingStyles: buildBookingStyles(meta, prices),

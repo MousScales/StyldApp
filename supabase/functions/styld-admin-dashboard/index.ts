@@ -311,7 +311,7 @@ async function handleUsers(admin: SupabaseClient, filters: Filters) {
       public_url: meta?.subdomain ? `https://${meta.subdomain}.styldd.com` : null,
       site_published: !!meta?.published_at,
       booking_count: c.bookings,
-      hero_layout: str(theme.heroLayout) || 'split',
+      hero_layout: str(theme.heroLayout) || 'banner',
       hero_layout_label: buildSiteThemeSummary(theme).hero_layout_label,
       style_count: Object.keys(catalog).length,
       addon_count: addonCount,

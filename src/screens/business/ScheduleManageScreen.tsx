@@ -1,4 +1,3 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -7,7 +6,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +25,7 @@ import {
 } from '../../components/calendar/timelineUtils';
 import { isWeekdayClosed } from '../../lib/bookingAvailability';
 import BusinessScreenLayout, { BusinessSection } from '../../components/business/BusinessScreenLayout';
+import TimePickerSheet from '../../components/business/TimePickerSheet';
 import { useServiceCatalog } from '../../context/ServiceCatalogContext';
 import { useSiteData } from '../../context/SiteDataContext';
 import { toDateKey } from '../../lib/siteData';
@@ -466,7 +465,12 @@ function HoursTab() {
   const pickerDate = new Date(); pickerDate.setHours(pt.hour, pt.minute, 0, 0);
   const openCount = WEEKDAY_ORDER.filter((d) => !hours.closedWeekdays.includes(d)).length;
 
+  const pickerTitle = picker
+    ? `${WEEKDAY_LABELS[picker.weekday]} · ${picker.field === 'start' ? 'Opens' : 'Closes'}`
+    : undefined;
+
   return (
+    <>
     <ScrollView
       style={hStyles.scroll}
       showsVerticalScrollIndicator={false}
@@ -585,18 +589,19 @@ function HoursTab() {
         }
       </Pressable>
 
-      {picker ? (
-        <DateTimePicker
-          value={pickerDate}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(_, date) => {
-            if (Platform.OS === 'android') setPicker(null);
-            if (date) applyPickerDate(date);
-          }}
-        />
-      ) : null}
     </ScrollView>
+
+    <TimePickerSheet
+      visible={picker !== null}
+      value={pickerDate}
+      title={pickerTitle}
+      onClose={() => setPicker(null)}
+      onConfirm={(date) => {
+        applyPickerDate(date);
+        setPicker(null);
+      }}
+    />
+    </>
   );
 }
 

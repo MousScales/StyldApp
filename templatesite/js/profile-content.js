@@ -44,6 +44,309 @@
     return content.hiddenLocationParts.indexOf(part) !== -1;
   }
 
+  var SOCIAL_PLATFORMS = [
+    { id: 'instagram', label: 'Instagram', inputKind: 'handle', prefix: '@' },
+    { id: 'tiktok', label: 'TikTok', inputKind: 'handle', prefix: '@' },
+    { id: 'facebook', label: 'Facebook', inputKind: 'url' },
+    { id: 'x', label: 'X (Twitter)', inputKind: 'handle', prefix: '@' },
+    { id: 'youtube', label: 'YouTube', inputKind: 'url' },
+    { id: 'pinterest', label: 'Pinterest', inputKind: 'handle', prefix: '@' },
+    { id: 'linkedin', label: 'LinkedIn', inputKind: 'url' },
+    { id: 'threads', label: 'Threads', inputKind: 'handle', prefix: '@' },
+    { id: 'snapchat', label: 'Snapchat', inputKind: 'handle', prefix: '@' },
+    { id: 'yelp', label: 'Yelp', inputKind: 'url' },
+    { id: 'google', label: 'Google Business', inputKind: 'url' },
+    { id: 'whatsapp', label: 'WhatsApp', inputKind: 'phone' },
+  ];
+
+  function looksLikeUrl(value) {
+    return /^https?:\/\//i.test(value) || /^www\./i.test(value);
+  }
+
+  function normalizeUrl(value) {
+    var trimmed = String(value || '').trim();
+    if (!trimmed) return '';
+    if (looksLikeUrl(trimmed)) {
+      return /^https?:\/\//i.test(trimmed) ? trimmed : 'https://' + trimmed;
+    }
+    return trimmed;
+  }
+
+  function normalizeSocialInput(platform, raw) {
+    var value = String(raw || '').trim();
+    if (!value) return '';
+    if (platform.inputKind === 'handle') return value.replace(/^@+/, '').trim();
+    if (platform.inputKind === 'phone') return value.replace(/[^\d+]/g, '').trim();
+    return normalizeUrl(value);
+  }
+
+  function normalizeSocialLinks(content) {
+    var links = {};
+    SOCIAL_PLATFORMS.forEach(function (platform) {
+      links[platform.id] = '';
+    });
+    var raw = content && content.socialLinks;
+    if (raw && typeof raw === 'object') {
+      SOCIAL_PLATFORMS.forEach(function (platform) {
+        if (typeof raw[platform.id] === 'string') {
+          links[platform.id] = normalizeSocialInput(platform, raw[platform.id]);
+        }
+      });
+    }
+    var legacy = content && content.instagramHandle
+      ? String(content.instagramHandle).replace(/^@+/, '').trim()
+      : '';
+    if (!links.instagram && legacy) links.instagram = legacy;
+    return links;
+  }
+
+  function buildSocialUrl(platformId, rawValue) {
+    var platform = SOCIAL_PLATFORMS.filter(function (row) {
+      return row.id === platformId;
+    })[0];
+    if (!platform) return null;
+    var value = normalizeSocialInput(platform, rawValue);
+    if (!value) return null;
+
+    switch (platformId) {
+      case 'instagram':
+        return 'https://www.instagram.com/' + encodeURIComponent(value) + '/';
+      case 'tiktok':
+        return 'https://www.tiktok.com/@' + encodeURIComponent(value);
+      case 'facebook':
+        return looksLikeUrl(value) || value.indexOf('facebook.com') !== -1
+          ? normalizeUrl(value)
+          : 'https://www.facebook.com/' + encodeURIComponent(value);
+      case 'x':
+        return 'https://x.com/' + encodeURIComponent(value);
+      case 'youtube':
+        return looksLikeUrl(value) || value.indexOf('youtube.com') !== -1 || value.indexOf('youtu.be') !== -1
+          ? normalizeUrl(value)
+          : 'https://www.youtube.com/' + (value.indexOf('@') === 0 ? value : '@' + value);
+      case 'pinterest':
+        return 'https://www.pinterest.com/' + encodeURIComponent(value) + '/';
+      case 'linkedin':
+        return looksLikeUrl(value) || value.indexOf('linkedin.com') !== -1
+          ? normalizeUrl(value)
+          : 'https://www.linkedin.com/in/' + encodeURIComponent(value);
+      case 'threads':
+        return 'https://www.threads.net/@' + encodeURIComponent(value);
+      case 'snapchat':
+        return 'https://www.snapchat.com/add/' + encodeURIComponent(value);
+      case 'yelp':
+      case 'google':
+        return normalizeUrl(value);
+      case 'whatsapp': {
+        var digits = value.replace(/\D/g, '');
+        return digits ? 'https://wa.me/' + digits : null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  function formatSocialDisplay(platform, rawValue) {
+    var value = normalizeSocialInput(platform, rawValue);
+    if (!value) return '';
+    if (platform.inputKind === 'handle' && platform.prefix) {
+      return platform.label + ' · ' + platform.prefix + value;
+    }
+    if (platform.inputKind === 'phone') {
+      return platform.label + ' · ' + value;
+    }
+    if (platform.inputKind === 'url') {
+      var short = value.replace(/^https?:\/\/(www\.)?/i, '');
+      return platform.label + ' · ' + (short.length > 36 ? short.slice(0, 36) + '…' : short);
+    }
+    return platform.label + ' · ' + value;
+  }
+
+  function hasAnySocialLink(links) {
+    return SOCIAL_PLATFORMS.some(function (platform) {
+      return String(links[platform.id] || '').trim().length > 0;
+    });
+  }
+
+  var VALID_MAIN_SECTIONS = ['aboutMe', 'policies', 'reviews', 'portfolio', 'menu', 'faq', 'visit'];
+
+  function normalizeHeroLayout(layout) {
+    if (layout === 'stack' || layout === 'cover' || layout === 'minimal' || layout === 'banner') {
+      return layout;
+    }
+    if (layout === 'split' || layout === 'image-below') return 'banner';
+    return 'banner';
+  }
+
+  function defaultMainSectionOrder(portfolioPlacement) {
+    if (portfolioPlacement === 'below_menu') {
+      return ['aboutMe', 'policies', 'reviews', 'menu', 'portfolio', 'faq', 'visit'];
+    }
+    return ['aboutMe', 'policies', 'reviews', 'portfolio', 'menu', 'faq', 'visit'];
+  }
+
+  function mergeMainSectionOrder(saved, portfolioPlacement) {
+    var template = defaultMainSectionOrder(portfolioPlacement);
+    var result = saved.slice();
+
+    template.forEach(function (section) {
+      if (result.indexOf(section) !== -1) return;
+
+      var insertAt = result.length;
+      var templateIdx = template.indexOf(section);
+
+      for (var i = templateIdx + 1; i < template.length; i += 1) {
+        var nextIdx = result.indexOf(template[i]);
+        if (nextIdx >= 0) {
+          insertAt = nextIdx;
+          break;
+        }
+      }
+
+      for (var j = templateIdx - 1; j >= 0; j -= 1) {
+        var prevIdx = result.indexOf(template[j]);
+        if (prevIdx >= 0) {
+          insertAt = prevIdx + 1;
+          break;
+        }
+      }
+
+      result.splice(insertAt, 0, section);
+    });
+
+    return result;
+  }
+
+  function normalizeMainSectionOrder(value, portfolioPlacement) {
+    var fallback = defaultMainSectionOrder(portfolioPlacement);
+    if (!Array.isArray(value)) return fallback.slice();
+
+    var seen = {};
+    var ordered = [];
+    value.forEach(function (item) {
+      if (
+        typeof item === 'string' &&
+        VALID_MAIN_SECTIONS.indexOf(item) !== -1 &&
+        !seen[item]
+      ) {
+        seen[item] = true;
+        ordered.push(item);
+      }
+    });
+
+    if (ordered.length === 0) return fallback.slice();
+
+    var merged = mergeMainSectionOrder(ordered, portfolioPlacement);
+    return merged.length === VALID_MAIN_SECTIONS.length ? merged : fallback.slice();
+  }
+
+  function resolveMainSectionOrder(content) {
+    var placement =
+      content && content.portfolioPlacement === 'below_menu' ? 'below_menu' : 'above_menu';
+    return normalizeMainSectionOrder(
+      content && content.mainSectionOrder,
+      placement,
+    );
+  }
+
+  function getMainSectionElement(sectionId) {
+    if (sectionId === 'aboutMe') return document.getElementById('profile-about-block');
+    if (sectionId === 'policies') return document.getElementById('profile-policy-block');
+    if (sectionId === 'reviews') return document.getElementById('profile-reviews-section');
+    if (sectionId === 'portfolio') return document.getElementById('profile-portfolio-section');
+    if (sectionId === 'menu') return document.getElementById('profile-menu-section');
+    if (sectionId === 'faq') return document.getElementById('profile-faq-section');
+    if (sectionId === 'visit') return document.getElementById('profile-location-section');
+    return null;
+  }
+
+  function ensureOrderedBlockWrapper(el, sectionId) {
+    if (!el) return null;
+    var existing = el.closest('.profile-ordered-block-section[data-wrap-section="' + sectionId + '"]');
+    if (existing) return existing;
+
+    var wrapper = document.createElement('section');
+    wrapper.className = 'profile-ordered-block-section';
+    wrapper.setAttribute('data-wrap-section', sectionId);
+    wrapper.setAttribute('data-site-section', sectionId);
+
+    var container = document.createElement('div');
+    container.className = 'container';
+
+    var parent = el.parentNode;
+    if (!parent) return el;
+
+    parent.insertBefore(wrapper, el);
+    wrapper.appendChild(container);
+    container.appendChild(el);
+    return wrapper;
+  }
+
+  function reorderMainSections(content, theme) {
+    var order = resolveMainSectionOrder(content);
+    var main = document.querySelector('main');
+    if (!main) return;
+
+    theme = theme || {};
+    var layout = normalizeHeroLayout(theme.heroLayout);
+    var isMinimal = layout === 'minimal';
+    var isBanner = layout === 'banner';
+
+    var heroSection = document.querySelector('.profile-hero');
+    var photoWrap = document.getElementById('profile-photo-wrap');
+    var heroInfo = document.querySelector('.profile-hero .profile-info');
+    var bookIntroInfo = document.querySelector('.profile-book-intro .profile-info');
+
+    var profileMainExisting = document.getElementById('profile-header-main-section');
+    if (profileMainExisting) profileMainExisting.remove();
+
+    if (heroInfo) {
+      while (heroInfo.firstChild) heroInfo.removeChild(heroInfo.firstChild);
+      heroInfo.style.display = 'none';
+    }
+    if (bookIntroInfo) {
+      while (bookIntroInfo.firstChild) bookIntroInfo.removeChild(bookIntroInfo.firstChild);
+    }
+
+    if (heroSection) {
+      heroSection.hidden = isMinimal;
+    }
+
+    if (photoWrap && heroSection && !isMinimal) {
+      var topGrid = heroSection.querySelector('.profile-hero__grid');
+      if (topGrid && photoWrap.parentElement !== topGrid) {
+        topGrid.insertBefore(photoWrap, topGrid.firstChild);
+      }
+    }
+
+    var heroGrid = heroSection ? heroSection.querySelector('.profile-hero__grid') : null;
+    if (heroGrid) {
+      heroGrid.classList.remove('profile-hero__grid--no-photo');
+      if (isBanner) {
+        heroGrid.classList.add('profile-hero__grid--photo-only');
+      } else {
+        heroGrid.classList.remove('profile-hero__grid--photo-only');
+      }
+    }
+
+    order.forEach(function (sectionId) {
+      var el = getMainSectionElement(sectionId);
+      if (!el) return;
+
+      if (sectionId === 'aboutMe' || sectionId === 'policies') {
+        var wrapped = ensureOrderedBlockWrapper(el, sectionId);
+        main.appendChild(wrapped || el);
+        return;
+      }
+
+      main.appendChild(el);
+    });
+
+    var bookIntro = document.querySelector('.profile-book-intro');
+    if (bookIntro) {
+      bookIntro.hidden = true;
+    }
+  }
+
   function buildServiceCard(style, cardClass) {
     var cls = cardClass || 'profile-service-card';
     var imgStyle = style.imageUrl
@@ -271,17 +574,25 @@
 
     var hasSocial = false;
     if (!socialHidden) {
-      var handle = (content.instagramHandle || '').replace(/^@/, '').trim();
-      if (handle) {
+      var socialLinks = normalizeSocialLinks(content);
+      var socialRows = SOCIAL_PLATFORMS.map(function (platform) {
+        var value = String(socialLinks[platform.id] || '').trim();
+        if (!value) return '';
+        var url = buildSocialUrl(platform.id, value);
+        if (!url) return '';
+        return (
+          '<p class="profile-social-link"><a href="' +
+          escapeHtml(url) +
+          '" target="_blank" rel="noopener noreferrer">' +
+          escapeHtml(formatSocialDisplay(platform, value)) +
+          '</a></p>'
+        );
+      }).filter(Boolean);
+
+      if (socialRows.length) {
         hasSocial = true;
-        var igUrl = 'https://www.instagram.com/' + encodeURIComponent(handle) + '/';
         html +=
-          '<div class="profile-location-col"><h3>Social</h3>' +
-          '<p class="profile-ig-link">' +
-          '<a href="' + escapeHtml(igUrl) + '" target="_blank" rel="noopener noreferrer">' +
-          '<svg class="profile-ig-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>' +
-          '@' + escapeHtml(handle) +
-          '</a></p></div>';
+          '<div class="profile-location-col"><h3>Social</h3>' + socialRows.join('') + '</div>';
       }
     }
 
@@ -322,32 +633,13 @@
     return text.slice(0, max).trim() + '…';
   }
 
-  function reviewInitials(name) {
-    var parts = String(name || '').trim().split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
-    }
-    return String(name || 'C').slice(0, 2).toUpperCase();
-  }
-
-  function getReviewCardClass(theme) {
-    var layout = theme && theme.styleCardLayout;
-    return layout === 'outlined'
-      ? 'profile-review-card profile-review-card--outlined'
-      : 'profile-review-card';
-  }
-
-  function buildReviewCard(review, index, theme) {
+  function buildReviewCard(review, index) {
     var preview = truncateMessage(review.message, 72);
-    var cardClass = getReviewCardClass(theme);
     return (
-      '<button type="button" class="' + cardClass + '" data-review-index="' + index + '">' +
-      '<div class="profile-review-card__avatar" aria-hidden="true">' + escapeHtml(reviewInitials(review.clientName)) + '</div>' +
-      '<div class="profile-review-card__body">' +
+      '<button type="button" class="profile-review-card" data-review-index="' + index + '">' +
+      '<p class="profile-review-card__name">' + escapeHtml(review.clientName || 'Client') + '</p>' +
       '<div class="profile-review-card__stars" aria-hidden="true">' + renderStars(review.rating) + '</div>' +
       '<p class="profile-review-card__message">' + escapeHtml(preview) + '</p>' +
-      '<p class="profile-review-card__name">' + escapeHtml(review.clientName || 'Client') + '</p>' +
-      '</div>' +
       '</button>'
     );
   }
@@ -385,7 +677,7 @@
     if (titleEl) titleEl.textContent = content.reviewsTitle || 'Client Reviews';
 
     var cards = reviews.map(function (review, index) {
-      return buildReviewCard(review, index, theme || {});
+      return buildReviewCard(review, index);
     }).join('');
     marquee.innerHTML =
       '<div class="profile-reviews-marquee__track">' + cards + cards + '</div>';
@@ -406,16 +698,9 @@
         var starsEl = document.getElementById('profile-review-modal-stars');
         var nameEl = document.getElementById('profile-review-modal-name');
         var messageEl = document.getElementById('profile-review-modal-message');
-        var modalCard = modal.querySelector('.profile-review-modal__card');
         if (starsEl) starsEl.innerHTML = renderStars(review.rating);
         if (nameEl) nameEl.textContent = review.clientName || 'Client';
         if (messageEl) messageEl.textContent = review.message || '';
-        if (modalCard) {
-          modalCard.classList.toggle(
-            'profile-review-modal__card--outlined',
-            theme && theme.styleCardLayout === 'outlined',
-          );
-        }
         modal.hidden = false;
       });
     }
@@ -928,7 +1213,6 @@
     var section = document.getElementById('profile-portfolio-section');
     var track = document.getElementById('profile-portfolio-carousel-track');
     var viewMore = document.getElementById('profile-portfolio-view-more');
-    var menuSection = document.getElementById('profile-menu-section');
     if (!section || !track) return;
 
     var items = normalizePortfolioItems(theme);
@@ -940,17 +1224,6 @@
       track.innerHTML = '';
       if (viewMore) viewMore.hidden = true;
       return;
-    }
-
-    var placement = content.portfolioPlacement === 'below_menu' ? 'below_menu' : 'above_menu';
-    if (menuSection && menuSection.parentNode) {
-      if (placement === 'above_menu') {
-        menuSection.parentNode.insertBefore(section, menuSection);
-      } else if (menuSection.nextSibling) {
-        menuSection.parentNode.insertBefore(section, menuSection.nextSibling);
-      } else {
-        menuSection.parentNode.appendChild(section);
-      }
     }
 
     var titleEl = document.getElementById('profile-portfolio-title');
@@ -1173,14 +1446,66 @@
       }
     }
 
-    // Hero layout — apply cover/stack class and inject overlays if needed
+    // Hero layout — reset previous layout, then apply cover/stack/banner/minimal
     var heroSection = document.querySelector('.profile-hero');
     var heroPhoto = document.getElementById('profile-hero-photo');
+
+    function resetHeroLayoutState() {
+      if (heroSection) {
+        heroSection.classList.remove('profile-hero--cover', 'profile-hero--stack');
+        heroSection.querySelectorAll('.profile-hero-stack').forEach(function (el) {
+          el.remove();
+        });
+      }
+      if (heroPhoto) {
+        heroPhoto.style.display = '';
+        heroPhoto.querySelectorAll('.profile-cover-overlay').forEach(function (el) {
+          el.remove();
+        });
+      }
+      document.body.classList.remove('hero-layout-cover', 'page-cover-splash');
+      document.querySelectorAll('.profile-below-hero').forEach(function (el) {
+        el.hidden = false;
+      });
+      var navReset = document.getElementById('profile-nav') || document.querySelector('.profile-nav');
+      if (navReset) {
+        navReset.classList.remove('profile-nav--cover-splash');
+      }
+    }
+
+    resetHeroLayoutState();
+
+    theme = theme || {};
+    theme.heroLayout = normalizeHeroLayout(theme.heroLayout);
+
     var isCover = theme.heroLayout === 'cover';
     var isStack = theme.heroLayout === 'stack';
+    var isMinimal = theme.heroLayout === 'minimal';
+    var isBanner = theme.heroLayout === 'banner';
     var isSplashPage = document.body.classList.contains('page-splash');
     var isBookPage = document.body.classList.contains('page-book');
     var isCoverSplash = isCover && isSplashPage;
+
+    if (heroSection) {
+      if (isMinimal && !isCoverSplash) {
+        heroSection.hidden = true;
+      } else {
+        heroSection.hidden = false;
+      }
+    }
+
+    var photoWrap = document.getElementById('profile-photo-wrap');
+    var heroGrid = heroSection ? heroSection.querySelector('.profile-hero__grid') : null;
+    var showHeroPhoto = !isMinimal && theme.heroPhotoEnabled !== false;
+    if (photoWrap && !isStack) {
+      photoWrap.hidden = !showHeroPhoto;
+    }
+    if (heroGrid && !isStack) {
+      heroGrid.classList.toggle('profile-hero__grid--no-photo', !showHeroPhoto);
+      if (isBanner && showHeroPhoto) {
+        heroGrid.classList.add('profile-hero__grid--photo-only');
+      }
+    }
 
     if (isCoverSplash && heroSection) {
       heroSection.classList.add('profile-hero--cover');
@@ -1241,11 +1566,10 @@
       heroSection.classList.add('profile-hero--stack');
       var stackUrls = Array.isArray(theme.heroStackImageUrls) ? theme.heroStackImageUrls : [];
       if (stackUrls.length > 0) {
-        // Build the stack gallery and insert before .profile-hero__grid
         var stackEl = document.createElement('div');
         var stackFormat = theme.heroStackImageFormat === 'tall' ? 'tall' : 'wide';
         stackEl.className = 'profile-hero-stack profile-hero-stack--' + stackFormat;
-        stackUrls.forEach(function(url, index) {
+        stackUrls.forEach(function (url, index) {
           var img = document.createElement('img');
           img.src = url;
           img.className = 'profile-hero-stack__img';
@@ -1258,15 +1582,16 @@
           }
           stackEl.appendChild(img);
         });
-        var heroGrid = heroSection.querySelector('.profile-hero__grid');
-        if (heroGrid) {
-          heroSection.insertBefore(stackEl, heroGrid);
+        var stackHeroGrid = heroSection.querySelector('.profile-hero__grid');
+        if (stackHeroGrid) {
+          heroSection.insertBefore(stackEl, stackHeroGrid);
         } else {
           heroSection.prepend(stackEl);
         }
-        // Hide the single hero photo slot — stack replaces it
         if (heroPhoto) heroPhoto.style.display = 'none';
       }
+    } else if (heroSection) {
+      heroSection.classList.remove('profile-hero--stack');
     }
 
     if (!isStack && heroPhoto && theme.heroImageUrl) {
@@ -1291,8 +1616,7 @@
       }
     }
 
-    // About & policy — split: beside photo; cover: on /book page only
-    var isSplit = theme.heroLayout === 'split';
+    // About Me and Policies — always separate sections in <main> (reorderMainSections)
     var profileInfo = document.querySelector('.profile-info');
     var aboutBlock = document.getElementById('profile-about-block');
     var policyBlock = document.getElementById('profile-policy-block');
@@ -1330,25 +1654,13 @@
       }
     }
 
-    var aboutVisible = !aboutHidden;
-    var policyVisible = !policiesHidden && policyBlock && !policyBlock.hidden;
-    var showAboutPolicyArea = aboutVisible || policyVisible;
-
-    if (profileInfo) {
-      if (isBookPage) {
-        profileInfo.style.display = showAboutPolicyArea ? '' : 'none';
-      } else if (isCoverSplash) {
-        profileInfo.style.display = 'none';
-      } else if (isSplit || isCover) {
-        profileInfo.style.display = showAboutPolicyArea ? '' : 'none';
-      } else {
-        profileInfo.style.display = 'none';
-      }
+    if (profileInfo && isCoverSplash) {
+      profileInfo.style.display = 'none';
     }
 
     var bookIntro = document.querySelector('.profile-book-intro');
-    if (bookIntro) {
-      bookIntro.hidden = !showAboutPolicyArea;
+    if (bookIntro && isCoverSplash) {
+      bookIntro.hidden = true;
     }
 
     // Menu title & blurb
@@ -1400,6 +1712,7 @@
     populateReviews(content, theme);
     populatePortfolio(content, theme);
     populateFaq(content);
+    reorderMainSections(content, theme);
     populateSiteNav(content);
     bindSiteNavMenu();
 

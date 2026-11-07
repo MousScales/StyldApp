@@ -65,12 +65,57 @@
       depositKind: "percent",
       depositValue: 10,
       depositIncludedInPrice: true,
+      platformFeePayer: "client",
       requireCurrentHairPhoto: true,
       requireReferencePhoto: false,
       requireBookingApproval: false,
     },
     CFG.payment || {},
   );
+
+  const TRAVEL = (function normalizeTravelStylist(raw) {
+    const defaults = {
+      enabled: false,
+      bookingMode: "optional",
+      feeMode: "flat",
+      flatFeeUsd: 25,
+      perMileRateUsd: 2,
+      homeBaseAddress: "",
+      homeBaseLat: null,
+      homeBaseLng: null,
+      extraTravelMinutes: 30,
+    };
+    if (!raw || typeof raw !== "object") return defaults;
+    const bookingMode = raw.bookingMode === "primary" ? "primary" : "optional";
+    const feeMode = raw.feeMode === "per_mile" ? "per_mile" : "flat";
+    const flatFeeUsd =
+      typeof raw.flatFeeUsd === "number" && !Number.isNaN(raw.flatFeeUsd) ? raw.flatFeeUsd : defaults.flatFeeUsd;
+    const perMileRateUsd =
+      typeof raw.perMileRateUsd === "number" && !Number.isNaN(raw.perMileRateUsd)
+        ? raw.perMileRateUsd
+        : defaults.perMileRateUsd;
+    const homeBaseAddress = typeof raw.homeBaseAddress === "string" ? raw.homeBaseAddress.trim() : "";
+    const extraTravelMinutes =
+      typeof raw.extraTravelMinutes === "number" && !Number.isNaN(raw.extraTravelMinutes)
+        ? Math.min(480, Math.max(0, Math.round(raw.extraTravelMinutes)))
+        : defaults.extraTravelMinutes;
+    return {
+      enabled: raw.enabled === true,
+      bookingMode,
+      feeMode,
+      flatFeeUsd: Math.max(0, Math.round(flatFeeUsd * 100) / 100),
+      perMileRateUsd: Math.max(0, Math.round(perMileRateUsd * 100) / 100),
+      homeBaseAddress,
+      homeBaseLat: typeof raw.homeBaseLat === "number" && !Number.isNaN(raw.homeBaseLat) ? raw.homeBaseLat : null,
+      homeBaseLng: typeof raw.homeBaseLng === "number" && !Number.isNaN(raw.homeBaseLng) ? raw.homeBaseLng : null,
+      extraTravelMinutes,
+    };
+  })(CFG.travelStylist || null);
+
+  let travelDistanceMiles = null;
+  let travelFeeUsd = 0;
+  let travelFeeStatus = "idle";
+  let travelFeeTimer = null;
 
   const CATALOG_PRODUCTS = (function normalizeCatalogProducts(raw) {
     if (!Array.isArray(raw)) return [];
@@ -231,10 +276,11 @@
     CFG.cancellationPolicy && typeof CFG.cancellationPolicy === "object"
       ? CFG.cancellationPolicy
       : {
-          fullRefundNoticeHours: 24,
-          refundAppliesTo: "both",
+          preset: "no_refunds",
+          fullRefundNoticeHours: 0,
+          refundAppliesTo: "none",
           policySummary:
-            "You may cancel online anytime before your appointment. Online deposits and full payments are fully refunded when you cancel at least 24 hours before your appointment. Cancellations after that deadline are non-refundable.",
+            "You may cancel online anytime before your appointment. All online payments, including deposits, are non-refundable.",
         };
 
   const USE_LEGACY_DEPOSIT_RULES = !TENANT_BOOKING && !CFG.payment;
@@ -453,6 +499,19 @@
     houseAddrCity: document.getElementById("house-addr-city"),
     houseAddrState: document.getElementById("house-addr-state"),
     houseAddrZip: document.getElementById("house-addr-zip"),
+    travelRequestWrap: document.getElementById("travel-request-wrap"),
+    travelRequestToggle: document.getElementById("travel-request-toggle"),
+    travelAddressWrap: document.getElementById("travel-address-field-wrap"),
+    travelAddrStreet: document.getElementById("travel-addr-street"),
+    travelAddrUnit: document.getElementById("travel-addr-unit"),
+    travelAddrCity: document.getElementById("travel-addr-city"),
+    travelAddrState: document.getElementById("travel-addr-state"),
+    travelAddrZip: document.getElementById("travel-addr-zip"),
+    travelFeePreview: document.getElementById("travel-fee-preview"),
+    lineTravelFeeRow: document.getElementById("line-travel-fee-row"),
+    lineTravelFee: document.getElementById("line-travel-fee"),
+    sideTravelFeeRow: document.getElementById("side-travel-fee-row"),
+    sideTravelFee: document.getElementById("side-travel-fee"),
     depositNoteStudio: document.getElementById("deposit-note-studio"),
     depositNoteHouseCall: document.getElementById("deposit-note-house-call"),
     depositNoteInPerson: document.getElementById("deposit-note-in-person"),
@@ -489,6 +548,240 @@
     [els.houseAddrStreet, els.houseAddrUnit, els.houseAddrCity, els.houseAddrState, els.houseAddrZip].forEach((el) => {
       if (el) el.value = "";
     });
+  }
+
+  function clearTravelAddressFields() {
+    [els.travelAddrStreet, els.travelAddrUnit, els.travelAddrCity, els.travelAddrState, els.travelAddrZip].forEach((el) => {
+      if (el) el.value = "";
+    });
+    travelDistanceMiles = null;
+    travelFeeUsd = 0;
+    travelFeeStatus = "idle";
+    if (els.travelFeePreview) {
+      els.travelFeePreview.hidden = true;
+      els.travelFeePreview.textContent = "";
+    }
+  }
+
+  function travelStylistLive() {
+    return !!(TRAVEL && TRAVEL.enabled && TRAVEL.homeBaseAddress);
+  }
+
+  function isPrimaryTravelArtist() {
+    return travelStylistLive() && TRAVEL.bookingMode === "primary";
+  }
+
+  function isTravelRequestChecked() {
+    if (isPrimaryTravelArtist()) return true;
+    return !!(els.travelRequestToggle && els.travelRequestToggle.checked);
+  }
+
+  function isTravelBooking() {
+    if (!travelStylistLive()) return false;
+    const style = getSelectedStyle();
+    if (!style?.id) return false;
+    if (isPrimaryTravelArtist()) return true;
+    if (isHouseStyleId(style.id)) return true;
+    return isTravelRequestChecked();
+  }
+
+  function usesTravelAddressFields() {
+    if (isPrimaryTravelArtist()) return true;
+    const style = getSelectedStyle();
+    if (style && isHouseStyleId(style.id)) return false;
+    return isTravelRequestChecked();
+  }
+
+  function isTravelAddressComplete() {
+    if (usesTravelAddressFields()) {
+      const street = trimAddr(els.travelAddrStreet);
+      const city = trimAddr(els.travelAddrCity);
+      const state = trimAddr(els.travelAddrState).toUpperCase();
+      const zipRaw = trimAddr(els.travelAddrZip).replace(/\s/g, "");
+      if (!street || !city || !state || !zipRaw) return false;
+      if (!/^[A-Z]{2}$/.test(state)) return false;
+      if (!/^\d{5}(-\d{4})?$/.test(zipRaw)) return false;
+      return true;
+    }
+    if (getSelectedStyle() && isHouseStyleId(getSelectedStyle().id)) return isHouseAddressComplete();
+    return false;
+  }
+
+  function formatTravelAddressForStorage() {
+    if (usesTravelAddressFields()) {
+      const street = trimAddr(els.travelAddrStreet);
+      const unit = trimAddr(els.travelAddrUnit);
+      const city = trimAddr(els.travelAddrCity);
+      const state = trimAddr(els.travelAddrState).toUpperCase();
+      const zip = trimAddr(els.travelAddrZip).replace(/\s/g, "");
+      const line1 = unit ? `${street}, ${unit}` : street;
+      return `${line1}\n${city}, ${state} ${zip}`;
+    }
+    return formatServiceAddressForStorage();
+  }
+
+  function requiresBookingApproval() {
+    if (PAYMENT.requireBookingApproval === true) return true;
+    if (isTravelBooking()) return true;
+    return false;
+  }
+
+  function computeTravelFeeFromDistance(distanceMiles) {
+    if (!travelStylistLive()) return 0;
+    if (TRAVEL.feeMode === "flat") return Math.max(0, Math.round(TRAVEL.flatFeeUsd * 100) / 100);
+    const miles = Math.max(0, Number(distanceMiles) || 0);
+    return Math.max(0, Math.round(miles * TRAVEL.perMileRateUsd * 100) / 100);
+  }
+
+  function updateTravelFeePreview() {
+    const show = isTravelBooking();
+    if (els.lineTravelFeeRow) els.lineTravelFeeRow.hidden = !(show && travelFeeUsd > 0);
+    if (els.sideTravelFeeRow) els.sideTravelFeeRow.hidden = !(show && travelFeeUsd > 0);
+    if (els.lineTravelFee && travelFeeUsd > 0) els.lineTravelFee.textContent = money(travelFeeUsd);
+    if (els.sideTravelFee && travelFeeUsd > 0) els.sideTravelFee.textContent = money(travelFeeUsd);
+    if (!els.travelFeePreview) return;
+    if (!show) {
+      els.travelFeePreview.hidden = true;
+      els.travelFeePreview.textContent = "";
+      return;
+    }
+    if (!isTravelAddressComplete()) {
+      els.travelFeePreview.hidden = false;
+      els.travelFeePreview.textContent = "Enter your full address to see the travel fee.";
+      return;
+    }
+    if (travelFeeStatus === "computing") {
+      els.travelFeePreview.hidden = false;
+      els.travelFeePreview.textContent = "Calculating travel fee…";
+      return;
+    }
+    if (travelFeeStatus === "error") {
+      els.travelFeePreview.hidden = false;
+      els.travelFeePreview.textContent = "Could not calculate travel fee. Check your address and try again.";
+      return;
+    }
+    if (TRAVEL.feeMode === "flat") {
+      els.travelFeePreview.hidden = false;
+      els.travelFeePreview.textContent =
+        travelFeeUsd > 0 ? `Travel fee: ${money(travelFeeUsd)}` : "No travel fee";
+      return;
+    }
+    if (travelDistanceMiles != null) {
+      els.travelFeePreview.hidden = false;
+      els.travelFeePreview.textContent =
+        travelFeeUsd > 0
+          ? `Travel fee: ${money(travelFeeUsd)} (${travelDistanceMiles.toFixed(1)} mi from home base)`
+          : `No travel fee (${travelDistanceMiles.toFixed(1)} mi from home base)`;
+      return;
+    }
+    els.travelFeePreview.hidden = false;
+    els.travelFeePreview.textContent = "Calculating travel fee…";
+  }
+
+  function scheduleTravelFeeRecalc() {
+    if (travelFeeTimer) clearTimeout(travelFeeTimer);
+    travelFeeTimer = setTimeout(() => {
+      void recalculateTravelFee();
+    }, 450);
+  }
+
+  async function geocodeAddressString(address) {
+    await loadGoogleMapsScript();
+    if (!window.google?.maps) throw new Error("Maps not available");
+    const geocoder = new google.maps.Geocoder();
+    return new Promise((resolve, reject) => {
+      geocoder.geocode({ address }, (results, status) => {
+        if (status !== "OK" || !results?.[0]?.geometry?.location) {
+          reject(new Error("Geocode failed"));
+          return;
+        }
+        resolve(results[0].geometry.location);
+      });
+    });
+  }
+
+  async function drivingDistanceMiles(origin, destination) {
+    await loadGoogleMapsScript();
+    if (!window.google?.maps) throw new Error("Maps not available");
+    const service = new google.maps.DistanceMatrixService();
+    return new Promise((resolve, reject) => {
+      service.getDistanceMatrix(
+        {
+          origins: [origin],
+          destinations: [destination],
+          travelMode: google.maps.TravelMode.DRIVING,
+          unitSystem: google.maps.UnitSystem.IMPERIAL,
+        },
+        (response, status) => {
+          if (status !== "OK") {
+            reject(new Error("Distance failed"));
+            return;
+          }
+          const element = response?.rows?.[0]?.elements?.[0];
+          if (!element || element.status !== "OK" || !element.distance?.value) {
+            reject(new Error("Distance unavailable"));
+            return;
+          }
+          resolve(element.distance.value / 1609.344);
+        },
+      );
+    });
+  }
+
+  async function recalculateTravelFee() {
+    if (!isTravelBooking()) {
+      travelDistanceMiles = null;
+      travelFeeUsd = 0;
+      travelFeeStatus = "idle";
+      updateTravelFeePreview();
+      renderPricing();
+      return;
+    }
+    if (!isTravelAddressComplete()) {
+      travelDistanceMiles = null;
+      travelFeeUsd = 0;
+      travelFeeStatus = "idle";
+      updateTravelFeePreview();
+      renderPricing();
+      return;
+    }
+    if (TRAVEL.feeMode === "flat") {
+      travelDistanceMiles = null;
+      travelFeeUsd = computeTravelFeeFromDistance(0);
+      travelFeeStatus = "ready";
+      updateTravelFeePreview();
+      renderPricing();
+      return;
+    }
+    if (TRAVEL.perMileRateUsd <= 0) {
+      travelDistanceMiles = null;
+      travelFeeUsd = 0;
+      travelFeeStatus = "ready";
+      updateTravelFeePreview();
+      renderPricing();
+      return;
+    }
+    travelFeeStatus = "computing";
+    updateTravelFeePreview();
+    try {
+      const destination = formatTravelAddressForStorage().replace(/\n/g, ", ");
+      const origin =
+        typeof TRAVEL.homeBaseLat === "number" &&
+        typeof TRAVEL.homeBaseLng === "number"
+          ? { lat: TRAVEL.homeBaseLat, lng: TRAVEL.homeBaseLng }
+          : TRAVEL.homeBaseAddress;
+      const miles = await drivingDistanceMiles(origin, destination);
+      travelDistanceMiles = Math.round(miles * 10) / 10;
+      travelFeeUsd = computeTravelFeeFromDistance(travelDistanceMiles);
+      travelFeeStatus = "ready";
+    } catch (err) {
+      console.warn("travel fee calc", err);
+      travelDistanceMiles = null;
+      travelFeeUsd = 0;
+      travelFeeStatus = "error";
+    }
+    updateTravelFeePreview();
+    renderPricing();
   }
 
   function isHouseAddressComplete() {
@@ -588,6 +881,76 @@
       const place = ac.getPlace();
       if (place && place.address_components) {
         applyGoogleAddressComponents(place.address_components);
+        scheduleTravelFeeRecalc();
+      }
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") e.preventDefault();
+    });
+  }
+
+  function applyGoogleAddressToFields(comps, fields) {
+    let streetNum = "";
+    let route = "";
+    let sub = "";
+    let city = "";
+    let state = "";
+    let zip = "";
+    let zip4 = "";
+    for (const c of comps) {
+      const t = c.types;
+      if (t.includes("street_number")) streetNum = c.long_name;
+      if (t.includes("route")) route = c.long_name;
+      if (t.includes("subpremise")) sub = c.long_name;
+      if (t.includes("administrative_area_level_1")) state = c.short_name;
+      if (t.includes("postal_code")) zip = c.long_name;
+      if (t.includes("postal_code_suffix")) zip4 = c.long_name;
+    }
+    for (const c of comps) {
+      if (c.types.includes("locality")) {
+        city = c.long_name;
+        break;
+      }
+    }
+    if (!city) {
+      for (const c of comps) {
+        const t = c.types;
+        if (t.includes("sublocality") || t.includes("neighborhood")) {
+          city = c.long_name;
+          break;
+        }
+      }
+    }
+    if (zip && zip4) zip = `${zip}-${zip4}`;
+    const street = [streetNum, route].filter(Boolean).join(" ").trim();
+    if (fields.street) fields.street.value = street;
+    if (fields.unit) fields.unit.value = sub;
+    if (fields.city) fields.city.value = city;
+    if (fields.state) fields.state.value = (state || "").toUpperCase().slice(0, 2);
+    if (fields.zip) fields.zip.value = zip;
+  }
+
+  function attachTravelPlacesAutocomplete() {
+    const input = els.travelAddrStreet;
+    if (!input || !window.google?.maps?.places || input.dataset.salonSiteAc === "1") return;
+    input.dataset.salonSiteAc = "1";
+    const ac = new google.maps.places.Autocomplete(input, {
+      componentRestrictions: { country: "us" },
+      fields: ["address_components"],
+      types: ["address"],
+    });
+    ac.addListener("place_changed", () => {
+      const place = ac.getPlace();
+      if (place && place.address_components) {
+        applyGoogleAddressToFields(place.address_components, {
+          street: els.travelAddrStreet,
+          unit: els.travelAddrUnit,
+          city: els.travelAddrCity,
+          state: els.travelAddrState,
+          zip: els.travelAddrZip,
+        });
+        scheduleTravelFeeRecalc();
+        renderPricing();
       }
     });
     input.addEventListener("keydown", (e) => {
@@ -598,16 +961,25 @@
   function initHouseAddressUI() {
     const hint = document.getElementById("house-addr-maps-hint");
     if (hint) hint.hidden = !!CFG.googleMapsApiKey;
+    const travelHint = document.getElementById("travel-addr-maps-hint");
+    if (travelHint) travelHint.hidden = !!CFG.googleMapsApiKey;
     if (els.houseAddrState) {
       els.houseAddrState.addEventListener("input", () => {
         const v = (els.houseAddrState.value || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
         els.houseAddrState.value = v;
       });
     }
+    if (els.travelAddrState) {
+      els.travelAddrState.addEventListener("input", () => {
+        const v = (els.travelAddrState.value || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
+        els.travelAddrState.value = v;
+      });
+    }
     if (CFG.googleMapsApiKey) {
       loadGoogleMapsScript()
         .then(() => {
           attachPlacesAutocomplete();
+          attachTravelPlacesAutocomplete();
         })
         .catch(() => {
           /* suggestions unavailable; manual entry still works */
@@ -795,9 +1167,31 @@
     if (els.hairLengthWrap) els.hairLengthWrap.hidden = !showLen;
     if (!showLen && els.hairLength) els.hairLength.value = "";
 
-    const showAddr = !!sid && isHouseStyleId(sid);
+    const primaryTravel = isPrimaryTravelArtist();
+    const showAddr = !!sid && isHouseStyleId(sid) && !primaryTravel;
     if (els.houseAddressWrap) els.houseAddressWrap.hidden = !showAddr;
     if (!showAddr) clearHouseAddressFields();
+
+    const showTravelRequest = travelStylistLive() && !!sid && !primaryTravel && !isHouseStyleId(sid);
+    if (els.travelRequestWrap) els.travelRequestWrap.hidden = !showTravelRequest;
+    if (!showTravelRequest) {
+      if (els.travelRequestToggle && !primaryTravel) els.travelRequestToggle.checked = false;
+      if (!primaryTravel && els.travelAddressWrap) els.travelAddressWrap.hidden = true;
+      if (!primaryTravel) clearTravelAddressFields();
+    }
+
+    const showTravelAddr =
+      travelStylistLive() && !!sid && (primaryTravel || (isTravelRequestChecked() && !isHouseStyleId(sid)));
+    if (els.travelAddressWrap) els.travelAddressWrap.hidden = !showTravelAddr;
+    if (!showTravelAddr) clearTravelAddressFields();
+
+    if (showTravelAddr || showAddr) {
+      scheduleTravelFeeRecalc();
+    } else {
+      travelDistanceMiles = null;
+      travelFeeUsd = 0;
+      travelFeeStatus = "idle";
+    }
 
     renderPricing();
   }
@@ -831,7 +1225,11 @@
   function totalDurationMinutes() {
     const style = getSelectedStyle();
     if (!style || style.id === "other") return null;
-    return Math.max(30, durationMinutesForStyle(style) + hairLengthExtraMinutes());
+    let mins = Math.max(30, durationMinutesForStyle(style) + hairLengthExtraMinutes());
+    if (isTravelBooking() && TRAVEL.extraTravelMinutes > 0) {
+      mins += TRAVEL.extraTravelMinutes;
+    }
+    return mins;
   }
 
   function formatDurationHuman(mins) {
@@ -1143,18 +1541,43 @@
     }
   }
 
-  // Styld service fee grossup: customer pays this on top so the stylist gets their full amount.
-  // Matches the backend formula in stripe-booking-pay.
-  const STYLD_PLATFORM_RATE = 0.01; // 1% gross-up → ~$1.50 profit on $150, covers Stripe fees
+  // Styld platform fee — matches stripe-booking-pay and bookingServiceFee.ts
+  const STYLD_PLATFORM_RATE = 0.01;
+  function platformFeePayer() {
+    return PAYMENT.platformFeePayer === "tenant" ? "tenant" : "client";
+  }
+  function computeChargeBreakdown(baseCents, payer, rate) {
+    payer = payer || platformFeePayer();
+    rate = rate == null ? STYLD_PLATFORM_RATE : rate;
+    const base = Math.max(0, Math.round(baseCents));
+    const platformProfitCents = Math.round(base * rate);
+    if (base < 1) {
+      return {
+        chargeCents: 0,
+        displayPlatformFeeCents: 0,
+      };
+    }
+    if (payer === "tenant") {
+      return {
+        chargeCents: base,
+        displayPlatformFeeCents: 0,
+      };
+    }
+    const chargeCents = Math.round((base * (1 + rate) + 30) / (1 - 0.029));
+    return {
+      chargeCents: chargeCents,
+      displayPlatformFeeCents: chargeCents - base,
+    };
+  }
   function computeServiceFee(depositDollars) {
     if (!depositDollars || depositDollars <= 0) return 0;
     const amountCents = Math.round(depositDollars * 100);
-    const chargeAmount = Math.round((amountCents * (1 + STYLD_PLATFORM_RATE) + 30) / (1 - 0.029));
-    return round2((chargeAmount - amountCents) / 100);
+    return round2(computeChargeBreakdown(amountCents).displayPlatformFeeCents / 100);
   }
   function totalChargeWithFee(depositDollars) {
     if (!depositDollars || depositDollars <= 0) return 0;
-    return round2(depositDollars + computeServiceFee(depositDollars));
+    const amountCents = Math.round(depositDollars * 100);
+    return round2(computeChargeBreakdown(amountCents).chargeCents / 100);
   }
 
   function onlineChargeForTotal(total, style) {
@@ -1217,7 +1640,8 @@
     }
 
     const promoDiscountUsd = appliedPromo ? appliedPromo.discountUsd : 0;
-    const total = Math.max(0, round2(rawSubtotal - promoDiscountUsd));
+    const travelFee = isTravelBooking() && travelFeeUsd > 0 ? travelFeeUsd : 0;
+    const total = Math.max(0, round2(rawSubtotal - promoDiscountUsd + travelFee));
     const pctDeposit = round2(total * 0.1);
     const houseFee = style && isHouseStyleId(style.id) ? 15 : 0;
     const deposit = onlineChargeForTotal(total, style);
@@ -1238,6 +1662,7 @@
       balanceDue,
       pctDeposit,
       houseFee,
+      travelFee,
       style,
       mode: paymentMode(),
     };
@@ -1255,6 +1680,7 @@
       balanceDue,
       pctDeposit,
       houseFee,
+      travelFee,
       style,
       mode,
     } = computeTotals();
@@ -1275,6 +1701,11 @@
     if (els.lengthAddonOut) els.lengthAddonOut.textContent = lengthUsd > 0 ? money(lengthUsd) : "—";
     if (els.styleAddonOut) els.styleAddonOut.textContent = addonUsd > 0 ? money(addonUsd) : "—";
     if (els.styleAddonRow) els.styleAddonRow.hidden = !(addonUsd > 0);
+    if (els.lineTravelFeeRow) els.lineTravelFeeRow.hidden = !(travelFee > 0);
+    if (els.sideTravelFeeRow) els.sideTravelFeeRow.hidden = !(travelFee > 0);
+    if (els.lineTravelFee) els.lineTravelFee.textContent = travelFee > 0 ? money(travelFee) : "—";
+    if (els.sideTravelFee) els.sideTravelFee.textContent = travelFee > 0 ? money(travelFee) : "—";
+    updateTravelFeePreview();
 
     const serviceFee = mode !== "in_person" ? computeServiceFee(deposit) : 0;
     const chargeTotal = mode !== "in_person" ? totalChargeWithFee(deposit) : 0;
@@ -1322,7 +1753,7 @@
     if (els.sideInPersonRow) els.sideInPersonRow.hidden = mode !== "in_person" || !hasPricedStyle;
 
     if (els.depositDetailOut) {
-      const feeNote = serviceFee > 0 ? ` Includes ${money(serviceFee)} service fee.` : "";
+      const feeNote = serviceFee > 0 ? ` Includes ${money(serviceFee)} platform fee.` : "";
       if (!hasPricedStyle) {
         els.depositDetailOut.textContent = "";
       } else if (mode === "in_person") {
@@ -1332,7 +1763,7 @@
             : "";
       } else if (mode === "full") {
         els.depositDetailOut.textContent =
-          `Pay ${money(totalChargeWithFee(deposit))} online to secure your appointment (includes ${money(serviceFee)} service fee). Final price may be adjusted after consultation.`;
+          `Pay ${money(totalChargeWithFee(deposit))} online to secure your appointment (includes ${money(serviceFee)} platform fee). Final price may be adjusted after consultation.`;
       } else if (USE_LEGACY_DEPOSIT_RULES && isHouseBooking) {
         let detail = `Includes ${money(pctDeposit)} (10% of your estimate) plus ${money(15)} house-call deposit.${feeNote} `;
         detail += `Remaining balance ${money(balanceDue)} due in person at your appointment. All deposits are non-refundable.`;
@@ -1342,11 +1773,11 @@
           `${money(totalChargeWithFee(deposit))} due now (additional hold${feeNote}). Full service price ${money(total)} due in person at your appointment.`;
       } else if (PAYMENT.depositKind === "fixed") {
         els.depositDetailOut.textContent =
-          `${money(totalChargeWithFee(deposit))} due now (includes ${money(serviceFee)} service fee). Remaining balance ${money(balanceDue)} due in person at your appointment.`;
+          `${money(totalChargeWithFee(deposit))} due now (includes ${money(serviceFee)} platform fee). Remaining balance ${money(balanceDue)} due in person at your appointment.`;
       } else {
         const pct = Math.min(100, Math.max(0, Number(PAYMENT.depositValue) || 10));
         els.depositDetailOut.textContent =
-          `${money(totalChargeWithFee(deposit))} due now — ${money(deposit)} deposit (${pct}% of estimate) + ${money(serviceFee)} service fee. Remaining balance ${money(balanceDue)} due at appointment.`;
+          `${money(totalChargeWithFee(deposit))} due now — ${money(deposit)} deposit (${pct}% of estimate) + ${money(serviceFee)} platform fee. Remaining balance ${money(balanceDue)} due at appointment.`;
       }
     }
 
@@ -1552,8 +1983,8 @@
     const photoHairOk = PAYMENT.requireCurrentHairPhoto === false || els.photoHair?.files?.length > 0;
     const photoRefOk = !PAYMENT.requireReferencePhoto || els.photoRef?.files?.length > 0;
     const slotOk = !!(els.hiddenAppt?.value && style && style.id !== "other");
-    const needHouseAddr = !!(style && isHouseStyleId(style.id));
-    const addrOk = !needHouseAddr || isHouseAddressComplete();
+    const needTravelAddr = isTravelBooking();
+    const addrOk = !needTravelAddr || isTravelAddressComplete();
     return !!(
       style &&
       style.id !== "other" &&
@@ -1852,9 +2283,19 @@
     window.location.replace(buildBookingDetailsUrl(q));
   }
 
-  function sanitizeFilename(name) {
-    const base = name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
-    return base || "upload";
+  function bookingPhotoFileExtension(file) {
+    const name = String(file?.name || "");
+    const dot = name.lastIndexOf(".");
+    if (dot > 0 && dot < name.length - 1) {
+      return name.slice(dot).toLowerCase();
+    }
+    return ".jpg";
+  }
+
+  function bookingPhotoStoragePrefix(bookingId) {
+    const subdomain = getBookingSubdomain();
+    if (!subdomain) return String(bookingId);
+    return `${subdomain}/${bookingId}`;
   }
 
   function saveLocalBooking(row) {
@@ -1874,13 +2315,18 @@
   }
 
   async function uploadBookingFiles(sb, bookingId, hairFile, refFile) {
-    const out = { photo_hair_path: null, photo_ref_path: null };
+    const out = {
+      photo_hair_path: null,
+      photo_ref_path: null,
+      current_hair_photo_path: null,
+      reference_photo_path: null,
+    };
     if (!hairFile && !refFile) return out;
 
-    const uploadOne = async (file, kind) => {
-      const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
-      const safeBase = sanitizeFilename(file.name.replace(/\.[^.]+$/, ""));
-      const path = `${bookingId}/${kind}-${safeBase}${ext}`;
+    const prefix = bookingPhotoStoragePrefix(bookingId);
+
+    const uploadOne = async (file, baseName) => {
+      const path = `${prefix}/${baseName}${bookingPhotoFileExtension(file)}`;
       const { error } = await sb.storage.from(STORAGE_BUCKET).upload(path, file, {
         upsert: false,
         contentType: file.type || "application/octet-stream",
@@ -1889,8 +2335,16 @@
       return path;
     };
 
-    if (hairFile) out.photo_hair_path = await uploadOne(hairFile, "hair");
-    if (refFile) out.photo_ref_path = await uploadOne(refFile, "ref");
+    if (hairFile) {
+      const path = await uploadOne(hairFile, "current-hair");
+      out.photo_hair_path = path;
+      out.current_hair_photo_path = path;
+    }
+    if (refFile) {
+      const path = await uploadOne(refFile, "reference");
+      out.photo_ref_path = path;
+      out.reference_photo_path = path;
+    }
     return out;
   }
 
@@ -1907,7 +2361,7 @@
 
   function resolveBookingStatus(payInPerson, paidOnline) {
     if (!paidOnline && !payInPerson) return "pending_payment";
-    if (PAYMENT.requireBookingApproval === true) return "pending_approval";
+    if (requiresBookingApproval()) return "pending_approval";
     return "confirmed";
   }
 
@@ -1917,14 +2371,14 @@
     const notes = document.getElementById("notes")?.value?.trim() || null;
     const addon = getSelectedStyleAddon();
     const variant = getSelectedStyleVariant();
-    const { total, deposit, mode, rawSubtotal, promoDiscountUsd } = computeTotals();
+    const { total, deposit, mode, rawSubtotal, promoDiscountUsd, travelFee } = computeTotals();
     const orderProducts = getSelectedOrderProducts();
     const productsSubtotal = productsSubtotalUsd();
     const payInPerson = mode === "in_person";
     const paidOnline = options.paidOnline === true;
 
     const service_address =
-      style && isHouseStyleId(style.id) && isHouseAddressComplete() ? formatServiceAddressForStorage() : null;
+      isTravelBooking() && isTravelAddressComplete() ? formatTravelAddressForStorage() : null;
 
     var styleName = style.name;
     if (variant) styleName = style.name + " — " + variant.label;
@@ -1944,6 +2398,10 @@
       selected_addon_name: addon ? addon.name : null,
       selected_addon_price: addon ? addon.price : 0,
       service_address,
+      is_travel_booking: isTravelBooking(),
+      travel_fee_usd: travelFee > 0 ? travelFee : 0,
+      travel_distance_miles: travelDistanceMiles,
+      travel_extra_minutes: isTravelBooking() ? TRAVEL.extraTravelMinutes || 0 : 0,
       hair_option: "catalog",
       prewash: "None",
       appointment_date: appointmentDateFromIso(apptIso),
@@ -2042,6 +2500,11 @@
       els.houseAddrCity,
       els.houseAddrState,
       els.houseAddrZip,
+      els.travelAddrStreet,
+      els.travelAddrUnit,
+      els.travelAddrCity,
+      els.travelAddrState,
+      els.travelAddrZip,
     ]
       .filter(Boolean)
       .forEach((el) => {
@@ -2049,13 +2512,49 @@
           renderPricing();
           renderSlots();
           void refreshUnavailableForSelection();
+          if (
+            el === els.travelAddrStreet ||
+            el === els.travelAddrUnit ||
+            el === els.travelAddrCity ||
+            el === els.travelAddrState ||
+            el === els.travelAddrZip ||
+            el === els.houseAddrStreet ||
+            el === els.houseAddrUnit ||
+            el === els.houseAddrCity ||
+            el === els.houseAddrState ||
+            el === els.houseAddrZip
+          ) {
+            scheduleTravelFeeRecalc();
+          }
         });
         el.addEventListener("change", () => {
           renderPricing();
           renderSlots();
           void refreshUnavailableForSelection();
+          if (
+            el === els.travelAddrStreet ||
+            el === els.travelAddrUnit ||
+            el === els.travelAddrCity ||
+            el === els.travelAddrState ||
+            el === els.travelAddrZip ||
+            el === els.houseAddrStreet ||
+            el === els.houseAddrUnit ||
+            el === els.houseAddrCity ||
+            el === els.houseAddrState ||
+            el === els.houseAddrZip
+          ) {
+            scheduleTravelFeeRecalc();
+          }
         });
       });
+
+    if (els.travelRequestToggle) {
+      els.travelRequestToggle.addEventListener("change", () => {
+        syncBookingDependentFields();
+        renderSlots();
+        void refreshUnavailableForSelection();
+      });
+    }
 
     if (els.styleSelect) {
       const onStyleFields = () => {
@@ -2113,10 +2612,14 @@
 
         if (!isFormCompleteForBooking() || !apptIso) {
           const st = getSelectedStyle();
-          if (st && isHouseStyleId(st.id) && !isHouseAddressComplete()) {
+          if (st && isTravelBooking() && !isTravelAddressComplete()) {
             alert(
-              "House-call bookings need a full address: street, city, state (2 letters), and ZIP. Please complete each field.",
+              "Travel bookings need a full address: street, city, state (2 letters), and ZIP. Please complete each field.",
             );
+            return;
+          }
+          if (st && isTravelBooking() && TRAVEL.feeMode === "per_mile" && TRAVEL.perMileRateUsd > 0 && travelFeeStatus !== "ready") {
+            alert("Please wait for the travel fee to finish calculating, or check your address.");
             return;
           }
           alert("Please complete all required fields, choose a style, upload any required photos, and select an available time slot.");
@@ -2161,7 +2664,7 @@
             const { id, paths } = await submitBookingRequest(sb, apptIso, durationMinutes, bookingId, null);
             if (!id) throw new Error("Could not save booking id.");
             void invokeNotifySalon(sb, { booking_id: bookingId });
-            if (PAYMENT.requireBookingApproval !== true) {
+            if (!requiresBookingApproval()) {
               void sb.functions.invoke("booking-client-email", {
                 body: { bookingId, subdomain },
               }).catch(function(e) { console.warn("booking-client-email:", e); });
@@ -2179,7 +2682,7 @@
             }
             const detailsQ = new URLSearchParams();
             detailsQ.set("booking_id", bookingId);
-            if (PAYMENT.requireBookingApproval === true) {
+            if (requiresBookingApproval()) {
               detailsQ.set("pending_approval", "1");
             }
             window.location.assign(buildBookingSuccessUrl(detailsQ));
@@ -2197,7 +2700,9 @@
             subdomain,
             bookingId,
             amountCents,
-            subtotalCents: payTotals.rawSubtotalCents,
+            subtotalCents: Math.round(
+              (payTotals.rawSubtotal - payTotals.promoDiscountUsd + payTotals.travelFee) * 100,
+            ),
             promoCode: appliedPromo?.code || null,
             houseCallExtraCents: 0,
             customerName: (nameEl && nameEl.value && nameEl.value.trim()) || "",
@@ -2222,7 +2727,7 @@
           if (!id) throw new Error("Payment succeeded but the appointment could not be saved. Contact the business with reference " + (payResult.paymentId || bookingId) + ".");
 
           void invokeNotifySalon(sb, { booking_id: bookingId });
-          if (PAYMENT.requireBookingApproval !== true) {
+          if (!requiresBookingApproval()) {
             void sb.functions.invoke("booking-client-email", {
               body: { bookingId, subdomain },
             }).catch(function(e) { console.warn("booking-client-email:", e); });
@@ -2244,7 +2749,7 @@
           const successQ = new URLSearchParams();
           successQ.set("booking_id", bookingId);
           successQ.set("paid", "1");
-          if (PAYMENT.requireBookingApproval === true) {
+          if (requiresBookingApproval()) {
             successQ.set("pending_approval", "1");
           }
           window.location.assign(buildBookingSuccessUrl(successQ));

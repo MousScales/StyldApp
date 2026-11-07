@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DeviceCalendarSyncSection from '../components/calendar/DeviceCalendarSyncSection';
 import ScreenGradient from '../components/ScreenGradient';
 import BusinessTypePicker from '../components/BusinessTypePicker';
 import { useAuth } from '../context/AuthContext';
@@ -317,6 +318,10 @@ export default function AccountSettingsScreen({ navigation }: Props) {
             >
               {savingPassword ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.actionBtnText}>Change password</Text>}
             </Pressable>
+
+            {/* ── Calendar sync ── */}
+            <Text style={styles.sectionLabel}>Calendar sync</Text>
+            <DeviceCalendarSyncSection />
 
             {/* ── Privacy ── */}
             <Text style={styles.sectionLabel}>Privacy</Text>

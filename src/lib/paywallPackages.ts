@@ -3,8 +3,12 @@ import { PACKAGE_TYPE, PurchasesPackage } from 'react-native-purchases';
 export const STYLD_MONTHLY_PRODUCT_ID = 'styld_monthly';
 export const STYLD_YEARLY_PRODUCT_ID = 'styld_yearly';
 
-export const FALLBACK_MONTHLY_PRICE = 49.99;
-export const FALLBACK_YEARLY_PRICE = 299.99;
+/** Shown on the paywall — matches App Store Connect ($24.99/mo, $199.99/yr). */
+export const DISPLAY_MONTHLY_PRICE = 24.99;
+export const DISPLAY_YEARLY_PRICE = 199.99;
+
+export const FALLBACK_MONTHLY_PRICE = DISPLAY_MONTHLY_PRICE;
+export const FALLBACK_YEARLY_PRICE = DISPLAY_YEARLY_PRICE;
 
 export type Plan = 'monthly' | 'yearly';
 
@@ -45,8 +49,9 @@ export function getPlanPricing(packages: PurchasesPackage[]): PlanPricing {
   const monthlyPkg = findPaywallPackage(packages, 'monthly');
   const yearlyPkg = findPaywallPackage(packages, 'yearly');
 
-  const monthlyAmount = monthlyPkg?.product.price ?? FALLBACK_MONTHLY_PRICE;
-  const yearlyAmount = yearlyPkg?.product.price ?? FALLBACK_YEARLY_PRICE;
+  // Always show target list prices in the UI (App Store Connect can lag behind).
+  const monthlyAmount = DISPLAY_MONTHLY_PRICE;
+  const yearlyAmount = DISPLAY_YEARLY_PRICE;
 
   const monthlyAnnualized = monthlyAmount * 12;
   const savingsPercent =
@@ -55,16 +60,13 @@ export function getPlanPricing(packages: PurchasesPackage[]): PlanPricing {
       : 0;
 
   const yearlyPerMonth = yearlyAmount / 12;
-  const yearlyPerMonthFromStore = yearlyPkg?.product.pricePerMonthString;
 
   return {
     monthlyPkg,
     yearlyPkg,
-    monthlyPriceLabel: monthlyPkg?.product.priceString ?? `${formatMoney(monthlyAmount)}/mo`,
-    yearlyPriceLabel: yearlyPkg?.product.priceString ?? `${formatMoney(yearlyAmount)}/yr`,
-    yearlyPerMonthLabel: yearlyPerMonthFromStore
-      ? `(${yearlyPerMonthFromStore}/mo)`
-      : `(${formatMoney(yearlyPerMonth)}/mo)`,
+    monthlyPriceLabel: `${formatMoney(monthlyAmount)}/mo`,
+    yearlyPriceLabel: `${formatMoney(yearlyAmount)}/yr`,
+    yearlyPerMonthLabel: `(${formatMoney(yearlyPerMonth)}/mo)`,
     savingsPercent,
     hasLivePackages: Boolean(monthlyPkg && yearlyPkg),
   };

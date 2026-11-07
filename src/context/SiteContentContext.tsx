@@ -15,9 +15,11 @@ type SiteContentContextValue = {
   content: SiteContent;
   isLoading: boolean;
   isSaving: boolean;
+  hasPendingChanges: boolean;
   error: string | null;
   updateContent: (patch: Partial<SiteContent>) => void;
   saveContentNow: (next: SiteContent) => Promise<void>;
+  flushPendingSave: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -28,8 +30,12 @@ export function SiteContentProvider({ children }: { children: React.ReactNode })
   const [content, setContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentRef = useRef(content);
+  contentRef.current = content;
+  const pendingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!user?.id) {
@@ -70,6 +76,8 @@ export function SiteContentProvider({ children }: { children: React.ReactNode })
 
       try {
         await saveSiteSetting(user.id, 'site_content', next);
+        pendingRef.current = false;
+        setHasPendingChanges(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not save site content.');
       } finally {
@@ -83,9 +91,20 @@ export function SiteContentProvider({ children }: { children: React.ReactNode })
     (patch: Partial<SiteContent>) => {
       setContent((current) => {
         const next = { ...current, ...patch };
+        if (patch.socialLinks) {
+          next.instagramHandle = next.socialLinks.instagram;
+        } else if (patch.instagramHandle !== undefined) {
+          next.socialLinks = {
+            ...next.socialLinks,
+            instagram: patch.instagramHandle.replace(/^@+/, '').trim(),
+          };
+        }
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        pendingRef.current = true;
+        setHasPendingChanges(true);
         saveTimerRef.current = setTimeout(() => {
-          persist(next);
+          saveTimerRef.current = null;
+          void persist(next);
         }, 700);
         return next;
       });
@@ -102,23 +121,49 @@ export function SiteContentProvider({ children }: { children: React.ReactNode })
 
   const saveContentNow = useCallback(
     async (next: SiteContent) => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      contentRef.current = next;
       setContent(next);
       await persist(next);
     },
     [persist],
   );
 
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!pendingRef.current || !user?.id) return;
+    await persist(contentRef.current);
+  }, [persist, user?.id]);
+
   const value = useMemo(
     () => ({
       content,
       isLoading,
       isSaving,
+      hasPendingChanges,
       error,
       updateContent,
       saveContentNow,
+      flushPendingSave,
       refresh,
     }),
-    [content, isLoading, isSaving, error, updateContent, saveContentNow, refresh],
+    [
+      content,
+      isLoading,
+      isSaving,
+      hasPendingChanges,
+      error,
+      updateContent,
+      saveContentNow,
+      flushPendingSave,
+      refresh,
+    ],
   );
 
   return <SiteContentContext.Provider value={value}>{children}</SiteContentContext.Provider>;

@@ -168,6 +168,81 @@
               </fieldset>
             </div>
 
+            <div class="field travel-request-block" id="travel-request-wrap" hidden>
+              <label class="travel-request-label" for="travel-request-toggle">
+                <input type="checkbox" id="travel-request-toggle" name="travel-request-toggle" />
+                <span>I want the stylist to travel to me</span>
+              </label>
+              <small class="travel-request-note"
+                >Add your address on the next step. A travel fee will be calculated from the stylist&apos;s home base.</small
+              >
+            </div>
+
+            <div class="field house-address-block" id="travel-address-field-wrap" hidden>
+              <fieldset class="house-address-fields">
+                <legend class="house-address-legend">Your service address <span aria-hidden="true">*</span></legend>
+                <div class="field">
+                  <label for="travel-addr-street">Street address <span aria-hidden="true">*</span></label>
+                  <input
+                    type="text"
+                    id="travel-addr-street"
+                    name="travel-addr-street"
+                    autocomplete="address-line1"
+                    inputmode="text"
+                    placeholder="e.g. 108 Main Street"
+                  />
+                </div>
+                <div class="field">
+                  <label for="travel-addr-unit">Apartment / unit <span class="house-address-optional">(optional)</span></label>
+                  <input
+                    type="text"
+                    id="travel-addr-unit"
+                    name="travel-addr-unit"
+                    autocomplete="address-line2"
+                    placeholder="Apt, suite, unit, etc."
+                  />
+                </div>
+                <div class="house-address-grid">
+                  <div class="field">
+                    <label for="travel-addr-city">City <span aria-hidden="true">*</span></label>
+                    <input type="text" id="travel-addr-city" name="travel-addr-city" autocomplete="address-level2" placeholder="City" />
+                  </div>
+                  <div class="field">
+                    <label for="travel-addr-state">State <span aria-hidden="true">*</span></label>
+                    <input
+                      type="text"
+                      id="travel-addr-state"
+                      name="travel-addr-state"
+                      autocomplete="address-level1"
+                      maxlength="2"
+                      class="house-address-input-state"
+                      placeholder="CT"
+                    />
+                  </div>
+                  <div class="field">
+                    <label for="travel-addr-zip">ZIP <span aria-hidden="true">*</span></label>
+                    <input
+                      type="text"
+                      id="travel-addr-zip"
+                      name="travel-addr-zip"
+                      autocomplete="postal-code"
+                      inputmode="numeric"
+                      class="house-address-input-zip"
+                      placeholder="06360"
+                      maxlength="10"
+                    />
+                  </div>
+                </div>
+                <p class="house-address-hint" id="travel-addr-maps-hint" hidden>
+                  Add <code>googleMapsApiKey</code> in <code>booking-config.local.js</code> for address suggestions as you type.
+                </p>
+                <p class="travel-fee-preview" id="travel-fee-preview" hidden></p>
+                <small class="house-address-note"
+                  >Travel appointments require stylist approval before they&apos;re confirmed.</small
+                >
+              </fieldset>
+            </div>
+
             <div class="field">
               <label for="photo-hair">Current hair photo *</label>
               <input id="photo-hair" name="photo-hair" type="file" accept="image/*" required />
@@ -253,6 +328,9 @@
             <p>
               <strong>Service price:</strong> <span id="line-subtotal">$0.00</span>
             </p>
+            <p id="line-travel-fee-row" hidden>
+              <strong>Travel fee:</strong> <span id="line-travel-fee">—</span>
+            </p>
             <p id="line-style-addon-row" hidden>
               <strong>Add-on:</strong> <span id="line-style-addon">—</span>
             </p>
@@ -266,7 +344,7 @@
               <strong id="line-online-label">Deposit:</strong> <span id="line-deposit-base">$0.00</span>
             </p>
             <p id="line-service-fee-row" hidden>
-              <strong>Service fee:</strong> <span id="line-service-fee">$0.00</span>
+              <strong>Platform fee:</strong> <span id="line-service-fee">$0.00</span>
             </p>
             <p id="line-charge-total-row" hidden>
               <strong>Total due when booking:</strong> <span id="line-charge-total">$0.00</span>
@@ -328,7 +406,7 @@
               <p><strong>Name:</strong> <span id="pay-name-preview">—</span></p>
               <p><strong>Email:</strong> <span id="pay-email-preview">—</span></p>
               <p id="pay-deposit-base-row" hidden><strong>Deposit:</strong> <span id="pay-deposit-base">$0.00</span></p>
-              <p id="pay-service-fee-row" hidden><strong>Service fee:</strong> <span id="pay-service-fee">$0.00</span></p>
+              <p id="pay-service-fee-row" hidden><strong>Platform fee:</strong> <span id="pay-service-fee">$0.00</span></p>
               <p><strong>Total due now:</strong> <span id="pay-deposit-preview">$0.00</span></p>
             </div>
             <div id="stripe-card-element" class="stripe-card-element"></div>
@@ -348,6 +426,10 @@
           <div class="price-line">
             <span>Service price</span>
             <span id="side-subtotal">$0.00</span>
+          </div>
+          <div class="price-line" id="side-travel-fee-row" hidden>
+            <span>Travel fee</span>
+            <span id="side-travel-fee">—</span>
           </div>
           <div class="price-line" id="side-style-addon-row" hidden>
             <span>Add-on</span>
@@ -373,7 +455,7 @@
             <span id="side-deposit">$0.00</span>
           </div>
           <div class="price-line fee" id="side-service-fee-row" hidden>
-            <span>Service fee</span>
+            <span>Platform fee</span>
             <span id="side-service-fee">$0.00</span>
           </div>
           <div class="price-line charge-total" id="side-charge-total-row" hidden>

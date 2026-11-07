@@ -8,6 +8,7 @@ import { AppAccessProvider, useAppAccess } from '../context/AppAccessContext';
 import { OnboardingProvider, useOnboarding } from '../context/OnboardingContext';
 import { SiteContentProvider } from '../context/SiteContentContext';
 import { SiteDataProvider } from '../context/SiteDataContext';
+import { useBookingSessionAutomation } from '../hooks/useBookingSessionAutomation';
 import { SiteThemeProvider } from '../context/SiteThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import TabNavigator from './TabNavigator';
@@ -15,7 +16,7 @@ import SiteNavigator from './SiteNavigator';
 import AdminNavigator from './AdminNavigator';
 import StripeTerminalAppProvider from '../components/StripeTerminalAppProvider';
 import TabletSceneWrapper from '../components/layout/TabletSceneWrapper';
-import TapToPayCoordinator from '../components/tapToPay/TapToPayCoordinator';
+// import TapToPayCoordinator from '../components/tapToPay/TapToPayCoordinator';
 import { TAP_TO_PAY_NATIVE_ENABLED } from '../lib/tapToPayConfig';
 import { useAuth } from '../context/AuthContext';
 import { useSubscriptionSiteSync } from '../hooks/useSubscriptionSiteSync';
@@ -109,14 +110,23 @@ function AppGate() {
   return (
     <>
       <TabNavigator />
+      {/*
       {TAP_TO_PAY_NATIVE_ENABLED ? <TapToPayCoordinator /> : null}
+      Tap to Pay disabled — checkout uses Cash + Payment link for now.
+      */}
     </>
   );
+}
+
+function BookingSessionAutomation() {
+  useBookingSessionAutomation();
+  return null;
 }
 
 export default function AuthenticatedApp() {
   return (
     <SiteDataProvider>
+      <BookingSessionAutomation />
       <PushNotificationsProvider>
         <SiteContentProvider>
           <SiteThemeProvider>

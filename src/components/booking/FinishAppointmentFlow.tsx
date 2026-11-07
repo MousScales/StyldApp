@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,16 +16,15 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePrivacyMode } from '../../context/PrivacyContext';
+import { createBookingPaymentLink } from '../../lib/bookingPaymentLink';
 import {
-  chargeBookingInPerson,
-  collectTapToPayPaymentFallback,
-  type InPersonPayResult,
-} from '../../lib/bookingInPersonPay';
-import { useTapToPayCheckout } from '../../hooks/useTapToPayCheckout';
-import { useTapToPay } from '../../context/TapToPayContext';
-import { TAP_TO_PAY_NATIVE_ENABLED } from '../../lib/tapToPayConfig';
-import { formatTapToPayError, TAP_TO_PAY_BUTTON_LABEL } from '../../lib/tapToPayCompliance';
+  computePlatformFeeCents,
+  normalizePlatformFeePayer,
+  totalChargeWithPlatformFee,
+  type PlatformFeePayer,
+} from '../../lib/bookingServiceFee';
 import {
+  cancelBooking,
   completeBooking,
   recordBookingCashPayment,
   updateBookingSessionNotes,
@@ -38,17 +37,17 @@ import { colors, fonts } from '../../theme';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { maskMoney } from '../../utils/money';
 import ScreenGradient from '../ScreenGradient';
-import TapToPayWaveIcon from '../tapToPay/TapToPayWaveIcon';
+import PaymentFeeRows from './PaymentFeeRows';
 
-type FinishStep = 'review' | 'tipPercent' | 'tipCustom' | 'summary' | 'tapToPay';
+type FinishStep = 'review' | 'handoffToClient' | 'tipPercent' | 'tipCustom' | 'summary';
 
-const UNPAID_STEPS: FinishStep[] = ['review', 'tipPercent', 'tipCustom', 'summary', 'tapToPay'];
+const UNPAID_STEPS: FinishStep[] = ['review', 'handoffToClient', 'tipPercent', 'tipCustom', 'summary'];
 const PAID_STEPS: FinishStep[] = ['review'];
 
 const PHASE_LABELS = ['Review', 'Tip', 'Confirm', 'Pay'] as const;
 
 function phaseIndex(step: FinishStep): number {
-  if (step === 'review') return 0;
+  if (step === 'review' || step === 'handoffToClient') return 0;
   if (step === 'tipPercent' || step === 'tipCustom') return 1;
   if (step === 'summary') return 2;
   return 3;
@@ -71,27 +70,8 @@ type Props = {
   linkedSite: LinkedSite;
   subdomain: string;
   stripeReady: boolean;
+  platformFeePayer?: PlatformFeePayer;
   onRefresh: () => Promise<void>;
-  collectTapToPayPayment: (input: {
-    bookingId: string;
-    subdomain: string;
-    balanceCents: number;
-    tipCents: number;
-    customerEmail?: string;
-  }) => Promise<InPersonPayResult>;
-  collectCardPayment: (input: {
-    bookingId: string;
-    subdomain: string;
-    balanceCents: number;
-    tipCents: number;
-    customerEmail?: string;
-  }) => Promise<InPersonPayResult>;
-  tapToPayCheckout?: {
-    readerConnected: boolean;
-    connectPhase: 'idle' | 'initializing' | 'ready' | 'error';
-    connectMessage: string;
-    connectTapToPay: (subdomain: string) => Promise<{ ok: boolean; error?: string }>;
-  };
 };
 
 function FinishAppointmentFlowContent({
@@ -104,15 +84,15 @@ function FinishAppointmentFlowContent({
   linkedSite,
   subdomain,
   stripeReady,
+  platformFeePayer: platformFeePayerProp,
   onRefresh,
-  collectTapToPayPayment,
-  collectCardPayment,
-  tapToPayCheckout,
 }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
   const { privacyMode } = usePrivacyMode();
   const insets = useSafeAreaInsets();
   const topChromePadding = Math.max(insets.top, 12) + 8;
+
+  const platformFeePayer = normalizePlatformFeePayer(platformFeePayerProp);
 
   const balanceDue = getBalanceDue(booking);
   const isPaid =
@@ -127,16 +107,26 @@ function FinishAppointmentFlowContent({
   const [customTip, setCustomTip] = useState('');
   const [paying, setPaying] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [usedCustomTipStep, setUsedCustomTipStep] = useState(false);
   const [showThankYou, setShowThankYou] = useState(false);
+  const [thankYouMode, setThankYouMode] = useState<'default' | 'payment_link'>('default');
+  const wasVisibleRef = useRef(false);
 
   const step = steps[stepIndex] ?? 'review';
   const totalCharge = useMemo(() => balanceDue + tipAmount, [balanceDue, tipAmount]);
+  const totalOnlineCharge = useMemo(
+    () => totalChargeWithPlatformFee(totalCharge, platformFeePayer),
+    [totalCharge, platformFeePayer],
+  );
   const tipBase = balanceDue > 0 ? balanceDue : booking.price;
   const currentPhase = phaseIndex(step);
 
   useEffect(() => {
-    if (!visible) return;
+    const justOpened = visible && !wasVisibleRef.current;
+    wasVisibleRef.current = visible;
+    if (!justOpened) return;
+
     setStepIndex(0);
     setNotes(booking.stylistNotes ?? '');
     setSendReview(true);
@@ -145,7 +135,8 @@ function FinishAppointmentFlowContent({
     setCustomTip('');
     setUsedCustomTipStep(false);
     setShowThankYou(false);
-  }, [visible, booking.stylistNotes, booking.tipAmount, isPaid]);
+    setThankYouMode('default');
+  }, [visible, booking.stylistNotes, booking.tipAmount]);
 
   useEffect(() => {
     if (!showThankYou) return;
@@ -183,10 +174,6 @@ function FinishAppointmentFlowContent({
       goToStep(usedCustomTipStep ? 'tipCustom' : 'tipPercent');
       return;
     }
-    if (step === 'tapToPay') {
-      goToStep('summary');
-      return;
-    }
     setStepIndex((i) => Math.max(0, i - 1));
   }, [goToStep, onClose, step, stepIndex, usedCustomTipStep]);
 
@@ -221,6 +208,37 @@ function FinishAppointmentFlowContent({
     }
   };
 
+  const cancelAppointment = async () => {
+    setCancelling(true);
+    try {
+      await persistNotes();
+      await cancelBooking(linkedSite, appointmentId);
+      await onRefresh();
+      onComplete();
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Could not cancel appointment.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const confirmCancelAppointment = () => {
+    Alert.alert(
+      'Cancel appointment',
+      `Remove "${booking.service}" for ${clientName}? It will disappear from your schedule and be marked cancelled. The client may be emailed and any eligible refund will be processed per your policy.`,
+      [
+        { text: 'Keep appointment', style: 'cancel' },
+        {
+          text: 'Cancel appointment',
+          style: 'destructive',
+          onPress: () => void cancelAppointment(),
+        },
+      ],
+    );
+  };
+
+  const busy = paying || finishing || cancelling;
+
   const handleReviewContinue = async () => {
     try {
       await persistNotes();
@@ -249,9 +267,9 @@ function FinishAppointmentFlowContent({
     goToStep('summary');
   };
 
-  const runTapToPay = async () => {
+  const handlePaymentLinkCheckout = async () => {
     if (!subdomain) {
-      Alert.alert('Site not published', 'Publish your site before collecting card payments.');
+      Alert.alert('Site not published', 'Publish your site before sending a payment link.');
       return;
     }
     if (!stripeReady) {
@@ -263,61 +281,24 @@ function FinishAppointmentFlowContent({
       return;
     }
 
-    if (tapToPayCheckout?.connectPhase === 'initializing') {
-      goToStep('tapToPay');
-      return;
-    }
-
-    if (tapToPayCheckout && !tapToPayCheckout.readerConnected) {
-      const result = await tapToPayCheckout.connectTapToPay(subdomain);
-      if (!result.ok) {
-        Alert.alert('Tap to Pay', formatTapToPayError(result.error ?? 'Could not enable Tap to Pay.'));
-        return;
-      }
-    }
-
     setPaying(true);
     try {
-      await collectTapToPayPayment({
+      await createBookingPaymentLink({
         bookingId: booking.id,
         subdomain,
         balanceCents: Math.round(balanceDue * 100),
         tipCents: Math.round(tipAmount * 100),
         customerEmail: booking.email || undefined,
+        customerName: clientName,
+        serviceName: booking.service,
+        sendEmail: Boolean(booking.email?.trim()),
       });
-      await onRefresh();
-      await finalizeAppointment();
-      setShowThankYou(true);
-    } catch (err) {
-      const message = formatTapToPayError(err instanceof Error ? err.message : 'Payment failed');
-      if (message !== 'Payment cancelled.') {
-        Alert.alert('Payment failed', message, [
-          { text: 'Try card instead', onPress: () => void runCardPayment() },
-          { text: 'OK', style: 'cancel' },
-        ]);
-      }
-    } finally {
-      setPaying(false);
-    }
-  };
 
-  const runCardPayment = async () => {
-    if (!subdomain || !stripeReady) return;
-    setPaying(true);
-    try {
-      await collectCardPayment({
-        bookingId: booking.id,
-        subdomain,
-        balanceCents: Math.round(balanceDue * 100),
-        tipCents: Math.round(tipAmount * 100),
-        customerEmail: booking.email || undefined,
-      });
-      await onRefresh();
       await finalizeAppointment();
+      setThankYouMode('payment_link');
       setShowThankYou(true);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Payment failed';
-      if (message !== 'Payment cancelled.') Alert.alert('Payment failed', message);
+      Alert.alert('Error', err instanceof Error ? err.message : 'Could not send payment link.');
     } finally {
       setPaying(false);
     }
@@ -339,69 +320,64 @@ function FinishAppointmentFlowContent({
     }
   };
 
-  const handleCardCheckout = () => {
-    if (!subdomain) {
-      Alert.alert('Site not published', 'Publish your site before collecting card payments.');
-      return;
-    }
-    if (!stripeReady) {
-      Alert.alert('Styld Pay required', 'Set up Styld Pay in Form & Payments first.');
-      return;
-    }
-    void runCardPayment();
-  };
-
-  const handleTapToPayCheckout = () => {
-    if (!subdomain) {
-      Alert.alert('Site not published', 'Publish your site before collecting card payments.');
-      return;
-    }
-    if (!stripeReady) {
-      Alert.alert('Styld Pay required', 'Set up Styld Pay in Form & Payments first.');
-      return;
-    }
-    if (tapToPayCheckout?.connectPhase === 'initializing') {
-      goToStep('tapToPay');
-      return;
-    }
-    goToStep('tapToPay');
-  };
-
-  const showNativeTapToPay = Platform.OS === 'ios' && TAP_TO_PAY_NATIVE_ENABLED;
-  const isTapToPayInitializing = tapToPayCheckout?.connectPhase === 'initializing';
-
   const stepTitle: Record<FinishStep, string> = {
     review: 'Request a review',
+    handoffToClient: 'Pass device to client',
     tipPercent: 'Add a tip',
     tipCustom: 'Custom tip amount',
     summary: 'Choose payment',
-    tapToPay: TAP_TO_PAY_BUTTON_LABEL,
   };
 
   const stepSubtitle: Record<FinishStep, string> = {
     review: `Send ${clientName} a link to share feedback after this visit.`,
+    handoffToClient: `Hand your phone to ${clientName} so they can add a tip and finish checkout.`,
     tipPercent: `Tip on ${maskMoney('$' + tipBase.toFixed(2), privacyMode)} service total`,
     tipCustom: 'Enter any amount you prefer',
-    summary: 'How would your client like to pay?',
-    tapToPay: isTapToPayInitializing
-      ? 'Tap to Pay is preparing on this iPhone'
-      : 'Hold the top of your iPhone near your client\'s card or device',
+    summary: 'Collect cash now or send a secure Stripe payment link to your client.',
   };
+
+  const renderCancelAction = () => (
+    <Pressable
+      style={[styles.cancelBtn, busy && styles.btnDisabled]}
+      disabled={busy}
+      onPress={confirmCancelAppointment}
+    >
+      {cancelling ? (
+        <ActivityIndicator color="#dc2626" />
+      ) : (
+        <Text style={styles.cancelBtnText}>Cancel appointment instead</Text>
+      )}
+    </Pressable>
+  );
 
   const renderFooter = () => {
     if (step === 'review') {
       return (
-        <Pressable
-          style={[styles.primaryBtn, finishing && styles.btnDisabled]}
-          disabled={finishing}
-          onPress={() => void handleReviewContinue()}
-        >
-          {finishing ? (
-            <ActivityIndicator color={colors.background} />
-          ) : (
-            <Text style={styles.primaryBtnText}>{isPaid ? 'Finish appointment' : 'Continue'}</Text>
-          )}
-        </Pressable>
+        <View style={styles.footerStack}>
+          <Pressable
+            style={[styles.primaryBtn, busy && styles.btnDisabled]}
+            disabled={busy}
+            onPress={() => void handleReviewContinue()}
+          >
+            {finishing ? (
+              <ActivityIndicator color={colors.background} />
+            ) : (
+              <Text style={styles.primaryBtnText}>{isPaid ? 'Finish appointment' : 'Continue'}</Text>
+            )}
+          </Pressable>
+          {renderCancelAction()}
+        </View>
+      );
+    }
+
+    if (step === 'handoffToClient') {
+      return (
+        <View style={styles.footerStack}>
+          <Pressable style={styles.primaryBtn} onPress={goNext}>
+            <Text style={styles.primaryBtnText}>Ready — pass device</Text>
+          </Pressable>
+          {renderCancelAction()}
+        </View>
       );
     }
 
@@ -440,63 +416,36 @@ function FinishAppointmentFlowContent({
 
     if (step === 'summary') {
       return (
-        <View style={styles.footerStack}>
-          {showNativeTapToPay ? (
-            <Pressable
-              style={[styles.tapToPayBtn, (paying || finishing) && styles.btnDisabled]}
-              disabled={paying || finishing}
-              onPress={handleTapToPayCheckout}
-            >
-              <TapToPayWaveIcon size={20} color={colors.background} />
-              <Text style={styles.tapToPayBtnText}>{TAP_TO_PAY_BUTTON_LABEL}</Text>
-            </Pressable>
-          ) : null}
-          <View style={styles.footerRow}>
-            <Pressable
-              style={[styles.secondaryBtn, styles.secondaryBtnFlex, (paying || finishing) && styles.btnDisabled]}
-              disabled={paying || finishing}
-              onPress={() => void handleCashCheckout()}
-            >
-              {paying ? (
-                <ActivityIndicator color={colors.text} />
-              ) : (
-                <>
-                  <Ionicons name="cash-outline" size={18} color={colors.text} />
-                  <Text style={styles.secondaryBtnText}>Cash</Text>
-                </>
-              )}
-            </Pressable>
-            <Pressable
-              style={[styles.primaryBtn, styles.primaryBtnFlex, (paying || finishing) && styles.btnDisabled]}
-              disabled={paying || finishing}
-              onPress={handleCardCheckout}
-            >
-              <Ionicons name="card-outline" size={18} color={colors.background} />
-              <Text style={styles.primaryBtnText}>Card</Text>
-            </Pressable>
-          </View>
+        <View style={styles.footerRow}>
+          <Pressable
+            style={[styles.secondaryBtn, styles.secondaryBtnFlex, busy && styles.btnDisabled]}
+            disabled={busy}
+            onPress={() => void handleCashCheckout()}
+          >
+            {paying ? (
+              <ActivityIndicator color={colors.text} />
+            ) : (
+              <>
+                <Ionicons name="cash-outline" size={18} color={colors.text} />
+                <Text style={styles.secondaryBtnText}>Cash</Text>
+              </>
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.primaryBtn, styles.primaryBtnFlex, busy && styles.btnDisabled]}
+            disabled={busy}
+            onPress={() => void handlePaymentLinkCheckout()}
+          >
+            {paying ? (
+              <ActivityIndicator color={colors.background} />
+            ) : (
+              <>
+                <Ionicons name="link-outline" size={18} color={colors.background} />
+                <Text style={styles.primaryBtnText}>Send payment link</Text>
+              </>
+            )}
+          </Pressable>
         </View>
-      );
-    }
-
-    if (step === 'tapToPay') {
-      return (
-        <Pressable
-          style={[styles.tapToPayBtn, (paying || isTapToPayInitializing) && styles.btnDisabled]}
-          disabled={paying || isTapToPayInitializing}
-          onPress={() => void runTapToPay()}
-        >
-          {paying || isTapToPayInitializing ? (
-            <ActivityIndicator color={colors.background} />
-          ) : (
-            <>
-              <TapToPayWaveIcon size={20} color={colors.background} />
-              <Text style={styles.tapToPayBtnText}>
-                {TAP_TO_PAY_BUTTON_LABEL} · {maskMoney('$' + totalCharge.toFixed(2), privacyMode)}
-              </Text>
-            </>
-          )}
-        </Pressable>
       );
     }
 
@@ -522,7 +471,11 @@ function FinishAppointmentFlowContent({
                 <Ionicons name="checkmark" size={44} color="#15803d" />
               </View>
               <Text style={styles.thankYouTitle}>Thank you!</Text>
-              <Text style={styles.thankYouBody}>Appointment complete</Text>
+              <Text style={styles.thankYouBody}>
+                {thankYouMode === 'payment_link'
+                  ? 'Appointment complete · payment link sent'
+                  : 'Appointment complete'}
+              </Text>
             </View>
           ) : (
             <KeyboardAvoidingView
@@ -637,6 +590,27 @@ function FinishAppointmentFlowContent({
                   </View>
                 )}
 
+                {step === 'handoffToClient' && (
+                  <View style={styles.block}>
+                    <View style={styles.handoffCard}>
+                      <View style={styles.handoffIconRing}>
+                        <Ionicons name="phone-portrait-outline" size={40} color={colors.accentPink} />
+                        <View style={styles.handoffArrow}>
+                          <Ionicons name="arrow-forward" size={18} color={colors.textMuted} />
+                        </View>
+                        <View style={styles.handoffAvatar}>
+                          <Text style={styles.handoffAvatarText}>{clientInitials(clientName)}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.handoffTitle}>Pass your device to {clientName}</Text>
+                      <Text style={styles.handoffBody}>
+                        They&apos;ll choose a tip and how to pay on the next screens. You can take your
+                        phone back after checkout is done.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 {step === 'tipPercent' && (
                   <View style={styles.block}>
                     <View style={styles.percentGrid}>
@@ -716,63 +690,29 @@ function FinishAppointmentFlowContent({
                         <Text style={styles.receiptClient}>{clientName}</Text>
                       </View>
                       <View style={styles.receiptDivider} />
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>{booking.service}</Text>
-                        <Text style={styles.summaryValue}>
-                          {maskMoney(`$${balanceDue.toFixed(2)}`, privacyMode)}
-                        </Text>
-                      </View>
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Tip</Text>
-                        <Text style={styles.summaryValue}>
-                          {maskMoney(`$${tipAmount.toFixed(2)}`, privacyMode)}
-                        </Text>
-                      </View>
-                      <View style={styles.receiptDivider} />
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryTotalLabel}>Total due</Text>
-                        <Text style={styles.summaryTotalValue}>
-                          {maskMoney(`$${totalCharge.toFixed(2)}`, privacyMode)}
-                        </Text>
-                      </View>
+                      <PaymentFeeRows
+                        rows={[
+                          {
+                            label: booking.service,
+                            amountCents: Math.round(balanceDue * 100),
+                          },
+                          {
+                            label: 'Tip',
+                            amountCents: Math.round(tipAmount * 100),
+                          },
+                        ]}
+                        showPlatformFee={platformFeePayer === 'client'}
+                        platformFeeCents={computePlatformFeeCents(
+                          Math.round(totalCharge * 100),
+                          platformFeePayer,
+                        )}
+                        totalCents={Math.round(totalOnlineCharge * 100)}
+                      />
                     </View>
                   </View>
                 )}
 
-                {step === 'tapToPay' && (
-                  <View style={styles.block}>
-                    {isTapToPayInitializing ? (
-                      <View style={styles.initializingCard}>
-                        <ActivityIndicator color={colors.accentPink} size="large" />
-                        <Text style={styles.initializingTitle}>Initializing Tap to Pay</Text>
-                        <Text style={styles.initializingBody}>
-                          {tapToPayCheckout?.connectMessage ||
-                            'Tap to Pay on iPhone will be available shortly on this device.'}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.tapCard}>
-                        <View style={styles.tapIconRing}>
-                          {showNativeTapToPay ? (
-                            <TapToPayWaveIcon size={36} color={colors.accentPink} />
-                          ) : (
-                            <Ionicons name="radio-outline" size={36} color={colors.accentPink} />
-                          )}
-                        </View>
-                        <Text style={styles.tapAmount}>
-                          {maskMoney(`$${totalCharge.toFixed(2)}`, privacyMode)}
-                        </Text>
-                        <Text style={styles.tapHint}>
-                          {Platform.OS === 'ios'
-                            ? 'Hold the top of your iPhone near the client\'s card or digital wallet'
-                            : Platform.OS === 'web'
-                              ? 'Charge the card using the payment sheet'
-                              : 'Hold the back of your phone near the client\'s card'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
+                {/* Tap to Pay step disabled — use Payment link instead */}
               </View>
             </ScrollView>
 
@@ -936,6 +876,62 @@ const BASE_STYLES = {
   clientMeta: { flex: 1, gap: 2 },
   clientName: { color: colors.text, fontSize: 16, fontWeight: '700' },
   clientService: { color: colors.textMuted, fontSize: 13, fontWeight: '500' },
+  handoffCard: {
+    alignItems: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.cardBorder,
+    gap: 16,
+  },
+  handoffIconRing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  handoffArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.cardBorder,
+  },
+  handoffAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentPinkMuted,
+    borderWidth: 1,
+    borderColor: colors.accentPinkBorder,
+  },
+  handoffAvatarText: {
+    color: colors.accentPink,
+    fontSize: 18,
+    fontWeight: '800',
+    fontFamily: fonts.number,
+  },
+  handoffTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: -0.3,
+  },
+  handoffBody: {
+    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 320,
+  },
   settingsCard: {
     borderRadius: 16,
     backgroundColor: colors.card,
@@ -1246,39 +1242,15 @@ const BASE_STYLES = {
     alignItems: 'center',
   },
   textBtnLabel: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
+  cancelBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  cancelBtnText: { color: '#dc2626', fontSize: 14, fontWeight: '600' },
   btnDisabled: { opacity: 0.5 },
 };
 
-function FinishAppointmentFlowNative(props: Omit<Props, 'collectTapToPayPayment' | 'collectCardPayment' | 'tapToPayCheckout'>) {
-  const { collectTapToPayPayment, collectCardPayment } = useTapToPayCheckout();
-  const { readerConnected, connectPhase, connectMessage, connectTapToPay } = useTapToPay();
-
-  return (
-    <FinishAppointmentFlowContent
-      {...props}
-      collectTapToPayPayment={collectTapToPayPayment}
-      collectCardPayment={collectCardPayment}
-      tapToPayCheckout={{
-        readerConnected,
-        connectPhase,
-        connectMessage,
-        connectTapToPay,
-      }}
-    />
-  );
-}
-
-export default function FinishAppointmentFlow(
-  props: Omit<Props, 'collectTapToPayPayment' | 'collectCardPayment'>,
-) {
-  if (Platform.OS === 'web' || !TAP_TO_PAY_NATIVE_ENABLED) {
-    return (
-      <FinishAppointmentFlowContent
-        {...props}
-        collectTapToPayPayment={collectTapToPayPaymentFallback}
-        collectCardPayment={chargeBookingInPerson}
-      />
-    );
-  }
-  return <FinishAppointmentFlowNative {...props} />;
+export default function FinishAppointmentFlow(props: Props) {
+  return <FinishAppointmentFlowContent {...props} />;
 }

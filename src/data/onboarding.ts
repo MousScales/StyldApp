@@ -1,5 +1,6 @@
 import { BrandPaletteKey } from '../theme/brandPalettes';
 import { DEFAULT_SITE_CONTENT, SiteContent } from './siteContent';
+import { DEFAULT_SOCIAL_LINKS } from './socialLinks';
 import { HeroLayout } from './siteTheme';
 
 export type BusinessType =
@@ -324,6 +325,10 @@ export function buildSiteContentFromOnboarding(answers: OnboardingAnswers): Site
     phoneTel: formatPhoneTel(answers.phoneDisplay.trim()) || DEFAULT_SITE_CONTENT.phoneTel,
     email: answers.email.trim(),
     instagramHandle: answers.instagramHandle.replace(/^@/, '').trim() || DEFAULT_SITE_CONTENT.instagramHandle,
+    socialLinks: {
+      ...DEFAULT_SOCIAL_LINKS,
+      instagram: answers.instagramHandle.replace(/^@/, '').trim(),
+    },
     addressLine1: answers.addressLine1.trim() || DEFAULT_SITE_CONTENT.addressLine1,
     addressLine2: '',
     city: answers.city.trim() || DEFAULT_SITE_CONTENT.city,

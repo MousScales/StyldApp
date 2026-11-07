@@ -1,4 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  computeChargeBreakdown,
+  estimateStripeProcessingFeeCents,
+} from '../_shared/booking-service-fee.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -47,6 +51,62 @@ type StripePayout = {
   description: string | null;
 };
 
+type StripeFeeDetail = {
+  amount?: number;
+  type?: string;
+};
+
+type StripeBalanceTransaction = {
+  id: string;
+  amount: number;
+  net: number;
+  fee: number;
+  type: string;
+  status: string;
+  created: number;
+  available_on: number;
+  reporting_category: string | null;
+  source: string | null;
+  description: string | null;
+  fee_details?: StripeFeeDetail[];
+};
+
+function isPaymentType(type: string): boolean {
+  return type === 'charge' || type === 'payment';
+}
+
+function parseTransactionFees(t: StripeBalanceTransaction): {
+  stripeFeeCents: number;
+  platformFeeCents: number;
+} {
+  let platformFeeCents = 0;
+
+  for (const detail of t.fee_details ?? []) {
+    const amount = typeof detail.amount === 'number' ? detail.amount : 0;
+    if (detail.type === 'application_fee') platformFeeCents += amount;
+  }
+
+  if (platformFeeCents === 0 && t.type === 'application_fee') {
+    platformFeeCents = t.fee;
+  }
+
+  const stripeFeeCents = isPaymentType(t.type)
+    ? estimateStripeProcessingFeeCents(t.amount)
+    : (t.fee_details ?? [])
+        .filter((d) => d.type === 'stripe_fee')
+        .reduce((sum, d) => sum + (typeof d.amount === 'number' ? d.amount : 0), 0);
+
+  if (platformFeeCents === 0 && isPaymentType(t.type)) {
+    if (t.fee > 0 && t.fee < stripeFeeCents) {
+      platformFeeCents = t.fee;
+    } else {
+      platformFeeCents = computeChargeBreakdown(Math.abs(t.net), 'tenant').platformProfitCents;
+    }
+  }
+
+  return { stripeFeeCents, platformFeeCents };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
@@ -82,13 +142,14 @@ Deno.serve(async (req) => {
       balanceLive: false,
       bankAccount: null,
       recentPayouts: [],
+      recentTransactions: [],
     });
   }
 
   const acctId = row.stripe_account_id;
   const checkedAt = new Date().toISOString();
 
-  const [acctResult, balResult, bankResult, payoutResult] = await Promise.all([
+  const [acctResult, balResult, bankResult, payoutResult, txnResult] = await Promise.all([
     stripeGet<{
       payouts_enabled?: boolean;
       charges_enabled?: boolean;
@@ -103,7 +164,12 @@ Deno.serve(async (req) => {
       `/accounts/${acctId}/external_accounts?object=bank_account&limit=1`,
       stripeKey,
     ),
-    stripeGet<{ data?: StripePayout[] }>('/payouts?limit=10', stripeKey, acctId),
+    stripeGet<{ data?: StripePayout[] }>('/payouts?limit=20', stripeKey, acctId),
+    stripeGet<{ data?: StripeBalanceTransaction[] }>(
+      '/balance_transactions?limit=25',
+      stripeKey,
+      acctId,
+    ),
   ]);
 
   let payoutsEnabled = row.payouts_enabled;
@@ -164,6 +230,27 @@ Deno.serve(async (req) => {
     description: p.description ?? 'Payout',
   }));
 
+  const recentTransactions = (txnResult.ok ? txnResult.data.data ?? [] : []).map(
+    (t: StripeBalanceTransaction) => {
+      const { stripeFeeCents, platformFeeCents } = parseTransactionFees(t);
+      return {
+        id: t.id,
+        amountCents: t.amount,
+        netCents: t.net,
+        feeCents: t.fee,
+        stripeFeeCents,
+        platformFeeCents,
+        type: t.type,
+        status: t.status,
+        createdAt: t.created,
+        availableOn: t.available_on,
+        reportingCategory: t.reporting_category ?? '',
+        sourceId: typeof t.source === 'string' ? t.source : null,
+        description: t.description ?? '',
+      };
+    },
+  );
+
   const status = payoutsEnabled
     ? 'ready'
     : detailsSubmitted
@@ -184,5 +271,6 @@ Deno.serve(async (req) => {
     balanceError,
     bankAccount,
     recentPayouts,
+    recentTransactions,
   });
 });

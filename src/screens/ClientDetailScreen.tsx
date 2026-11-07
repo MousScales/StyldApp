@@ -7,7 +7,8 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ScreenGradient from '../components/ScreenGradient';
 import ServiceImage from '../components/ServiceImage';
-import { Booking } from '../data/clients';
+import ClientAvatar from '../components/clients/ClientAvatar';
+import { Booking, getClientEmails, getClientPhones } from '../data/clients';
 import { useSiteData } from '../context/SiteDataContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { ClientStackParamList } from '../navigation/ClientNavigator';
@@ -19,12 +20,6 @@ import { maskMoney } from '../utils/money';
 type Props = NativeStackScreenProps<ClientStackParamList, 'ClientDetail'>;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 function statusColor(status: Booking['status']): string {
   if (status === 'completed') return '#22c55e';
@@ -184,11 +179,11 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
   const averageSpend =
     client.totalBookings > 0 ? Math.round(client.totalSpent / client.totalBookings) : 0;
 
-  const hasEmail = Boolean(client.email && client.email !== '—');
-  const hasPhone = Boolean(client.phone && client.phone !== '—');
+  const emails = getClientEmails(client);
+  const phones = getClientPhones(client);
 
-  const handleEmail = () => hasEmail && Linking.openURL(`mailto:${client.email}`);
-  const handleCall = () => hasPhone && Linking.openURL(`tel:${client.phone.replace(/\D/g, '')}`);
+  const handleEmail = (email: string) => Linking.openURL(`mailto:${email}`);
+  const handleCall = (phone: string) => Linking.openURL(`tel:${phone.replace(/\D/g, '')}`);
 
   const openBooking = (bookingId: string) => {
     navigation.dispatch(
@@ -230,9 +225,13 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
 
           {/* ── Hero ───────────────────────────────────────────────────── */}
           <View style={styles.heroSection}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(client.name)}</Text>
-            </View>
+            <ClientAvatar
+              name={client.name}
+              photoHairPath={client.photoHairPath}
+              storageBookingId={client.photoStorageBookingId}
+              size={72}
+              style={styles.heroAvatar}
+            />
             <Text style={styles.heroName}>{client.name}</Text>
             <Text style={styles.heroSub}>
               {client.totalBookings} booking{client.totalBookings === 1 ? '' : 's'}
@@ -260,21 +259,40 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
           <View style={styles.section}>
             <SectionHeader title="Contact" />
             <View style={styles.listGroup}>
-              <ContactRow
-                icon="mail-outline"
-                label="Email"
-                value={client.email}
-                onPress={handleEmail}
-                disabled={!hasEmail}
-              />
-              <ContactRow
-                icon="call-outline"
-                label="Phone"
-                value={client.phone}
-                onPress={handleCall}
-                disabled={!hasPhone}
-                isLast
-              />
+              {emails.length ? (
+                emails.map((email, index) => (
+                  <ContactRow
+                    key={`email-${email}`}
+                    icon="mail-outline"
+                    label={emails.length > 1 ? `Email ${index + 1}` : 'Email'}
+                    value={email}
+                    onPress={() => handleEmail(email)}
+                    isLast={!phones.length && index === emails.length - 1}
+                  />
+                ))
+              ) : (
+                <ContactRow
+                  icon="mail-outline"
+                  label="Email"
+                  value="—"
+                  disabled
+                  isLast={!phones.length}
+                />
+              )}
+              {phones.length ? (
+                phones.map((phone, index) => (
+                  <ContactRow
+                    key={`phone-${phone}`}
+                    icon="call-outline"
+                    label={phones.length > 1 ? `Phone ${index + 1}` : 'Phone'}
+                    value={phone}
+                    onPress={() => handleCall(phone)}
+                    isLast={index === phones.length - 1}
+                  />
+                ))
+              ) : (
+                <ContactRow icon="call-outline" label="Phone" value="—" disabled isLast />
+              )}
             </View>
           </View>
 
@@ -438,20 +456,8 @@ const BASE_STYLES = {
     paddingVertical: 8,
     marginBottom: 20,
   },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentPinkSoft,
+  heroAvatar: {
     marginBottom: 12,
-  },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.accentPink,
-    letterSpacing: 1,
   },
   heroName: {
     fontSize: 22,

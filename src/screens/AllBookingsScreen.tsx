@@ -9,6 +9,7 @@ import ServiceImage from '../components/ServiceImage';
 import { useSiteData } from '../context/SiteDataContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
+import { SiteBookingRecord } from '../lib/siteData';
 import { getCalendarEventColors } from '../lib/styleEventColors';
 import { flatListStyles } from '../theme/flatList';
 import { colors, fonts } from '../theme';
@@ -31,6 +32,7 @@ function timeAgo(date: Date): string {
 
 function bookingStatusLabel(status: string, depositPaid: boolean): string {
   if (status === 'in_progress') return 'In session';
+  if (status === 'assumed_finished') return 'Assumed finished';
   if (status === 'pending_approval') return 'Pending approval';
   if (status === 'confirmed') return 'Confirmed';
   if (status === 'cancelled' || status === 'canceled') return 'Cancelled';
@@ -42,11 +44,83 @@ function bookingStatusLabel(status: string, depositPaid: boolean): string {
 
 function bookingStatusColor(status: string, depositPaid: boolean): string {
   if (status === 'in_progress') return colors.accentPink;
+  if (status === 'assumed_finished') return '#a16207';
   if (status === 'pending_approval') return '#f59e0b';
   if (status === 'completed') return '#15803d';
   if (status === 'cancelled' || status === 'canceled') return '#dc2626';
   if (depositPaid || status === 'confirmed') return colors.accentPink;
   return colors.textMuted;
+}
+
+function isCancelledBooking(booking: { bookingStatus: string }): boolean {
+  const status = booking.bookingStatus.toLowerCase();
+  return status === 'cancelled' || status === 'canceled';
+}
+
+function BookingList({
+  bookings,
+  privacyMode,
+  onPressBooking,
+}: {
+  bookings: SiteBookingRecord[];
+  privacyMode: boolean;
+  onPressBooking: (bookingId: string) => void;
+}) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+
+  return (
+    <View style={styles.listGroup}>
+      {bookings.map((booking, index) => {
+        const statusLabel = bookingStatusLabel(booking.bookingStatus, booking.depositPaid);
+        const statusColor = bookingStatusColor(booking.bookingStatus, booking.depositPaid);
+        const eventColors = getCalendarEventColors({
+          styleId: booking.styleId,
+          title: booking.service,
+          completed: booking.bookingStatus.toLowerCase() === 'completed',
+        });
+        const apptDateStr = booking.startsAt
+          ? booking.startsAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+            ' · ' +
+            booking.startsAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+          : timeAgo(booking.createdAt);
+
+        return (
+          <Pressable
+            key={booking.id}
+            style={[
+              styles.row,
+              { borderLeftColor: eventColors.borderColor },
+              index === bookings.length - 1 && styles.rowLast,
+            ]}
+            onPress={() => onPressBooking(booking.id)}
+          >
+            <ServiceImage
+              styleId={booking.styleId}
+              serviceName={booking.service}
+              size={44}
+              circular
+            />
+            <View style={styles.info}>
+              <Text style={styles.name} numberOfLines={1}>{booking.fullName}</Text>
+              <Text style={styles.service} numberOfLines={1}>{booking.service}</Text>
+              <Text style={styles.meta} numberOfLines={1}>
+                <Text style={{ color: statusColor }}>{statusLabel}</Text>
+                {' · '}
+                {apptDateStr}
+                {booking.depositPaid ? ' · Deposit paid' : ''}
+              </Text>
+            </View>
+            <View style={styles.right}>
+              <Text style={styles.amount}>
+                {maskMoney(`$${booking.price.toFixed(2)}`, privacyMode)}
+              </Text>
+              <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 }
 
 export default function AllBookingsScreen({ navigation }: Props) {
@@ -55,10 +129,17 @@ export default function AllBookingsScreen({ navigation }: Props) {
   const { bookings } = useSiteData();
   const { privacyMode } = usePrivacyMode();
 
-  const sorted = useMemo(
-    () => [...bookings].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
-    [bookings],
-  );
+  const { activeBookings, cancelledBookings } = useMemo(() => {
+    const sorted = [...bookings].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return {
+      activeBookings: sorted.filter((b) => !isCancelledBooking(b)),
+      cancelledBookings: sorted.filter(isCancelledBooking),
+    };
+  }, [bookings]);
+
+  const openBooking = (bookingId: string) => {
+    navigation.navigate('BookingDetail', { bookingId });
+  };
 
   return (
     <View style={styles.container}>
@@ -73,63 +154,34 @@ export default function AllBookingsScreen({ navigation }: Props) {
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {sorted.length === 0 ? (
+          {activeBookings.length === 0 && cancelledBookings.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="receipt-outline" size={28} color={colors.textMuted} style={{ marginBottom: 10 }} />
               <Text style={styles.emptyText}>No bookings yet.</Text>
             </View>
           ) : (
-            <View style={styles.listGroup}>
-              {sorted.map((booking, index) => {
-                const statusLabel = bookingStatusLabel(booking.bookingStatus, booking.depositPaid);
-                const statusColor = bookingStatusColor(booking.bookingStatus, booking.depositPaid);
-                const eventColors = getCalendarEventColors({
-                  styleId: booking.styleId,
-                  title: booking.service,
-                  completed: booking.bookingStatus.toLowerCase() === 'completed',
-                });
-                const apptDateStr = booking.startsAt
-                  ? booking.startsAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
-                    ' · ' +
-                    booking.startsAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-                  : timeAgo(booking.createdAt);
-
-                return (
-                  <Pressable
-                    key={booking.id}
-                    style={[
-                      styles.row,
-                      { borderLeftColor: eventColors.borderColor },
-                      index === sorted.length - 1 && styles.rowLast,
-                    ]}
-                    onPress={() => navigation.navigate('BookingDetail', { bookingId: booking.id })}
-                  >
-                    <ServiceImage
-                      styleId={booking.styleId}
-                      serviceName={booking.service}
-                      size={44}
-                      circular
-                    />
-                    <View style={styles.info}>
-                      <Text style={styles.name} numberOfLines={1}>{booking.fullName}</Text>
-                      <Text style={styles.service} numberOfLines={1}>{booking.service}</Text>
-                      <Text style={styles.meta} numberOfLines={1}>
-                        <Text style={{ color: statusColor }}>{statusLabel}</Text>
-                        {' · '}
-                        {apptDateStr}
-                        {booking.depositPaid ? ' · Deposit paid' : ''}
-                      </Text>
-                    </View>
-                    <View style={styles.right}>
-                      <Text style={styles.amount}>
-                        {maskMoney(`$${booking.price.toFixed(2)}`, privacyMode)}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <>
+              {activeBookings.length > 0 ? (
+                <>
+                  <Text style={styles.sectionTitle}>Recent bookings</Text>
+                  <BookingList
+                    bookings={activeBookings}
+                    privacyMode={privacyMode}
+                    onPressBooking={openBooking}
+                  />
+                </>
+              ) : null}
+              {cancelledBookings.length > 0 ? (
+                <>
+                  <Text style={[styles.sectionTitle, styles.sectionTitleSpaced]}>Cancelled bookings</Text>
+                  <BookingList
+                    bookings={cancelledBookings}
+                    privacyMode={privacyMode}
+                    onPressBooking={openBooking}
+                  />
+                </>
+              ) : null}
+            </>
           )}
         </ScrollView>
       </SafeAreaView>
@@ -157,6 +209,15 @@ const BASE_STYLES = {
   content: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 4 },
   empty: { alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
   emptyText: { color: colors.textMuted, fontSize: 15, fontWeight: '500' },
+  sectionTitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  sectionTitleSpaced: { marginTop: 20 },
   listGroup: flatListStyles.listGroup,
   row: flatListStyles.row,
   rowLast: flatListStyles.rowLast,

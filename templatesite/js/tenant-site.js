@@ -192,7 +192,7 @@
     })
     .then(function (records) {
       var content = null;
-      var theme = { heroLayout: 'split', heroImageUrl: null, logoImageUrl: null };
+      var theme = { heroLayout: 'banner', heroImageUrl: null, logoImageUrl: null };
       var meta = {};
       var prices = {};
       var covers = {};
@@ -249,7 +249,7 @@
       window.__STYLD_PRODUCTS_SETTINGS__ = productsSettings;
       var heroStackImagePaths = Array.isArray(theme.heroStackImagePaths) ? theme.heroStackImagePaths : [];
       window.__STYLD_SITE_THEME__ = {
-        heroLayout: theme.heroLayout || 'split',
+        heroLayout: theme.heroLayout || 'banner',
         heroImagePosition: theme.heroImagePosition || 'center top',
         heroImageFocusX: typeof theme.heroImageFocusX === 'number' ? theme.heroImageFocusX : 50,
         heroImageFocusY: typeof theme.heroImageFocusY === 'number' ? theme.heroImageFocusY : 22,

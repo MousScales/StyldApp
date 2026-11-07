@@ -335,7 +335,7 @@
 
     document.title = (content.brandName || 'Your site') + ' | Book online';
 
-    var theme = window.__STYLD_SITE_THEME__ || { heroLayout: 'split', heroImageUrl: null, logoImageUrl: null };
+    var theme = window.__STYLD_SITE_THEME__ || { heroLayout: 'banner', heroImageUrl: null, logoImageUrl: null };
     var heroInner = document.getElementById('preview-hero-inner');
     if (heroInner) {
       if (window.__STYLD_HERO_HTML__) {

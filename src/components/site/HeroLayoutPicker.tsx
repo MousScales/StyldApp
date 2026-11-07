@@ -12,12 +12,12 @@ type HeroLayoutPickerProps = {
 function LayoutPreview({ layout }: { layout: HeroLayout }) {
   const previewStyles = useResponsiveStyles(BASE_PREVIEW_STYLES);
 
-  if (layout === 'split') {
+  if (layout === 'banner') {
     return (
-      <View style={previewStyles.splitRow}>
-        <View style={[previewStyles.block, previewStyles.textBlock]} />
-        <View style={[previewStyles.block, previewStyles.imageBlock]} />
-        <View style={[previewStyles.block, previewStyles.textBlock]} />
+      <View style={previewStyles.stack}>
+        <View style={[previewStyles.block, previewStyles.imageBlockWide]} />
+        <View style={[previewStyles.block, previewStyles.textLine]} />
+        <View style={[previewStyles.block, previewStyles.textLineShort]} />
       </View>
     );
   }
@@ -31,12 +31,11 @@ function LayoutPreview({ layout }: { layout: HeroLayout }) {
     );
   }
 
-  if (layout === 'image-below') {
+  if (layout === 'stack') {
     return (
       <View style={previewStyles.stack}>
         <View style={[previewStyles.block, previewStyles.imageBlockWide]} />
         <View style={[previewStyles.block, previewStyles.textLine]} />
-        <View style={[previewStyles.block, previewStyles.textLineShort]} />
       </View>
     );
   }
@@ -82,12 +81,6 @@ export default function HeroLayoutPicker({ value, onChange }: HeroLayoutPickerPr
 }
 
 const BASE_PREVIEW_STYLES = {
-  splitRow: {
-    flexDirection: 'row',
-    gap: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   stack: {
     gap: 4,
     alignItems: 'center',
@@ -95,15 +88,6 @@ const BASE_PREVIEW_STYLES = {
   block: {
     backgroundColor: colors.accentPinkMuted,
     borderRadius: 4,
-  },
-  textBlock: {
-    width: 18,
-    height: 28,
-  },
-  imageBlock: {
-    width: 22,
-    height: 34,
-    backgroundColor: colors.accentPinkSoft,
   },
   imageBlockWide: {
     width: 56,

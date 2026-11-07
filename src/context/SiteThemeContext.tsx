@@ -44,6 +44,7 @@ type SiteThemeContextValue = {
   theme: SiteTheme;
   isLoading: boolean;
   isSaving: boolean;
+  hasPendingChanges: boolean;
   error: string | null;
   heroImageUrl: string | null;
   logoImageUrl: string | null;
@@ -62,7 +63,8 @@ type SiteThemeContextValue = {
   removeCertificationItem: (index: number) => void;
   updateCertificationCaption: (index: number, caption: string) => void;
   removeHeroImage: () => void;
-  saveThemeNow: () => Promise<void>;
+  saveThemeNow: (override?: SiteTheme) => Promise<void>;
+  flushPendingSave: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -74,8 +76,12 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<SiteTheme>(DEFAULT_SITE_THEME);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  const pendingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!user?.id) {
@@ -116,6 +122,8 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
 
       try {
         await saveSiteSetting(user.id, 'site_theme', next);
+        pendingRef.current = false;
+        setHasPendingChanges(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not save site design.');
       } finally {
@@ -130,8 +138,11 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       setTheme((current) => {
         const next = { ...current, ...patch };
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        pendingRef.current = true;
+        setHasPendingChanges(true);
         saveTimerRef.current = setTimeout(() => {
-          persist(next);
+          saveTimerRef.current = null;
+          void persist(next);
         }, 700);
         return next;
       });
@@ -205,13 +216,25 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
     updateTheme({ heroImagePath: null });
   }, [updateTheme]);
 
-  const saveThemeNow = useCallback(async () => {
+  const saveThemeNow = useCallback(async (override?: SiteTheme) => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    await persist(theme);
-  }, [persist, theme]);
+    const next = override ?? themeRef.current;
+    themeRef.current = next;
+    setTheme(next);
+    await persist(next);
+  }, [persist]);
+
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!pendingRef.current || !user?.id) return;
+    await persist(themeRef.current);
+  }, [persist, user?.id]);
 
   const heroImageUrl = useMemo(() => {
     if (!theme.heroImagePath) return null;
@@ -382,6 +405,7 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       theme,
       isLoading,
       isSaving,
+      hasPendingChanges,
       error,
       heroImageUrl,
       logoImageUrl,
@@ -401,12 +425,14 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       updateCertificationCaption,
       removeHeroImage,
       saveThemeNow,
+      flushPendingSave,
       refresh,
     }),
     [
       theme,
       isLoading,
       isSaving,
+      hasPendingChanges,
       error,
       heroImageUrl,
       logoImageUrl,
@@ -426,6 +452,7 @@ export function SiteThemeProvider({ children }: { children: React.ReactNode }) {
       updateCertificationCaption,
       removeHeroImage,
       saveThemeNow,
+      flushPendingSave,
       refresh,
     ],
   );
@@ -437,6 +464,7 @@ const SITE_THEME_FALLBACK: SiteThemeContextValue = {
   theme: DEFAULT_SITE_THEME,
   isLoading: false,
   isSaving: false,
+  hasPendingChanges: false,
   error: null,
   heroImageUrl: null,
   logoImageUrl: null,
@@ -456,6 +484,7 @@ const SITE_THEME_FALLBACK: SiteThemeContextValue = {
   removeStackImage: () => {},
   removeHeroImage: () => {},
   saveThemeNow: async () => {},
+  flushPendingSave: async () => {},
   refresh: async () => {},
 };
 

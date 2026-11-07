@@ -1,5 +1,6 @@
 export type BookingPaymentMode = 'full' | 'deposit' | 'in_person';
 export type DepositKind = 'percent' | 'fixed';
+export type PlatformFeePayer = 'client' | 'tenant';
 
 export type BookingPaymentSettings = {
   /** full = pay entire estimate online; deposit = partial online; in_person = book free, pay at appointment */
@@ -13,6 +14,8 @@ export type BookingPaymentSettings = {
    * When false, deposit is an additional hold on top of the full service price.
    */
   depositIncludedInPrice: boolean;
+  /** Who pays Styld platform + card processing markup on online charges */
+  platformFeePayer: PlatformFeePayer;
   /** Whether clients must upload a current hair photo */
   requireCurrentHairPhoto: boolean;
   /** Whether clients must upload a reference image */
@@ -31,6 +34,7 @@ export const DEFAULT_BOOKING_PAYMENT: BookingPaymentSettings = {
   depositKind: 'percent',
   depositValue: 10,
   depositIncludedInPrice: true,
+  platformFeePayer: 'client',
   requireCurrentHairPhoto: true,
   requireReferencePhoto: false,
   onlinePaymentsEnabled: false,
@@ -137,11 +141,15 @@ export function normalizeBookingPayment(value: unknown): BookingPaymentSettings 
 
   const requireBookingApproval = source.requireBookingApproval === true;
 
+  const platformFeePayer: PlatformFeePayer =
+    source.platformFeePayer === 'tenant' ? 'tenant' : 'client';
+
   return {
     mode,
     depositKind,
     depositValue,
     depositIncludedInPrice,
+    platformFeePayer,
     requireCurrentHairPhoto,
     requireReferencePhoto,
     onlinePaymentsEnabled,

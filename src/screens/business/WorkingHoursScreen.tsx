@@ -1,11 +1,9 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
 import {
   Alert,
-  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -14,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import BusinessScreenLayout, { BusinessSection } from '../../components/business/BusinessScreenLayout';
+import TimePickerSheet from '../../components/business/TimePickerSheet';
 import { useSiteData } from '../../context/SiteDataContext';
 import {
   BookingHours,
@@ -31,6 +30,12 @@ type TimeField =
   | 'dayStart'
   | 'dayEnd'
   | 'saturdayLastStart';
+
+const PICKER_TITLES: Record<TimeField, string> = {
+  dayStart: 'Day starts',
+  dayEnd: 'Day ends',
+  saturdayLastStart: 'Saturday last start',
+};
 
 const WEEKDAYS = [
   { value: 1, label: 'Monday' },
@@ -288,20 +293,19 @@ export default function WorkingHoursScreen({ navigation }: Props) {
       <Pressable style={styles.primaryBtn} onPress={save} disabled={saving}>
         <Text style={styles.primaryBtnText}>{saving ? 'Saving…' : 'Save to site'}</Text>
       </Pressable>
-
-      {picker && pickerTime ? (
-        <DateTimePicker
-          value={dateFromTime(pickerTime.hour, pickerTime.minute)}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(_, date) => {
-            if (Platform.OS === 'android') setPicker(null);
-            if (!date) return;
-            updateHours(setTimeOnHours(hours, picker, date));
-          }}
-        />
-      ) : null}
     </BusinessScreenLayout>
+
+    <TimePickerSheet
+      visible={picker !== null && pickerTime !== null}
+      value={dateFromTime(pickerTime?.hour ?? 8, pickerTime?.minute ?? 0)}
+      title={picker ? PICKER_TITLES[picker] : undefined}
+      onClose={() => setPicker(null)}
+      onConfirm={(date) => {
+        if (!picker) return;
+        updateHours(setTimeOnHours(hours, picker, date));
+        setPicker(null);
+      }}
+    />
     {unsavedChangesDialog}
     </>
   );

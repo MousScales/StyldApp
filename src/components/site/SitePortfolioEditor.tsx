@@ -5,11 +5,9 @@ import {
   Alert,
   Image,
   Pressable,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { PortfolioPlacement } from '../../data/siteContent';
 import { MAX_PORTFOLIO_ITEMS } from '../../data/siteTheme';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { pickSiteMediaFromLibrary } from '../../lib/pickSiteImage';
@@ -21,19 +19,15 @@ type PortfolioMediaPreview = {
 };
 
 type SitePortfolioEditorProps = {
-  placement: PortfolioPlacement;
   items: PortfolioMediaPreview[];
   busy?: boolean;
-  onPlacementChange: (value: PortfolioPlacement) => void;
   onAddMedia: (uri: string, mimeType?: string | null, mediaType?: 'image' | 'video') => Promise<void>;
   onRemoveMedia: (index: number) => void;
 };
 
 export default function SitePortfolioEditor({
-  placement,
   items,
   busy,
-  onPlacementChange,
   onAddMedia,
   onRemoveMedia,
 }: SitePortfolioEditorProps) {
@@ -65,38 +59,6 @@ export default function SitePortfolioEditor({
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.placementRow}>
-        <Text style={styles.placementLabel}>Position on site</Text>
-        <View style={styles.placementOptions}>
-          <Pressable
-            style={[styles.placementBtn, placement === 'above_menu' && styles.placementBtnActive]}
-            onPress={() => onPlacementChange('above_menu')}
-          >
-            <Text
-              style={[
-                styles.placementBtnText,
-                placement === 'above_menu' && styles.placementBtnTextActive,
-              ]}
-            >
-              Above menu
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.placementBtn, placement === 'below_menu' && styles.placementBtnActive]}
-            onPress={() => onPlacementChange('below_menu')}
-          >
-            <Text
-              style={[
-                styles.placementBtnText,
-                placement === 'below_menu' && styles.placementBtnTextActive,
-              ]}
-            >
-              Below menu
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
       <View style={styles.grid}>
         {items.map((item, index) => (
           <View key={`${item.url}-${index}`} style={styles.tile}>
@@ -140,41 +102,6 @@ export default function SitePortfolioEditor({
 const BASE_STYLES = {
   wrap: {
     gap: 12,
-  },
-  placementRow: {
-    gap: 8,
-    marginBottom: 4,
-  },
-  placementLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  placementOptions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  placementBtn: {
-    flex: 1,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: colors.card,
-    alignItems: 'center',
-  },
-  placementBtnActive: {
-    borderColor: colors.accentPinkBorder,
-    backgroundColor: colors.accentPinkMuted,
-  },
-  placementBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  placementBtnTextActive: {
-    color: colors.accentPink,
   },
   grid: {
     flexDirection: 'row',

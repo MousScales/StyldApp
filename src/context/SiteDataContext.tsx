@@ -24,6 +24,8 @@ import {
   getTodayJobStats,
   getPendingApprovalAppointments,
   getActiveAppointments,
+  getLiveNowAppointments,
+  getAssumedFinishedTodayAppointments,
   getUpcomingAppointments,
   loadSiteData,
   MoneyStats,
@@ -61,6 +63,8 @@ type SiteDataContextValue = {
   getTodayJobStats: () => { completed: number; total: number; progress: number };
   getPendingApprovalAppointments: (limit?: number) => AppointmentDetail[];
   getActiveAppointments: (limit?: number) => AppointmentDetail[];
+  getLiveNowAppointments: (limit?: number) => AppointmentDetail[];
+  getAssumedFinishedTodayAppointments: (limit?: number) => AppointmentDetail[];
   getUpcomingAppointments: (limit?: number) => AppointmentDetail[];
   getCompletedAppointments: () => AppointmentDetail[];
 };
@@ -216,6 +220,9 @@ export function SiteDataProvider({ children }: { children: React.ReactNode }) {
       getPendingApprovalAppointments: (limit?: number) =>
         getPendingApprovalAppointments(snapshot, limit ?? 20),
       getActiveAppointments: (limit?: number) => getActiveAppointments(snapshot, limit ?? 10),
+      getLiveNowAppointments: (limit?: number) => getLiveNowAppointments(snapshot, limit ?? 10),
+      getAssumedFinishedTodayAppointments: (limit?: number) =>
+        getAssumedFinishedTodayAppointments(snapshot, limit ?? 10),
       getUpcomingAppointments: (limit?: number) => getUpcomingAppointments(snapshot, limit ?? 5),
       getCompletedAppointments: () => getCompletedAppointments(snapshot),
     }),

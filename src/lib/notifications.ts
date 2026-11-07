@@ -73,6 +73,8 @@ function paymentMethodLabel(method: string): string {
   const m = method.toLowerCase();
   if (m === 'cash') return 'Cash';
   if (m === 'tap_to_pay') return 'Tap to Pay';
+  if (m === 'payment_link') return 'Payment link';
+  if (m === 'payment_link_sent') return 'Payment link sent';
   if (m === 'card') return 'Card';
   return '';
 }

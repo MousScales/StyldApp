@@ -1,15 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsiveStyles } from '../hooks/useResponsiveStyles';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { resolveBankDomain } from '../lib/institutionDomains';
-import { WebView } from 'react-native-webview';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { useSiteData } from '../context/SiteDataContext';
 import {
   fetchStripeConnectStatus,
   formatUsdFromCents,
+  openStripeConnectDashboard,
   requestStripeConnectPayout,
   resolveStripeConnectUrl,
   startStripeConnectOnboarding,
@@ -18,6 +18,8 @@ import {
 } from '../lib/stripeConnect';
 import { colors, fonts } from '../theme';
 import MoneyAmountLoader from './MoneyAmountLoader';
+import StripeBalanceSubline from './stripe/StripeBalanceSubline';
+import StripeConnectWebModal from './stripe/StripeConnectWebModal';
 
 const LOGOKIT_TOKEN = process.env.EXPO_PUBLIC_LOGOKIT_TOKEN ?? '';
 function bankLogoUrl(bankName?: string): string | null {
@@ -32,12 +34,11 @@ type Props = {
   onSummaryChange?: (summary: StripeConnectSummary | null) => void;
   /** When true, show a setup banner until Stripe Connect is ready; then show earnings UI */
   showOnlyWhenActive?: boolean;
+  /** Navigate to the full payouts screen (activity, history, etc.) */
+  onOpenPayouts?: () => void;
 };
 
-const RETURN_URL = 'styldd.com/connect/return';
-const REFRESH_URL = 'styldd.com/connect/refresh';
-
-export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActive }: Props) {
+export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActive, onOpenPayouts }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
   const { hasLinkedSite } = useSiteData();
@@ -47,6 +48,7 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
   const [initialized, setInitialized] = useState(false);
   const [busy, setBusy] = useState(false);
   const [connectUrl, setConnectUrl] = useState<string | null>(null);
+  const [connectModalTitle, setConnectModalTitle] = useState('Styld Pay');
   const [balanceError, setBalanceError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -80,7 +82,6 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
   const isPending = summary?.status === 'pending_review' || summary?.status === 'onboarding';
   const needsOnboarding = !summary?.hasAccount || summary?.status === 'not_started';
   const canPayout = isReady && summary?.balanceLive !== false && (summary?.balanceAvailableCents ?? 0) >= 100;
-  const masked = (cents: number) => (privacyMode ? '••••' : formatUsdFromCents(cents));
 
   async function handleSetupPayments() {
     setBusy(true);
@@ -88,6 +89,7 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
       const result = await startStripeConnectOnboarding();
       const url = resolveStripeConnectUrl(result);
       if (!url) throw new Error('Could not open Stripe Connect');
+      setConnectModalTitle('Styld Pay');
       setConnectUrl(url);
     } catch (err) {
       Alert.alert('Setup failed', err instanceof Error ? err.message : 'Try again');
@@ -119,6 +121,27 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleOpenStripeDashboard() {
+    setBusy(true);
+    try {
+      const url = await openStripeConnectDashboard();
+      setConnectModalTitle('Stripe account');
+      setConnectUrl(url);
+    } catch (err) {
+      Alert.alert('Could not open Stripe', err instanceof Error ? err.message : 'Try again');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handlePayoutPress() {
+    if (canPayout && summary?.balanceLive !== false) {
+      void handlePayout();
+      return;
+    }
+    onOpenPayouts?.();
   }
 
   async function handlePayout() {
@@ -157,6 +180,15 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
         },
       ],
     );
+  }
+
+  function handleAmountPress() {
+    if (loading || !initialized) return;
+    if (isReady && onOpenPayouts) {
+      onOpenPayouts();
+      return;
+    }
+    void refresh();
   }
 
   if (!hasLinkedSite) {
@@ -212,42 +244,16 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
           )}
         </View>
 
-        <Modal visible={!!connectUrl} animationType="slide" onRequestClose={() => setConnectUrl(null)}>
-          <SafeAreaView style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Pressable onPress={() => setConnectUrl(null)} hitSlop={12}>
-                <Ionicons name="close" size={22} color={colors.text} />
-              </Pressable>
-              <Text style={styles.modalTitle}>Styld Pay</Text>
-              <Pressable
-                onPress={() => {
-                  setConnectUrl(null);
-                  void handleSyncAfterOnboarding();
-                }}
-                hitSlop={12}
-              >
-                <Text style={styles.modalDone}>Done</Text>
-              </Pressable>
-            </View>
-            {connectUrl ? (
-              <WebView
-                source={{ uri: connectUrl }}
-                style={{ flex: 1 }}
-                onShouldStartLoadWithRequest={(request) => {
-                  if (
-                    request.url.includes(RETURN_URL) ||
-                    request.url.includes(REFRESH_URL)
-                  ) {
-                    setConnectUrl(null);
-                    void handleSyncAfterOnboarding();
-                    return false;
-                  }
-                  return true;
-                }}
-              />
-            ) : null}
-          </SafeAreaView>
-        </Modal>
+        <StripeConnectWebModal
+          visible={!!connectUrl}
+          url={connectUrl}
+          title={connectModalTitle}
+          onClose={() => setConnectUrl(null)}
+          onDone={() => {
+            setConnectUrl(null);
+            void handleSyncAfterOnboarding();
+          }}
+        />
       </>
     );
   }
@@ -261,7 +267,7 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
     <>
       <View style={styles.wrap}>
         {/* Big centred amount */}
-        <Pressable onPress={() => void refresh()} hitSlop={16} disabled={showLoader} style={styles.amountWrap}>
+        <Pressable onPress={handleAmountPress} hitSlop={16} disabled={showLoader} style={styles.amountWrap}>
           {showLoader ? (
             <MoneyAmountLoader size="profile" showSubtitle />
           ) : (
@@ -273,14 +279,16 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
 
         {/* Small muted sub-line */}
         {isReady && !showLoader && (
-          <Text style={styles.subLine}>
-            {masked(summary?.balanceAvailableCents ?? 0)} available
-            {(summary?.balancePendingCents ?? 0) > 0
-              ? ` · ${masked(summary?.balancePendingCents ?? 0)} processing`
-              : ''}
-            {balanceError ? ' · could not verify' : ''}
-          </Text>
+          <StripeBalanceSubline
+            availableCents={summary?.balanceAvailableCents ?? 0}
+            pendingCents={summary?.balancePendingCents ?? 0}
+            privacyMode={privacyMode}
+            style={styles.subLine}
+          />
         )}
+        {isReady && !showLoader && balanceError ? (
+          <Text style={styles.balanceErrorText}>Could not verify · tap amount to refresh</Text>
+        ) : null}
 
         {/* Bank tag + payout inline row */}
         {isReady ? (
@@ -296,13 +304,13 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
               </View>
             )}
             <Pressable
-              style={[styles.payoutBtn, (!canPayout || busy) && styles.payoutBtnDim]}
+              style={[styles.payoutBtn, busy && styles.btnDisabled]}
               disabled={busy}
-              onPress={() => void handlePayout()}
+              onPress={handlePayoutPress}
             >
               {busy
                 ? <ActivityIndicator color={colors.accentPink} size="small" />
-                : <Text style={styles.payoutBtnText}>Pay out</Text>
+                : <Text style={styles.payoutBtnText}>{canPayout ? 'Pay out' : 'View payouts'}</Text>
               }
             </Pressable>
           </View>
@@ -321,45 +329,28 @@ export default function WalletBalanceSection({ onSummaryChange, showOnlyWhenActi
             )}
           </View>
         ) : null}
+        {isReady && !showLoader ? (
+          <Pressable
+            style={styles.stripeManageLink}
+            disabled={busy}
+            onPress={() => void handleOpenStripeDashboard()}
+          >
+            <Ionicons name="open-outline" size={14} color={colors.accentPink} />
+            <Text style={styles.stripeManageLinkText}>Manage in Stripe</Text>
+          </Pressable>
+        ) : null}
       </View>
 
-      {/* Styld Pay onboarding / dashboard modal */}
-      <Modal visible={!!connectUrl} animationType="slide" onRequestClose={() => setConnectUrl(null)}>
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Pressable onPress={() => setConnectUrl(null)} hitSlop={12}>
-              <Ionicons name="close" size={22} color={colors.text} />
-            </Pressable>
-            <Text style={styles.modalTitle}>Styld Pay</Text>
-            <Pressable
-              onPress={() => {
-                setConnectUrl(null);
-                void handleSyncAfterOnboarding();
-              }}
-              hitSlop={12}
-            >
-              <Text style={styles.modalDone}>Done</Text>
-            </Pressable>
-          </View>
-          {connectUrl ? (
-            <WebView
-              source={{ uri: connectUrl }}
-              style={{ flex: 1 }}
-              onShouldStartLoadWithRequest={(request) => {
-                if (
-                  request.url.includes(RETURN_URL) ||
-                  request.url.includes(REFRESH_URL)
-                ) {
-                  setConnectUrl(null);
-                  void handleSyncAfterOnboarding();
-                  return false;
-                }
-                return true;
-              }}
-            />
-          ) : null}
-        </SafeAreaView>
-      </Modal>
+      <StripeConnectWebModal
+        visible={!!connectUrl}
+        url={connectUrl}
+        title={connectModalTitle}
+        onClose={() => setConnectUrl(null)}
+        onDone={() => {
+          setConnectUrl(null);
+          void handleSyncAfterOnboarding();
+        }}
+      />
     </>
   );
 }
@@ -380,9 +371,12 @@ const BASE_STYLES = {
     letterSpacing: -2,
   },
   subLine: {
-    fontSize: 13,
-    color: colors.textMuted,
-    fontWeight: '400',
+    marginTop: 0,
+  },
+  balanceErrorText: {
+    fontSize: 12,
+    color: '#b45309',
+    fontWeight: '500',
   },
   inlineRow: {
     flexDirection: 'row',
@@ -411,10 +405,15 @@ const BASE_STYLES = {
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
-  payoutBtnDim: {
-    borderColor: colors.accentPinkBorder,
-  },
   payoutBtnText: { color: colors.accentPink, fontSize: 13, fontWeight: '700' },
+  stripeManageLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    marginTop: 2,
+  },
+  stripeManageLinkText: { color: colors.accentPink, fontSize: 13, fontWeight: '600' },
 
   actionBtn: {
     marginTop: 10,
@@ -479,9 +478,4 @@ const BASE_STYLES = {
     alignSelf: 'stretch',
   },
   setupBannerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-
-  modalContainer: { flex: 1, backgroundColor: colors.background },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.cardBorder },
-  modalTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
-  modalDone: { color: colors.accentPink, fontSize: 16, fontWeight: '600' },
 };

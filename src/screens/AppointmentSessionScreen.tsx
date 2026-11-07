@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -14,7 +14,9 @@ import SessionTimer from '../components/booking/SessionTimer';
 import { useOnboarding } from '../context/OnboardingContext';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { useSiteData } from '../context/SiteDataContext';
-import { getBalanceDue } from '../lib/siteData';
+import { getBalanceDue, isBookingAssumedFinished, isBookingLiveSession, isBookingScheduledToday } from '../lib/siteData';
+import { markSessionLiveEngaged } from '../lib/siteAdmin';
+import { loadBookingPayment } from '../lib/siteServices';
 import { fetchStripeConnectStatus } from '../lib/stripeConnect';
 import { CalendarStackParamList } from '../navigation/CalendarNavigator';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
@@ -34,26 +36,49 @@ export default function AppointmentSessionScreen({ navigation, route }: Props) {
 
   const appointment = getAppointmentById(appointmentId);
   const booking = bookings.find((b) => b.id === appointmentId);
+  const assumedFinished = booking ? isBookingAssumedFinished(booking) : false;
+
+  const otherAssumedFinished = useMemo(
+    () =>
+      bookings.filter(
+        (row) =>
+          row.id !== appointmentId &&
+          isBookingAssumedFinished(row) &&
+          isBookingScheduledToday(row),
+      ),
+    [appointmentId, bookings],
+  );
 
   const [stripeReady, setStripeReady] = useState(false);
   const [showFinishFlow, setShowFinishFlow] = useState(false);
+  const [platformFeePayer, setPlatformFeePayer] = useState<'client' | 'tenant'>('client');
 
   useEffect(() => {
     void fetchStripeConnectStatus()
-      .then((s) => setStripeReady(s.status === 'ready' || s.status === 'pending_review'))
+      .then((s) => setStripeReady(s.chargesEnabled === true))
       .catch(() => setStripeReady(false));
   }, []);
 
   useEffect(() => {
-    if (!booking) return;
-    if (booking.bookingStatus.toLowerCase() !== 'in_progress') {
+    if (!linkedSite) return;
+    void loadBookingPayment(linkedSite)
+      .then((payment) => setPlatformFeePayer(payment.platformFeePayer))
+      .catch(() => setPlatformFeePayer('client'));
+  }, [linkedSite]);
+
+  useEffect(() => {
+    if (!booking || !linkedSite) return;
+    if (!isBookingLiveSession(booking)) {
       navigation.replace('AppointmentDetail', { appointmentId });
+      return;
     }
-  }, [appointmentId, booking, navigation]);
+    void markSessionLiveEngaged(linkedSite, appointmentId).then(() => refresh({ silent: true }));
+  }, [appointmentId, booking, linkedSite, navigation, refresh]);
 
   const balanceDue = booking ? getBalanceDue(booking) : 0;
   const isPaid = !booking || balanceDue <= 0 || booking.paymentStatus.toLowerCase() === 'paid';
   const subdomain = sitePublish.subdomain ?? '';
+  const sessionStart = booking?.sessionStartedAt ?? booking?.startsAt ?? null;
 
   if (!appointment || !booking || !linkedSite) {
     return (
@@ -86,13 +111,41 @@ export default function AppointmentSessionScreen({ navigation, route }: Props) {
           </Pressable>
         </View>
 
+        {otherAssumedFinished.length > 0 ? (
+          <View style={styles.overlayStack}>
+            {otherAssumedFinished.map((row) => (
+              <Pressable
+                key={row.id}
+                style={styles.overlayCard}
+                onPress={() => navigation.replace('AppointmentSession', { appointmentId: row.id })}
+              >
+                <Text style={styles.overlayTitle}>Appointment assumed finished</Text>
+                <Text style={styles.overlayBody} numberOfLines={1}>
+                  {row.fullName} · {row.service}
+                </Text>
+                <Text style={styles.overlayCta}>Tap to finish checkout →</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         <View style={styles.hero}>
+          {assumedFinished ? (
+            <View style={styles.assumedBanner}>
+              <Text style={styles.assumedBannerTitle}>Appointment assumed finished</Text>
+              <Text style={styles.assumedBannerBody}>
+                The scheduled time ended while you weren&apos;t in live view. Finish checkout when
+                you&apos;re ready.
+              </Text>
+            </View>
+          ) : null}
           <Text style={styles.serviceName} numberOfLines={2}>
             {appointment.service}
           </Text>
           <SessionTimer
-            startedAt={booking.sessionStartedAt}
+            startedAt={sessionStart}
             endedAt={booking.sessionEndedAt}
+            live={!assumedFinished}
             hero
           />
           {isPaid ? (
@@ -124,6 +177,7 @@ export default function AppointmentSessionScreen({ navigation, route }: Props) {
         linkedSite={linkedSite}
         subdomain={subdomain}
         stripeReady={stripeReady}
+        platformFeePayer={platformFeePayer}
         onRefresh={refresh}
       />
     </View>
@@ -154,6 +208,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  overlayStack: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  overlayCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 2,
+  },
+  overlayTitle: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  overlayBody: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  overlayCta: {
+    color: colors.accentPink,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
   hero: {
     flex: 1,
     alignItems: 'center',
@@ -161,6 +247,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 12,
     minHeight: 220,
+  },
+  assumedBanner: {
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+    marginBottom: 4,
+  },
+  assumedBannerTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  assumedBannerBody: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   serviceName: {
     color: colors.textMuted,

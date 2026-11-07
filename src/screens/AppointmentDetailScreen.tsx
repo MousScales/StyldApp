@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import {
   Alert,
+  Clipboard,
   Linking,
   Pressable,
   ScrollView,
@@ -21,6 +22,13 @@ import { usePrivacyMode } from '../context/PrivacyContext';
 import { cancelBooking, completeBooking, approveBooking, declinePendingBooking, startBookingSession } from '../lib/siteAdmin';
 import StartAppointmentCard from '../components/booking/StartAppointmentCard';
 import { requestReviewEmail } from '../lib/siteReviews';
+import { isPaymentLinkPending } from '../lib/siteData';
+import PaymentFeeRows from '../components/booking/PaymentFeeRows';
+import {
+  computePlatformFeeCents,
+  normalizePlatformFeePayer,
+  totalChargeCentsWithPlatformFee,
+} from '../lib/bookingServiceFee';
 import { CalendarStackParamList } from '../navigation/CalendarNavigator';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
 import { getCalendarEventColors } from '../lib/styleEventColors';
@@ -46,6 +54,7 @@ type Props = NativeStackScreenProps<
 
 function bookingStatusColor(status: string, depositPaid: boolean): string {
   if (status === 'in_progress') return colors.accentPink;
+  if (status === 'assumed_finished') return '#a16207';
   if (status === 'pending_approval') return '#f59e0b';
   if (status === 'completed') return '#15803d';
   if (status === 'cancelled' || status === 'canceled') return '#dc2626';
@@ -55,6 +64,7 @@ function bookingStatusColor(status: string, depositPaid: boolean): string {
 
 function bookingStatusLabel(status: string, depositPaid: boolean): string {
   if (status === 'in_progress') return 'In session';
+  if (status === 'assumed_finished') return 'Assumed finished';
   if (status === 'pending_approval') return 'Pending approval';
   if (status === 'completed') return 'Completed';
   if (status === 'cancelled' || status === 'canceled') return 'Cancelled';
@@ -72,12 +82,14 @@ function InfoRow({
   value,
   tappable,
   onPress,
+  valueLines = 2,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   tappable?: boolean;
   onPress?: () => void;
+  valueLines?: number;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
@@ -88,7 +100,10 @@ function InfoRow({
       </View>
       <View style={styles.infoContent}>
         <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={[styles.infoValue, tappable && styles.infoValueLink]} numberOfLines={2}>
+        <Text
+          style={[styles.infoValue, tappable && styles.infoValueLink]}
+          numberOfLines={valueLines > 0 ? valueLines : undefined}
+        >
           {value}
         </Text>
       </View>
@@ -97,6 +112,14 @@ function InfoRow({
   );
   if (tappable && onPress) return <Pressable onPress={onPress}>{content}</Pressable>;
   return content;
+}
+
+function formatServiceAddress(location: string): string {
+  return location
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(', ');
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -115,19 +138,22 @@ function PaymentBreakdown({
   depositAmount,
   depositPaid,
   bookingStatus,
+  paymentStatus,
+  linkPending,
   privacyMode,
 }: {
   price: number;
   depositAmount: number;
   depositPaid: boolean;
   bookingStatus: string;
+  paymentStatus: string;
+  linkPending: boolean;
   privacyMode: boolean;
 }) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
-  const isFullyPaid =
-    bookingStatus === 'completed' ||
-    (depositPaid && depositAmount >= price);
+  const ps = paymentStatus.toLowerCase().trim();
+  const isFullyPaid = ps === 'paid';
   const remaining = price - (depositPaid ? depositAmount : 0);
 
   return (
@@ -163,7 +189,7 @@ function PaymentBreakdown({
 
       <View style={styles.paymentDivider} />
 
-      {/* Remaining / Paid in full */}
+      {/* Remaining / Paid in full / Link pending */}
       <View style={styles.paymentCell}>
         {isFullyPaid ? (
           <>
@@ -173,15 +199,120 @@ function PaymentBreakdown({
             </View>
             <Text style={styles.paymentCellLabel}>Paid in full</Text>
           </>
+        ) : linkPending ? (
+          <>
+            <View style={styles.paymentPaidRow}>
+              <Ionicons name="time-outline" size={18} color="#f59e0b" />
+              <Text style={[styles.paymentCellAmount, styles.paymentDue]}>Pending</Text>
+            </View>
+            <Text style={styles.paymentCellLabel}>Link sent</Text>
+          </>
         ) : (
           <>
             <Text style={[styles.paymentCellAmount, styles.paymentDue]}>
               {maskMoney(`$${remaining.toFixed(2)}`, privacyMode)}
             </Text>
-            <Text style={styles.paymentCellLabel}>Due at service</Text>
+            <Text style={styles.paymentCellLabel}>
+              {bookingStatus === 'completed' ? 'Outstanding' : 'Due at service'}
+            </Text>
           </>
         )}
       </View>
+    </View>
+  );
+}
+
+function PaymentLinkPanel({
+  paymentLinkUrl,
+  paymentStatus,
+  paymentMethodAtService,
+  balanceCents,
+  tipCents,
+  totalCents,
+  platformFeeCents: platformFeeCentsProp,
+  showPlatformFee = true,
+  emailSentHint,
+}: {
+  paymentLinkUrl: string;
+  paymentStatus: string;
+  paymentMethodAtService: string;
+  balanceCents: number;
+  tipCents: number;
+  totalCents: number;
+  platformFeeCents?: number;
+  showPlatformFee?: boolean;
+  emailSentHint?: string;
+  privacyMode: boolean;
+}) {
+  const styles = useResponsiveStyles(BASE_STYLES);
+  const ps = paymentStatus.toLowerCase().trim();
+  const paidViaLink = ps === 'paid' && paymentMethodAtService === 'payment_link';
+  const pending = ps === 'payment_link_sent' || (Boolean(paymentLinkUrl) && ps !== 'paid');
+  const platformFeeCents =
+    showPlatformFee && platformFeeCentsProp && platformFeeCentsProp > 0
+      ? platformFeeCentsProp
+      : showPlatformFee
+        ? Math.max(0, totalCents - balanceCents - tipCents)
+        : 0;
+
+  if (!paymentLinkUrl && !paidViaLink) return null;
+
+  const handleCopy = () => {
+    Clipboard.setString(paymentLinkUrl);
+    Alert.alert('Copied', 'Payment link copied to clipboard.');
+  };
+
+  const handleOpen = () => {
+    void Linking.openURL(paymentLinkUrl);
+  };
+
+  return (
+    <View style={styles.paymentLinkPanel}>
+      <View style={styles.paymentLinkHeader}>
+        <Ionicons
+          name={paidViaLink ? 'checkmark-circle' : 'link-outline'}
+          size={18}
+          color={paidViaLink ? '#15803d' : '#f59e0b'}
+        />
+        <View style={styles.paymentLinkCopy}>
+          <Text style={styles.paymentLinkTitle}>
+            {paidViaLink ? 'Paid via payment link' : 'Payment link sent'}
+          </Text>
+          <Text style={styles.paymentLinkSub}>
+            {paidViaLink
+              ? 'Client completed checkout online.'
+              : emailSentHint || 'Waiting for the client to pay online.'}
+          </Text>
+        </View>
+      </View>
+
+      {(balanceCents > 0 || tipCents > 0 || platformFeeCents > 0) && (
+        <PaymentFeeRows
+          compact
+          rows={[
+            ...(balanceCents > 0
+              ? [{ label: 'Service balance', amountCents: balanceCents }]
+              : []),
+            ...(tipCents > 0 ? [{ label: 'Tip', amountCents: tipCents }] : []),
+          ]}
+          showPlatformFee={showPlatformFee && platformFeeCents > 0}
+          platformFeeCents={platformFeeCents}
+          totalCents={totalCents}
+        />
+      )}
+
+      {pending && paymentLinkUrl ? (
+        <View style={styles.paymentLinkActions}>
+          <Pressable style={styles.paymentLinkBtn} onPress={handleCopy}>
+            <Ionicons name="copy-outline" size={16} color={colors.text} />
+            <Text style={styles.paymentLinkBtnText}>Copy link</Text>
+          </Pressable>
+          <Pressable style={[styles.paymentLinkBtn, styles.paymentLinkBtnPrimary]} onPress={handleOpen}>
+            <Ionicons name="open-outline" size={16} color={colors.background} />
+            <Text style={[styles.paymentLinkBtnText, styles.paymentLinkBtnTextPrimary]}>Open link</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -226,9 +357,33 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
     completed: bookingStatus === 'completed',
   });
   const email = rawBooking?.email ?? '';
+  const paymentStatus = rawBooking?.paymentStatus ?? '';
+  const linkPending = rawBooking ? isPaymentLinkPending(rawBooking) : false;
+  const paymentLinkUrl = rawBooking?.paymentLinkUrl ?? '';
+  const paymentLinkTotalCents = rawBooking?.paymentLinkTotalCents ?? 0;
+  const paymentLinkBalanceCents = rawBooking?.paymentLinkBalanceCents ?? 0;
+  const paymentLinkTipCents = rawBooking?.paymentLinkTipCents ?? 0;
+  const paymentLinkPlatformFeeCents = rawBooking?.paymentLinkPlatformFeeCents ?? 0;
+  const bookingPlatformFeePayer = normalizePlatformFeePayer(
+    rawBooking?.paymentLinkPlatformFeePayer || rawBooking?.platformFeePayer,
+  );
+  const clientPaysPlatformFee = bookingPlatformFeePayer === 'client';
+  const depositPlatformFeeCents =
+    clientPaysPlatformFee &&
+    appointment.depositPaid &&
+    paymentStatus.toLowerCase() !== 'in_person' &&
+    appointment.depositAmount > 0
+      ? computePlatformFeeCents(Math.round(appointment.depositAmount * 100), 'client')
+      : 0;
 
   const handleCall = () => Linking.openURL(`tel:${appointment.clientPhone}`);
   const handleEmail = () => email && Linking.openURL(`mailto:${email}`);
+  const serviceAddress = formatServiceAddress(rawBooking?.location || appointment.location);
+  const handleOpenMaps = () => {
+    if (!serviceAddress) return;
+    const query = encodeURIComponent(serviceAddress);
+    void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
+  };
   const handleMarkComplete = () => {
     if (!linkedSite) {
       Alert.alert('No linked site', 'Connect your site before completing appointments.');
@@ -296,10 +451,13 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
   const isCancelled = bookingStatus === 'cancelled' || bookingStatus === 'canceled';
   const isPendingApproval = bookingStatus === 'pending_approval';
   const isInProgress = bookingStatus === 'in_progress';
+  const isAssumedFinished = bookingStatus === 'assumed_finished';
   const canStartSession =
     !isCompleted &&
     !isCancelled &&
     !isPendingApproval &&
+    !isInProgress &&
+    !isAssumedFinished &&
     bookingStatus === 'confirmed';
 
   const openSession = () => {
@@ -422,8 +580,49 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.accentPink} />
             </Pressable>
+          ) : isAssumedFinished ? (
+            <Pressable style={styles.sessionBanner} onPress={openSession}>
+              <View style={[styles.sessionBannerDot, styles.sessionBannerDotMuted]} />
+              <View style={styles.sessionBannerBody}>
+                <Text style={styles.sessionBannerTitle}>Appointment assumed finished</Text>
+                <Text style={styles.sessionBannerSub}>Tap to finish checkout</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#a16207" />
+            </Pressable>
           ) : canStartSession && linkedSite ? (
             <StartAppointmentCard onStart={handleStartSession} starting={starting} />
+          ) : null}
+
+          {(rawBooking?.isTravelBooking || serviceAddress) ? (
+            <SectionCard title={rawBooking?.isTravelBooking ? 'Travel' : 'Location'}>
+              {rawBooking?.isTravelBooking ? (
+                <InfoRow icon="car-outline" label="Appointment type" value="Travel to client" />
+              ) : null}
+              {serviceAddress ? (
+                <InfoRow
+                  icon="location-outline"
+                  label="Client address"
+                  value={serviceAddress}
+                  valueLines={4}
+                  tappable
+                  onPress={handleOpenMaps}
+                />
+              ) : null}
+              {rawBooking && rawBooking.travelFeeUsd > 0 ? (
+                <InfoRow
+                  icon="cash-outline"
+                  label="Travel fee"
+                  value={maskMoney(`$${rawBooking.travelFeeUsd.toFixed(2)}`, privacyMode)}
+                />
+              ) : null}
+              {rawBooking?.travelDistanceMiles != null && rawBooking.travelDistanceMiles > 0 ? (
+                <InfoRow
+                  icon="navigate-outline"
+                  label="Distance from home base"
+                  value={`${rawBooking.travelDistanceMiles.toFixed(1)} mi`}
+                />
+              ) : null}
+            </SectionCard>
           ) : null}
 
           {/* ── Payment breakdown ── */}
@@ -433,6 +632,43 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
               depositAmount={appointment.depositAmount}
               depositPaid={appointment.depositPaid}
               bookingStatus={bookingStatus}
+              paymentStatus={paymentStatus}
+              linkPending={linkPending}
+              privacyMode={privacyMode}
+            />
+            {depositPlatformFeeCents > 0 ? (
+              <View style={styles.depositFeeBreakdown}>
+                <PaymentFeeRows
+                  compact
+                  rows={[
+                    {
+                      label: 'Deposit',
+                      amountCents: Math.round(appointment.depositAmount * 100),
+                    },
+                  ]}
+                  showPlatformFee
+                  platformFeeCents={depositPlatformFeeCents}
+                  totalCents={totalChargeCentsWithPlatformFee(
+                    Math.round(appointment.depositAmount * 100),
+                    bookingPlatformFeePayer,
+                  )}
+                />
+              </View>
+            ) : null}
+            <PaymentLinkPanel
+              paymentLinkUrl={paymentLinkUrl}
+              paymentStatus={paymentStatus}
+              paymentMethodAtService={rawBooking?.paymentMethodAtService ?? ''}
+              balanceCents={paymentLinkBalanceCents}
+              tipCents={paymentLinkTipCents}
+              totalCents={paymentLinkTotalCents}
+              platformFeeCents={paymentLinkPlatformFeeCents}
+              showPlatformFee={clientPaysPlatformFee}
+              emailSentHint={
+                email && linkPending
+                  ? `Email sent to ${privacyMode ? '••••••••' : email}. You can copy the link below.`
+                  : undefined
+              }
               privacyMode={privacyMode}
             />
             {isCancelled && rawBooking?.refundStatus && rawBooking.refundStatus !== 'none' ? (
@@ -570,7 +806,7 @@ export default function AppointmentDetailScreen({ navigation, route }: Props) {
             </View>
           ) : null}
 
-          {!isCompleted && !isCancelled && !isPendingApproval && !canStartSession && !isInProgress && (
+          {!isCompleted && !isCancelled && !isPendingApproval && !canStartSession && !isInProgress && !isAssumedFinished && (
             <View style={styles.managementRow}>
               <Pressable style={styles.completeBtn} onPress={handleMarkComplete} disabled={completing}>
                 <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
@@ -655,6 +891,9 @@ const BASE_STYLES = {
     borderRadius: 5,
     backgroundColor: colors.accentPink,
   },
+  sessionBannerDotMuted: {
+    backgroundColor: '#a16207',
+  },
   sessionBannerBody: { flex: 1, gap: 2 },
   sessionBannerTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
   sessionBannerSub: { color: colors.textMuted, fontSize: 13 },
@@ -694,6 +933,41 @@ const BASE_STYLES = {
   },
   refundBannerLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   refundBannerAmount: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  paymentLinkPanel: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.calendarGridLine,
+    gap: 12,
+  },
+  paymentLinkHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  paymentLinkCopy: { flex: 1, gap: 3 },
+  paymentLinkTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  paymentLinkSub: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  depositFeeBreakdown: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.calendarGridLine,
+  },
+  paymentLinkActions: { flexDirection: 'row', gap: 10 },
+  paymentLinkBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.calendarGridLine,
+  },
+  paymentLinkBtnPrimary: {
+    backgroundColor: colors.text,
+    borderColor: colors.text,
+  },
+  paymentLinkBtnText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  paymentLinkBtnTextPrimary: { color: colors.background },
 
   /* Info rows */
   infoRow: {

@@ -334,7 +334,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
         state,
         zip,
         serviceArea: '',
-        heroLayout: 'split',
+        heroLayout: 'banner',
         taglineLeft: 'Book with',
         taglineRightLine1: businessName.trim().split(' ')[0] || 'your',
         taglineRightLine2: businessType ? resolveTaglineRole(businessType, businessTypeOther) : 'stylist',
@@ -342,7 +342,7 @@ export default function AccountOnboardingFlow({ onComplete, previewOnly = false 
       await saveSiteSetting(userId, 'site_content', content);
       await saveContentNow(content);
       await saveSiteSetting(userId, 'site_theme', {
-        heroLayout: 'split',
+        heroLayout: 'banner',
         heroImagePath: null,
         logoImagePath: null,
       });

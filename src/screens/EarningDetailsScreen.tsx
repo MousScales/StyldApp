@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,11 +17,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePrivacyMode } from '../context/PrivacyContext';
 import { useSiteData } from '../context/SiteDataContext';
+import StripeBalanceSplit from '../components/stripe/StripeBalanceSplit';
+import StripeConnectWebModal from '../components/stripe/StripeConnectWebModal';
+import StripeStatusBadge from '../components/stripe/StripeStatusBadge';
+import {
+  payoutStatusColor,
+  payoutStatusLabel,
+  STRIPE_BALANCE_COLORS,
+} from '../lib/stripeBalanceDisplay';
 import {
   fetchStripeConnectStatus,
   formatUsdFromCents,
-  type StripePayout,
+  openStripeConnectDashboard,
   type StripeConnectSummary,
+  type StripePayout,
 } from '../lib/stripeConnect';
 import { DashboardStackParamList } from '../navigation/DashboardNavigator';
 import { colors } from '../theme';
@@ -63,7 +73,7 @@ function PayoutsBarChart({ payouts }: { payouts: StripePayout[] }) {
             width={barWidth}
             height={barHeight}
             rx={barWidth / 2}
-            fill={payout.status === 'paid' ? colors.chartBlue : colors.accentPink}
+            fill={payout.status === 'paid' ? STRIPE_BALANCE_COLORS.available : STRIPE_BALANCE_COLORS.processing}
           />
         );
       })}
@@ -92,19 +102,11 @@ function PayoutsBarChart({ payouts }: { payouts: StripePayout[] }) {
 }
 
 function statusColor(status: string) {
-  if (status === 'paid') return '#15803d';
-  if (status === 'in_transit') return '#92400e';
-  if (status === 'pending') return colors.textMuted;
-  if (status === 'failed') return '#dc2626';
-  return colors.textMuted;
+  return payoutStatusColor(status);
 }
 
 function statusLabel(status: string) {
-  if (status === 'paid') return 'Paid';
-  if (status === 'in_transit') return 'In transit';
-  if (status === 'pending') return 'Pending';
-  if (status === 'failed') return 'Failed';
-  return status;
+  return payoutStatusLabel(status);
 }
 
 export default function EarningDetailsScreen({ navigation }: Props) {
@@ -114,6 +116,8 @@ export default function EarningDetailsScreen({ navigation }: Props) {
   const { getRevenueForPeriod } = useSiteData();
   const [summary, setSummary] = useState<StripeConnectSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [connectUrl, setConnectUrl] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -144,6 +148,22 @@ export default function EarningDetailsScreen({ navigation }: Props) {
   const weekRevenue = getRevenueForPeriod('week');
   const monthRevenue = getRevenueForPeriod('month');
 
+  async function handleOpenStripeDashboard() {
+    setBusy(true);
+    try {
+      const url = await openStripeConnectDashboard();
+      setConnectUrl(url);
+    } catch (err) {
+      Alert.alert('Could not open Stripe', err instanceof Error ? err.message : 'Try again');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openFullPayoutsScreen() {
+    navigation.getParent()?.navigate('Profile', { screen: 'Payments', params: { tab: 'payouts' } });
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header — no calendar icon */}
@@ -167,33 +187,12 @@ export default function EarningDetailsScreen({ navigation }: Props) {
             <Text style={styles.cardTitle}>Balance overview</Text>
             <Text style={styles.dateRange}>Updated just now</Text>
 
-            <View style={styles.balanceRow}>
-              <View style={styles.balanceItem}>
-                <Text style={styles.balanceValue}>
-                  {maskMoney(
-                    isReady ? (summary?.balanceAvailableCents ?? 0) / 100 : 0,
-                    privacyMode,
-                  )}
-                </Text>
-                <View style={styles.balanceLabelRow}>
-                  <View style={[styles.dot, { backgroundColor: colors.chartBlue }]} />
-                  <Text style={styles.balanceLabel}>Available</Text>
-                </View>
-              </View>
-              <View style={styles.balanceDivider} />
-              <View style={styles.balanceItem}>
-                <Text style={styles.balanceValue}>
-                  {maskMoney(
-                    isReady ? (summary?.balancePendingCents ?? 0) / 100 : 0,
-                    privacyMode,
-                  )}
-                </Text>
-                <View style={styles.balanceLabelRow}>
-                  <View style={[styles.dot, { backgroundColor: colors.chartTan }]} />
-                  <Text style={styles.balanceLabel}>Pending</Text>
-                </View>
-              </View>
-            </View>
+            <StripeBalanceSplit
+              availableCents={isReady ? (summary?.balanceAvailableCents ?? 0) : 0}
+              pendingCents={isReady ? (summary?.balancePendingCents ?? 0) : 0}
+              maskAmounts={privacyMode}
+              style={styles.balanceRowOverride}
+            />
 
             {!isReady && (
               <View style={styles.notReadyBanner}>
@@ -203,6 +202,22 @@ export default function EarningDetailsScreen({ navigation }: Props) {
                 </Text>
               </View>
             )}
+            {isReady ? (
+              <View style={styles.balanceActions}>
+                <Pressable style={styles.balanceActionBtn} onPress={openFullPayoutsScreen}>
+                  <Text style={styles.balanceActionText}>View all activity</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.accentPink} />
+                </Pressable>
+                <Pressable
+                  style={styles.balanceActionBtn}
+                  disabled={busy}
+                  onPress={() => void handleOpenStripeDashboard()}
+                >
+                  <Text style={styles.balanceActionText}>Manage in Stripe</Text>
+                  <Ionicons name="open-outline" size={14} color={colors.accentPink} />
+                </Pressable>
+              </View>
+            ) : null}
           </View>
 
           {/* Booked revenue — from booking records, always up to date */}
@@ -271,17 +286,27 @@ export default function EarningDetailsScreen({ navigation }: Props) {
                       })}
                     </Text>
                   </View>
-                  <View style={[styles.statusBadge, { borderColor: statusColor(payout.status) + '44' }]}>
-                    <Text style={[styles.statusText, { color: statusColor(payout.status) }]}>
-                      {statusLabel(payout.status)}
-                    </Text>
-                  </View>
+                  <StripeStatusBadge
+                    label={statusLabel(payout.status)}
+                    color={statusColor(payout.status)}
+                  />
                 </View>
               ))}
             </View>
           )}
         </ScrollView>
       )}
+
+      <StripeConnectWebModal
+        visible={!!connectUrl}
+        url={connectUrl}
+        title="Stripe account"
+        onClose={() => setConnectUrl(null)}
+        onDone={() => {
+          setConnectUrl(null);
+          void refresh();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -338,44 +363,28 @@ const BASE_STYLES = {
     marginBottom: 16,
   },
 
-  /* Balance row */
-  balanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 0,
+  balanceRowOverride: {
+    borderTopWidth: 0,
+    paddingTop: 0,
     marginBottom: 4,
   },
-  balanceItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
+  balanceActions: {
+    marginTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.cardBorder,
   },
-  balanceDivider: {
-    width: 1,
-    height: 44,
-    backgroundColor: colors.cardBorder,
-  },
-  balanceValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.text,
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
-  balanceLabelRow: {
+  balanceActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.cardBorder,
   },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  balanceLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
+  balanceActionText: {
+    color: colors.accentPink,
+    fontSize: 14,
+    fontWeight: '600',
   },
   notReadyBanner: {
     flexDirection: 'row',
@@ -464,15 +473,5 @@ const BASE_STYLES = {
   payoutDate: {
     fontSize: 12,
     color: colors.textMuted,
-  },
-  statusBadge: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
 };

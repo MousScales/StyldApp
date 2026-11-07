@@ -1,4 +1,4 @@
-export type CancellationPolicyPreset = '7_days' | '24_hours' | 'custom';
+export type CancellationPolicyPreset = 'no_refunds' | '7_days' | '24_hours' | 'custom';
 
 /** Which online payment types are eligible for automatic refunds. */
 export type RefundAppliesTo = 'deposit' | 'full' | 'both' | 'none';
@@ -64,11 +64,11 @@ export function buildPolicySummary(
 }
 
 export const DEFAULT_CANCELLATION_POLICY: CancellationPolicySettings = {
-  preset: '24_hours',
+  preset: 'no_refunds',
   cancelNoticeHours: 0,
-  fullRefundNoticeHours: 24,
-  refundAppliesTo: 'both',
-  policySummary: buildPolicySummary(24, 'both'),
+  fullRefundNoticeHours: 0,
+  refundAppliesTo: 'none',
+  policySummary: buildPolicySummary(0, 'none'),
 };
 
 export const REFUND_APPLIES_TO_OPTIONS: {
@@ -108,6 +108,15 @@ export const CANCELLATION_POLICY_PRESETS: {
   policySummary: string;
 }[] = [
   {
+    id: 'no_refunds',
+    label: 'No refunds',
+    description: 'Clients can cancel anytime, but all online payments are non-refundable.',
+    cancelNoticeHours: 0,
+    fullRefundNoticeHours: 0,
+    refundAppliesTo: 'none',
+    policySummary: buildPolicySummary(0, 'none'),
+  },
+  {
     id: '7_days',
     label: '7-day refund window',
     description: 'Cancel anytime. Refund if canceled 7+ days before (per payment scope).',
@@ -136,7 +145,7 @@ export const CANCELLATION_POLICY_PRESETS: {
   },
 ];
 
-const VALID_PRESETS: CancellationPolicyPreset[] = ['7_days', '24_hours', 'custom'];
+const VALID_PRESETS: CancellationPolicyPreset[] = ['no_refunds', '7_days', '24_hours', 'custom'];
 const VALID_REFUND_SCOPES: RefundAppliesTo[] = ['deposit', 'full', 'both', 'none'];
 
 export function normalizeCancellationPolicy(value: unknown): CancellationPolicySettings {
@@ -152,7 +161,8 @@ export function normalizeCancellationPolicy(value: unknown): CancellationPolicyS
 
   const presetDefaults =
     CANCELLATION_POLICY_PRESETS.find((item) => item.id === preset) ??
-    CANCELLATION_POLICY_PRESETS[1];
+    CANCELLATION_POLICY_PRESETS.find((item) => item.id === DEFAULT_CANCELLATION_POLICY.preset) ??
+    CANCELLATION_POLICY_PRESETS[0];
 
   const fullRefundNoticeHours =
     typeof source.fullRefundNoticeHours === 'number' &&

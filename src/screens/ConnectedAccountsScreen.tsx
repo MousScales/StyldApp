@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -15,18 +14,19 @@ import {
   View,
 } from 'react-native';
 import { resolveBankDomain } from '../lib/institutionDomains';
-import { WebView } from 'react-native-webview';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   fetchStripeConnectStatus,
-  formatUsdFromCents,
+  openStripeConnectDashboard,
   resolveStripeConnectUrl,
   startStripeConnectOnboarding,
   syncStripeConnect,
   type StripeConnectSummary,
 } from '../lib/stripeConnect';
 import ConnectedAccountsTapToPayPrompt from '../components/tapToPay/ConnectedAccountsTapToPayPrompt';
+import StripeBalanceSplit from '../components/stripe/StripeBalanceSplit';
+import StripeConnectWebModal from '../components/stripe/StripeConnectWebModal';
 import { TAP_TO_PAY_NATIVE_ENABLED } from '../lib/tapToPayConfig';
 import { ProfileStackParamList } from '../navigation/ProfileNavigator';
 import { colors } from '../theme';
@@ -44,9 +44,6 @@ function bankLogoUrl(bankName?: string): string | null {
   return `https://img.logokit.com/${domain}?token=${LOGOKIT_TOKEN}`;
 }
 
-const RETURN_URL = 'styldd.com/connect/return';
-const REFRESH_URL = 'styldd.com/connect/refresh';
-
 export default function ConnectedAccountsScreen({ navigation }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
 
@@ -54,6 +51,7 @@ export default function ConnectedAccountsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [connectUrl, setConnectUrl] = useState<string | null>(null);
+  const [connectModalTitle, setConnectModalTitle] = useState('Styld Pay');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -79,9 +77,23 @@ export default function ConnectedAccountsScreen({ navigation }: Props) {
       const result = await startStripeConnectOnboarding();
       const url = resolveStripeConnectUrl(result);
       if (!url) throw new Error('Could not open Stripe Connect');
+      setConnectModalTitle('Styld Pay Setup');
       setConnectUrl(url);
     } catch (err) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Try again');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleOpenStripeDashboard() {
+    setBusy(true);
+    try {
+      const url = await openStripeConnectDashboard();
+      setConnectModalTitle('Stripe account');
+      setConnectUrl(url);
+    } catch (err) {
+      Alert.alert('Could not open Stripe', err instanceof Error ? err.message : 'Try again');
     } finally {
       setBusy(false);
     }
@@ -162,21 +174,22 @@ export default function ConnectedAccountsScreen({ navigation }: Props) {
 
                 {/* Balance rows — shown when ready */}
                 {isReady && (
-                  <View style={styles.balanceGrid}>
-                    <View style={styles.balanceItem}>
-                      <Text style={styles.balanceAmount}>
-                        {formatUsdFromCents(summary?.balanceAvailableCents ?? 0)}
-                      </Text>
-                      <Text style={styles.balanceLabel}>Available</Text>
-                    </View>
-                    <View style={styles.balanceDivider} />
-                    <View style={styles.balanceItem}>
-                      <Text style={styles.balanceAmount}>
-                        {formatUsdFromCents(summary?.balancePendingCents ?? 0)}
-                      </Text>
-                      <Text style={styles.balanceLabel}>Processing</Text>
-                    </View>
-                  </View>
+                  <>
+                    <StripeBalanceSplit
+                      availableCents={summary?.balanceAvailableCents ?? 0}
+                      pendingCents={summary?.balancePendingCents ?? 0}
+                      compact
+                      style={styles.balanceGridOverride}
+                    />
+                    <Pressable
+                      style={[styles.stripeManageBtn, busy && styles.btnDisabled]}
+                      disabled={busy}
+                      onPress={() => void handleOpenStripeDashboard()}
+                    >
+                      <Ionicons name="open-outline" size={16} color={colors.accentPink} />
+                      <Text style={styles.stripeManageBtnText}>Manage in Stripe</Text>
+                    </Pressable>
+                  </>
                 )}
 
                 {/* Setup / continue button — only when NOT ready */}
@@ -285,43 +298,16 @@ export default function ConnectedAccountsScreen({ navigation }: Props) {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Onboarding WebView — only used for initial setup flow */}
-      <Modal visible={!!connectUrl} animationType="slide" onRequestClose={() => setConnectUrl(null)}>
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Pressable onPress={() => setConnectUrl(null)} hitSlop={12}>
-              <Ionicons name="close" size={22} color={colors.text} />
-            </Pressable>
-            <Text style={styles.modalTitle}>Styld Pay Setup</Text>
-            <Pressable
-              onPress={() => {
-                setConnectUrl(null);
-                void handleSyncAfterReturn();
-              }}
-              hitSlop={12}
-            >
-              <Text style={styles.modalDone}>Done</Text>
-            </Pressable>
-          </View>
-          {connectUrl ? (
-            <WebView
-              source={{ uri: connectUrl }}
-              style={{ flex: 1 }}
-              onShouldStartLoadWithRequest={(request) => {
-                if (
-                  request.url.includes(RETURN_URL) ||
-                  request.url.includes(REFRESH_URL)
-                ) {
-                  setConnectUrl(null);
-                  void handleSyncAfterReturn();
-                  return false;
-                }
-                return true;
-              }}
-            />
-          ) : null}
-        </SafeAreaView>
-      </Modal>
+      <StripeConnectWebModal
+        visible={!!connectUrl}
+        url={connectUrl}
+        title={connectModalTitle}
+        onClose={() => setConnectUrl(null)}
+        onDone={() => {
+          setConnectUrl(null);
+          void handleSyncAfterReturn();
+        }}
+      />
       {Platform.OS === 'ios' && TAP_TO_PAY_NATIVE_ENABLED ? (
         <ConnectedAccountsTapToPayPrompt stripeReady={isReady} navigation={navigation} />
       ) : null}
@@ -369,18 +355,21 @@ const BASE_STYLES = {
   statusTitle: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 3 },
   statusSub: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
 
-  /* Balance grid */
-  balanceGrid: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  balanceGridOverride: {
     backgroundColor: colors.progressTrack,
     borderRadius: 12,
     padding: 14,
+    borderTopWidth: 0,
+    paddingVertical: 14,
   },
-  balanceItem: { flex: 1, alignItems: 'center' },
-  balanceAmount: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 2 },
-  balanceLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
-  balanceDivider: { width: 1, height: 36, backgroundColor: colors.cardBorder },
+  stripeManageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  stripeManageBtnText: { color: colors.accentPink, fontSize: 14, fontWeight: '600' },
 
   /* Setup button */
   setupBtn: {
@@ -464,18 +453,4 @@ const BASE_STYLES = {
   },
   howTitle: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 2 },
   howBody: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
-
-  /* Modal */
-  modalContainer: { flex: 1, backgroundColor: colors.background },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.cardBorder,
-  },
-  modalTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
-  modalDone: { color: colors.accentPink, fontSize: 16, fontWeight: '600' },
 };

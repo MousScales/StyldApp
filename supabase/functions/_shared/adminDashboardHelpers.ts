@@ -17,11 +17,12 @@ export function settingValue(data: unknown): unknown {
 }
 
 const HERO_LAYOUT_LABELS: Record<string, string> = {
-  split: 'Text beside image',
+  banner: 'Header photo',
+  split: 'Header photo (legacy)',
   stack: 'Stack collage',
   cover: 'Full screen',
-  'image-below': 'Image first',
-  minimal: 'Text only',
+  'image-below': 'Header photo (legacy)',
+  minimal: 'No photo',
 };
 
 export function heroLayoutLabel(layout: string | undefined): string {
@@ -65,7 +66,7 @@ export function buildSiteThemeSummary(theme: Json) {
   const stackPaths = Array.isArray(theme.heroStackImagePaths) ? theme.heroStackImagePaths : [];
   const textColors = theme.textColors && typeof theme.textColors === 'object' ? theme.textColors : {};
   return {
-    hero_layout: str(theme.heroLayout) || 'split',
+    hero_layout: str(theme.heroLayout) || 'banner',
     hero_layout_label: heroLayoutLabel(str(theme.heroLayout)),
     hero_stack_format: theme.heroStackImageFormat === 'tall' ? 'tall' : 'wide',
     hero_stack_image_count: stackPaths.length,
@@ -163,8 +164,8 @@ export function flattenBooking(row: {
     booking_status: str(d.booking_status) || 'pending',
     payment_status: str(d.payment_status) || 'none',
     stripe_payment_intent_id: str(d.stripe_payment_intent_id) || null,
-    photo_hair_path: str(d.photo_hair_path) || null,
-    photo_ref_path: str(d.photo_ref_path) || null,
+    photo_hair_path: str(d.photo_hair_path) || str(d.current_hair_photo_path) || null,
+    photo_ref_path: str(d.photo_ref_path) || str(d.reference_photo_path) || null,
     notes: str(d.notes) || null,
     source: str(d.source) || null,
     refund_status: str(d.refund_status) || null,

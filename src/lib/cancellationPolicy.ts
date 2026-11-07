@@ -54,6 +54,7 @@ export function evaluateCancellationPolicy(
   startsAtIso: string | null | undefined,
   bookingStatus?: string | null,
   booking?: Record<string, unknown> | null,
+  options?: { allowPastCancellation?: boolean },
 ): CancellationEvaluation {
   const status = String(bookingStatus ?? '').toLowerCase();
   if (status === 'completed') {
@@ -76,7 +77,7 @@ export function evaluateCancellationPolicy(
   }
 
   const hoursLeft = hoursUntilAppointment(startsAtIso);
-  if (hoursLeft !== null && hoursLeft <= 0) {
+  if (hoursLeft !== null && hoursLeft <= 0 && !options?.allowPastCancellation) {
     return {
       hoursUntilAppointment: hoursLeft,
       canCancel: false,
@@ -94,7 +95,9 @@ export function evaluateCancellationPolicy(
     hoursLeft >= policy.fullRefundNoticeHours;
   const hasPaidOnline = paidAmountCents(booking ?? {}) > 0;
 
-  const qualifiesForRefund = withinRefundWindow && scopeMatches && hasPaidOnline;
+  const pastAppointment = hoursLeft !== null && hoursLeft <= 0;
+  const qualifiesForRefund =
+    !pastAppointment && withinRefundWindow && scopeMatches && hasPaidOnline;
 
   const scopeLabel =
     policy.refundAppliesTo === 'none'
@@ -107,7 +110,9 @@ export function evaluateCancellationPolicy(
 
   const refundBlockedReason = qualifiesForRefund
     ? null
-    : !hasPaidOnline
+    : pastAppointment
+      ? 'Past appointments are not refundable.'
+      : !hasPaidOnline
       ? 'No online payment was collected for this booking.'
       : !scopeMatches
         ? policy.refundAppliesTo === 'full' && paymentType === 'deposit'

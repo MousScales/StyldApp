@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import DeviceCalendarSyncSection from '../components/calendar/DeviceCalendarSyncSection';
 import TimelineClosedLayers from '../components/calendar/TimelineClosedLayers';
 import { CalendarStackParamList } from '../navigation/CalendarNavigator';
 import { useSiteData } from '../context/SiteDataContext';
@@ -586,9 +587,12 @@ export default function CalendarScreen({ navigation }: Props) {
             <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
           </Pressable>
           <Text style={styles.weekRange}>{headerLabel}</Text>
-          <Pressable style={styles.navButton} onPress={goForward}>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </Pressable>
+          <View style={styles.weekNavRight}>
+            <DeviceCalendarSyncSection compact />
+            <Pressable style={styles.navButton} onPress={goForward}>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </Pressable>
+          </View>
         </View>
 
         {/* View mode toggle */}
@@ -813,6 +817,12 @@ const BASE_STYLES = {
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
+    gap: 8,
+  },
+  weekNavRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   navButton: {
     width: 32,
@@ -821,6 +831,8 @@ const BASE_STYLES = {
     justifyContent: 'center',
   },
   weekRange: {
+    flex: 1,
+    textAlign: 'center',
     color: colors.text,
     fontSize: 16,
     fontWeight: '500',

@@ -22,6 +22,11 @@ import {
   normalizeBookingPromoCodes,
 } from '../data/bookingPromoCodes';
 import {
+  TravelStylistSettings,
+  DEFAULT_TRAVEL_STYLIST,
+  normalizeTravelStylist,
+} from '../data/travelStylist';
+import {
   ProductsSettings,
   SiteProduct,
   normalizeProductsSettings,
@@ -44,6 +49,8 @@ export type { BookingPromoCode } from '../data/bookingPromoCodes';
 export type { SiteProduct, ProductsSettings } from '../data/productsCatalog';
 export { DEFAULT_PRODUCTS_SETTINGS } from '../data/productsCatalog';
 export type { CancellationPolicySettings } from '../data/cancellationPolicy';
+export type { TravelStylistSettings } from '../data/travelStylist';
+export { DEFAULT_TRAVEL_STYLIST } from '../data/travelStylist';
 export {
   DEFAULT_CANCELLATION_POLICY,
   CANCELLATION_POLICY_PRESETS,
@@ -723,6 +730,20 @@ export async function saveProductsSettings(
   settings: ProductsSettings,
 ): Promise<void> {
   await saveSiteSettingValue(linkedSite, 'products_settings', normalizeProductsSettings(settings));
+}
+
+export async function loadTravelStylistSettings(
+  linkedSite: LinkedSite | null,
+): Promise<TravelStylistSettings> {
+  const value = await loadSiteSettingValue(linkedSite, 'travel_stylist');
+  return normalizeTravelStylist(value);
+}
+
+export async function saveTravelStylistSettings(
+  linkedSite: LinkedSite,
+  settings: TravelStylistSettings,
+): Promise<void> {
+  await saveSiteSettingValue(linkedSite, 'travel_stylist', normalizeTravelStylist(settings));
 }
 
 export function resolveStyleIdFromServiceName(

@@ -150,13 +150,15 @@
 
   async function addPhotoRows(dl, row) {
     if (!dl || !row) return;
-    if (row.photo_hair_path) {
-      var hairUrl = await signedBookingPhotoUrl(row.photo_hair_path);
-      addPhotoRow(dl, "Hair photo", row.photo_hair_path, hairUrl);
+    if (row.photo_hair_path || row.current_hair_photo_path) {
+      var hairPath = row.photo_hair_path || row.current_hair_photo_path;
+      var hairUrl = await signedBookingPhotoUrl(hairPath);
+      addPhotoRow(dl, "Hair photo", hairPath, hairUrl);
     }
-    if (row.photo_ref_path) {
-      var refUrl = await signedBookingPhotoUrl(row.photo_ref_path);
-      addPhotoRow(dl, "Reference photo", row.photo_ref_path, refUrl);
+    if (row.photo_ref_path || row.reference_photo_path) {
+      var refPath = row.photo_ref_path || row.reference_photo_path;
+      var refUrl = await signedBookingPhotoUrl(refPath);
+      addPhotoRow(dl, "Reference photo", refPath, refUrl);
     }
   }
 
@@ -221,7 +223,13 @@
     addRow(els.dlPayment, "Deposit due", money(row.deposit_amount));
     addRow(els.dlPayment, "Status", humanPaymentStatus(row.payment_status));
 
-    var hasExtra = !!(row.photo_hair_path || row.photo_ref_path || row.source);
+    var hasExtra = !!(
+      row.photo_hair_path ||
+      row.current_hair_photo_path ||
+      row.photo_ref_path ||
+      row.reference_photo_path ||
+      row.source
+    );
     if (els.sectionExtra) els.sectionExtra.hidden = !hasExtra;
     if (hasExtra) {
       await addPhotoRows(els.dlExtra, row);

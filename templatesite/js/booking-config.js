@@ -35,5 +35,5 @@ window.__SALON_SITE_BOOKING = {
    * Enables address suggestions on the street field and more reliable “current location” parsing.
    * Restrict the key to your domain and enable Places API + Geocoding API. Leave unset to use basic fields + OSM fallback for location only.
    */
-  googleMapsApiKey: null,
+  googleMapsApiKey: "AIzaSyAg6Af6Fe2bSkYpRk_B6Kj01XihTTJ3Gow",
 };

@@ -321,13 +321,53 @@ export async function startBookingSession(linkedSite: LinkedSite, bookingId: str
   if (status === 'cancelled' || status === 'canceled' || status === 'completed') {
     throw new Error('This booking cannot be started.');
   }
-  if (status === 'in_progress') return;
+  if (status === 'in_progress' || status === 'assumed_finished') return;
 
   await writeBookingData(linkedSite, bookingId, {
     ...data,
     booking_status: 'in_progress',
     session_started_at: new Date().toISOString(),
     session_ended_at: null,
+    session_assumed_finished_at: null,
+  });
+}
+
+export async function markSessionLiveEngaged(linkedSite: LinkedSite, bookingId: string): Promise<void> {
+  const { data } = await readBookingRecord(linkedSite, bookingId);
+  if (data.session_live_engaged_at) return;
+
+  await writeBookingData(linkedSite, bookingId, {
+    ...data,
+    session_live_engaged_at: new Date().toISOString(),
+  });
+}
+
+export async function assumeFinishBookingSession(
+  linkedSite: LinkedSite,
+  bookingId: string,
+): Promise<void> {
+  const { data } = await readBookingRecord(linkedSite, bookingId);
+  const status = String(data.booking_status ?? '').toLowerCase();
+  if (status !== 'in_progress') return;
+  if (data.session_live_engaged_at) return;
+
+  const startedAt = data.session_started_at ? new Date(String(data.session_started_at)) : null;
+  const endedAt = new Date();
+  let actualDurationMinutes =
+    typeof data.actual_duration_minutes === 'number' && data.actual_duration_minutes > 0
+      ? data.actual_duration_minutes
+      : 0;
+
+  if (!actualDurationMinutes && startedAt && !Number.isNaN(startedAt.getTime())) {
+    actualDurationMinutes = Math.max(1, Math.round((endedAt.getTime() - startedAt.getTime()) / 60_000));
+  }
+
+  await writeBookingData(linkedSite, bookingId, {
+    ...data,
+    booking_status: 'assumed_finished',
+    session_ended_at: endedAt.toISOString(),
+    session_assumed_finished_at: endedAt.toISOString(),
+    actual_duration_minutes: actualDurationMinutes,
   });
 }
 
@@ -369,7 +409,7 @@ export async function recordBookingInPersonPayment(
     balanceAmountCents: number;
     tipAmount: number;
     paymentIntentId: string;
-    paymentMethod: 'card' | 'tap_to_pay';
+    paymentMethod: 'card' | 'tap_to_pay' | 'payment_link';
   },
 ): Promise<void> {
   const { data } = await readBookingRecord(linkedSite, bookingId);

@@ -1,4 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  computeChargeBreakdown,
+  loadPlatformFeePayer,
+  resolvePlatformRatePercent,
+} from '../_shared/booking-service-fee.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -70,12 +75,11 @@ Deno.serve(async (req) => {
       return json({ error: 'Styld Pay is not set up for this site.' }, 400);
     }
 
-    const platformRate = parseFloat(Deno.env.get('STYLD_PLATFORM_FEE_PERCENT') ?? '1') / 100;
-    const chargeAmount = Math.round((base * (1 + platformRate) + 30) / (1 - 0.029));
-    const stripeFeeCents = Math.round(chargeAmount * 0.029 + 30);
-    const platformFeeCents = Math.round(base * platformRate);
-    const applicationFeeCents = chargeAmount - base;
-    const safeAppFee = Math.max(0, Math.min(applicationFeeCents, chargeAmount - 50));
+    const platformFeePayer = await loadPlatformFeePayer(supabase, siteRow.user_id);
+    const platformRate = resolvePlatformRatePercent();
+    const fees = computeChargeBreakdown(base, platformFeePayer, platformRate);
+    const chargeAmount = fees.chargeCents;
+    const safeAppFee = fees.applicationFeeCents;
 
     const params = new URLSearchParams();
     params.set('amount', String(chargeAmount));
@@ -88,8 +92,9 @@ Deno.serve(async (req) => {
     params.set('metadata[bookingId]', String(bookingId));
     params.set('metadata[balance_cents]', String(balance));
     params.set('metadata[tip_cents]', String(tip));
-    params.set('metadata[stripe_fee_cents]', String(stripeFeeCents));
-    params.set('metadata[platform_fee_cents]', String(platformFeeCents));
+    params.set('metadata[stripe_fee_cents]', String(fees.stripeFeeCents));
+    params.set('metadata[platform_fee_cents]', String(fees.platformProfitCents));
+    params.set('metadata[platform_fee_payer]', platformFeePayer);
     if (customerEmail) params.set('receipt_email', String(customerEmail));
 
     params.set('transfer_data[destination]', stripeAccountId);
@@ -117,8 +122,9 @@ Deno.serve(async (req) => {
         balanceCents: balance,
         tipCents: tip,
         bookingAmountCents: base,
-        serviceFeeCents: safeAppFee,
+        serviceFeeCents: fees.displayPlatformFeeCents,
         totalChargeCents: chargeAmount,
+        platformFeePayer,
       },
     });
   } catch (err: unknown) {

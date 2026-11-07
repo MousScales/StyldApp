@@ -143,7 +143,7 @@ export default function SiteSetupScreen({ navigation }: Props) {
           heroImageUrl: localHeroUri ?? heroImageUrl,
           logoImageUrl: localLogoUri ?? logoImageUrl,
         },
-        { embeddedPreview: true },
+        { embeddedPreview: true, coverPreviewOnBookPage: true },
       ),
     [heroImageUrl, heroLayout, localHeroUri, localLogoUri, logoImageUrl, theme],
   );

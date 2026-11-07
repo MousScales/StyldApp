@@ -9,6 +9,8 @@ import MandatoryPaywallScreen from '../screens/MandatoryPaywallScreen';
 import HeroAboutScreen from '../screens/HeroAboutScreen';
 import HeroFaqScreen from '../screens/HeroFaqScreen';
 import HeroPolicyScreen from '../screens/HeroPolicyScreen';
+import HeroVisitPartScreen from '../screens/HeroVisitPartScreen';
+import { LocationPart } from '../data/siteContent';
 
 export type SiteStackParamList = {
   SiteHome: undefined;
@@ -20,6 +22,7 @@ export type SiteStackParamList = {
   HeroAbout: undefined;
   HeroPolicy: undefined;
   HeroFaq: undefined;
+  HeroVisitPart: { part: LocationPart };
 };
 
 const Stack = createNativeStackNavigator<SiteStackParamList>();
@@ -49,6 +52,7 @@ export default function SiteNavigator() {
       <Stack.Screen name="HeroAbout" component={HeroAboutScreen} />
       <Stack.Screen name="HeroPolicy" component={HeroPolicyScreen} />
       <Stack.Screen name="HeroFaq" component={HeroFaqScreen} />
+      <Stack.Screen name="HeroVisitPart" component={HeroVisitPartScreen} />
     </Stack.Navigator>
   );
 }

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSiteContent } from '../../context/SiteContentContext';
 import { useSiteTheme } from '../../context/SiteThemeContext';
-import { FontFamily, FONT_FAMILY_OPTIONS, getHeroStackAspectRatio, HERO_STACK_IMAGE_FORMAT_OPTIONS, HeroLayout, HeroStackImageFormat, SITE_TEXT_COLOR_FIELDS, SITE_TEXT_COLOR_GROUPS } from '../../data/siteTheme';
+import { FontFamily, FONT_FAMILY_OPTIONS, getHeroStackAspectRatio, HERO_STACK_IMAGE_FORMAT_OPTIONS, HeroLayout, HeroStackImageFormat, normalizeHeroLayout, SITE_TEXT_COLOR_FIELDS, SITE_TEXT_COLOR_GROUPS } from '../../data/siteTheme';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
 import { legacyPositionFromFocus } from '../../lib/heroImageFocus';
 import { pickSiteImageFromLibrary } from '../../lib/pickSiteImage';
@@ -55,39 +55,57 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
   const styles = useResponsiveStyles(BASE_STYLES);
 
   const { content, updateContent } = useSiteContent();
-  const { theme, updateTheme, uploadHeroImage, uploadLogoImage, removeHeroImage, heroImageUrl, logoImageUrl, isSaving, uploadStackImage, removeStackImage, stackImageUrls } =
+  const { theme, updateTheme, uploadHeroImage, uploadLogoImage, removeHeroImage, heroImageUrl, logoImageUrl, isSaving, uploadStackImage, removeStackImage, stackImageUrls, saveThemeNow } =
     useSiteTheme();
   const [pickingStack, setPickingStack] = useState(false);
-  const isCoverLayout = (theme.heroLayout || 'split') === 'cover';
+  const isCoverLayout = normalizeHeroLayout(theme.heroLayout) === 'cover';
+  const heroLayout = normalizeHeroLayout(theme.heroLayout);
+  const isBannerLayout = heroLayout === 'banner';
+  const isStackLayout = heroLayout === 'stack';
+  const isMinimalLayout = heroLayout === 'minimal';
+  const usesPortraitHeroPhoto = isBannerLayout || isCoverLayout;
+  const heroPhotoShown = theme.heroPhotoEnabled !== false && !isMinimalLayout;
+
+  const selectHeroLayout = (id: HeroLayout) => {
+    const patch =
+      id === 'minimal'
+        ? { heroLayout: id, heroPhotoEnabled: false }
+        : {
+            heroLayout: id,
+            heroPhotoEnabled: id === 'stack' ? theme.heroPhotoEnabled : true,
+          };
+    const next = { ...theme, ...patch };
+    updateTheme(patch);
+    void saveThemeNow(next);
+  };
 
   // ── Photos section ──
   if (section === 'photos') {
     return (
       <View>
         <Text style={styles.groupTitle}>Header style</Text>
-        <Text style={styles.helper}>Choose how your main image is displayed at the top of your site.</Text>
+        <Text style={styles.helper}>Choose how your header looks at the top of your site.</Text>
         <View style={styles.layoutRow}>
           {([
-            { id: 'split', label: 'Split', desc: 'Photo + bio' },
-            { id: 'stack', label: 'Stack', desc: 'Photo collage' },
-            { id: 'cover', label: 'Full screen', desc: 'Splash + /book page' },
-          ] as { id: HeroLayout; label: string; desc: string }[]).map(({ id, label, desc }) => {
-            const active = (theme.heroLayout || 'split') === id;
+            { id: 'banner' as HeroLayout, label: 'Header photo', desc: 'Portrait on top — About Me & Policies below' },
+            { id: 'cover' as HeroLayout, label: 'Full screen', desc: 'Splash + /book page' },
+            { id: 'stack' as HeroLayout, label: 'Stack', desc: 'Banner photo collage' },
+            { id: 'minimal' as HeroLayout, label: 'No photo', desc: 'Text sections only' },
+          ]).map(({ id, label, desc }) => {
+            const active = heroLayout === id;
             return (
               <Pressable
                 key={id}
                 style={[styles.layoutCard, active && styles.layoutCardActive]}
-                onPress={() => updateTheme({ heroLayout: id })}
+                onPress={() => selectHeroLayout(id)}
               >
-                {id === 'split' ? (
+                {id === 'banner' ? (
                   <View style={styles.layoutThumb}>
-                    <View style={styles.layoutThumbSplit}>
-                      <View style={styles.layoutThumbPhoto} />
-                      <View style={{ flex: 1, gap: 3 }}>
-                        {[80, 100, 70].map((w, i) => (
-                          <View key={i} style={[styles.layoutThumbBar, { width: `${w}%` as any }]} />
-                        ))}
-                      </View>
+                    <View style={{ flex: 1, justifyContent: 'center', gap: 3, paddingHorizontal: 4 }}>
+                      <View style={[styles.layoutThumbPhoto, { alignSelf: 'center', width: '55%' as const, height: 22 }]} />
+                      {[90, 70, 85].map((w, i) => (
+                        <View key={i} style={[styles.layoutThumbBar, { width: `${w}%` as any, alignSelf: 'center' }]} />
+                      ))}
                     </View>
                   </View>
                 ) : id === 'cover' ? (
@@ -96,6 +114,14 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
                       <View style={styles.layoutThumbCoverImg} />
                       <View style={styles.layoutThumbCoverLine} />
                       <View style={[styles.layoutThumbCoverLine, { width: '40%' as const }]} />
+                    </View>
+                  </View>
+                ) : id === 'minimal' ? (
+                  <View style={styles.layoutThumb}>
+                    <View style={{ flex: 1, justifyContent: 'center', gap: 4, paddingHorizontal: 4 }}>
+                      {[90, 70, 85].map((w, i) => (
+                        <View key={i} style={[styles.layoutThumbBar, { width: `${w}%` as any, alignSelf: 'center' }]} />
+                      ))}
                     </View>
                   </View>
                 ) : (
@@ -115,7 +141,7 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
           })}
         </View>
 
-        {(theme.heroLayout || 'split') === 'stack' ? (
+        {isStackLayout ? (
           <>
             <Text style={styles.groupTitle}>Header images</Text>
             <Text style={styles.helper}>Choose a frame shape, then add photos that match.</Text>
@@ -233,17 +259,37 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
               )}
             </Pressable>
           </>
-        ) : (
+        ) : usesPortraitHeroPhoto ? (
           <>
-            <Text style={styles.groupTitle}>Hero photo</Text>
-            <Text style={styles.helper}>Drag to choose exactly what shows in your site header.</Text>
+            <Pressable
+              style={styles.toggleRow}
+              onPress={() => updateTheme({ heroPhotoEnabled: !heroPhotoShown })}
+            >
+              <View style={styles.toggleRowBody}>
+                <Text style={styles.toggleRowLabel}>Show header photo</Text>
+                <Text style={styles.toggleRowSub}>
+                  Turn off to hide the portrait image on your live site
+                </Text>
+              </View>
+              <View style={[styles.toggleBox, heroPhotoShown && styles.toggleBoxOn]}>
+                {heroPhotoShown ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+              </View>
+            </Pressable>
+
+            <Text style={styles.groupTitle}>Header photo</Text>
+            <Text style={styles.helper}>
+              {heroImageUrl
+                ? 'Drag the image to choose what clients see. Position is saved automatically.'
+                : 'Add a portrait photo for your site header.'}
+              {!heroPhotoShown ? ' Photo is currently hidden on your live site.' : ''}
+            </Text>
             <HeroImagePicker
               imageUrl={heroImageUrl}
               busy={isSaving}
               onPick={uploadHeroImage}
               onRemove={removeHeroImage}
               large
-              repositionable
+              repositionable={Boolean(heroImageUrl)}
               aspectRatio={4 / 5}
               focus={{ x: theme.heroImageFocusX, y: theme.heroImageFocusY }}
               onFocusChange={(focus) =>
@@ -254,7 +300,7 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
                 })
               }
             />
-            {(theme.heroLayout || 'split') === 'cover' ? (
+            {isCoverLayout ? (
               <Pressable
                 style={styles.toggleRow}
                 onPress={() => updateTheme({ heroCoverBlur: !theme.heroCoverBlur })}
@@ -269,7 +315,11 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
               </Pressable>
             ) : null}
           </>
-        )}
+        ) : isMinimalLayout ? (
+          <Text style={styles.helper}>
+            Your site opens with About Me, Policies, and other sections — no header photo. Switch to Header photo if you want a portrait image on top.
+          </Text>
+        ) : null}
 
         <Text style={styles.groupTitle}>Logo</Text>
         <Text style={styles.helper}>Shows in the nav bar next to your brand name.</Text>
@@ -399,11 +449,13 @@ export default function SiteDesignEditor({ section }: { section?: 'style' | 'pho
 const BASE_STYLES = {
   layoutRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginBottom: 6,
   },
   layoutCard: {
-    flex: 1,
+    width: '47%',
+    flexGrow: 1,
     backgroundColor: colors.card,
     borderRadius: 14,
     borderWidth: 1.5,

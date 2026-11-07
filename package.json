@@ -1,6 +1,6 @@
 {
   "name": "styld",
-  "version": "1.0.2",
+  "version": "1.0.8",
   "main": "index.ts",
   "dependencies": {
     "@callstack/liquid-glass": "^0.8.0",
@@ -18,6 +18,7 @@
     "expo-av": "~16.0.8",
     "expo-blur": "~15.0.8",
     "expo-build-properties": "^56.0.19",
+    "expo-calendar": "~15.0.8",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "^6.0.20",
     "expo-device": "~8.0.10",
@@ -57,6 +58,7 @@
     "functions:deploy": "npx supabase functions deploy --project-ref gogpjxxsrcjpbugocvnd --use-api",
     "functions:deploy:revenuecat": "npx supabase functions deploy revenuecat-subscription-status subscription-site-sync revenuecat-webhook --project-ref gogpjxxsrcjpbugocvnd --use-api",
     "db:push": "npx supabase db push --linked --yes",
+    "seed:maya-covers": "node scripts/seed-maya-style-covers.mjs",
     "db:reset-data": "npx supabase --experimental storage rm -r --linked --yes ss:///booking-photos && npx supabase --experimental storage rm -r --linked --yes ss:///style-covers && npx supabase db query --linked --file scripts/reset-all-app-data.sql --yes && npx supabase db query --linked --file scripts/restore-storage-buckets.sql --yes",
     "db:link": "npx supabase link --project-ref gogpjxxsrcjpbugocvnd",
     "supabase:push": "npm run db:push && npm run functions:deploy && npm run secrets:set && npm run secrets:set:stripe && npm run secrets:set:revenuecat",

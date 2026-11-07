@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Text, View } from 'react-native';
 import { formatElapsed } from '../../lib/sessionTimer';
 import { colors, fonts } from '../../theme';
 import { useResponsiveStyles } from '../../hooks/useResponsiveStyles';
@@ -20,26 +20,38 @@ export default function SessionTimer({
   hero = false,
 }: Props) {
   const styles = useResponsiveStyles(BASE_STYLES);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
+
+  const startMs = startedAt?.getTime() ?? null;
+  const endMs = endedAt?.getTime() ?? null;
+  const ticking = live && startMs != null && endMs == null;
 
   useEffect(() => {
-    if (!live || !startedAt || endedAt) return;
+    if (!ticking) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [live, startedAt, endedAt]);
+  }, [ticking, startMs]);
 
-  if (!startedAt) return null;
+  const elapsedMs = useMemo(() => {
+    if (startMs == null) return 0;
+    const end = endMs ?? now;
+    return Math.max(0, end - startMs);
+  }, [endMs, now, startMs]);
 
-  const end = endedAt?.getTime() ?? now;
-  const elapsed = Math.max(0, end - startedAt.getTime());
+  if (startMs == null) return null;
 
   return (
     <View style={[styles.wrap, compact && styles.wrapCompact, hero && styles.wrapHero]}>
       <Text style={[styles.label, compact && styles.labelCompact, hero && styles.labelHero]}>
-        {endedAt ? 'Session time' : 'In session'}
+        {endMs != null ? 'Session time' : 'In session'}
       </Text>
-      <Text style={[styles.time, compact && styles.timeCompact, hero && styles.timeHero]}>
-        {formatElapsed(elapsed)}
+      <Text
+        style={[styles.time, compact && styles.timeCompact, hero && styles.timeHero]}
+        allowFontScaling={false}
+        accessibilityLiveRegion={ticking ? 'polite' : 'none'}
+      >
+        {formatElapsed(elapsedMs)}
       </Text>
     </View>
   );

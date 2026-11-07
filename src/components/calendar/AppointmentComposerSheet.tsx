@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import ServiceImage from '../ServiceImage';
-import { Client } from '../../data/clients';
+import { Client, getClientEmails, getClientPhones } from '../../data/clients';
 import { CatalogService, groupCatalogByCategory } from '../../data/serviceCatalog';
 import { colors } from '../../theme';
 import { formatTimeRange, TimeRange } from './timelineUtils';
@@ -89,8 +89,8 @@ export default function AppointmentComposerSheet({
     return clients.filter(
       (client) =>
         client.name.toLowerCase().includes(query) ||
-        client.phone.includes(query) ||
-        client.email.toLowerCase().includes(query),
+        getClientPhones(client).some((phone) => phone.includes(query)) ||
+        getClientEmails(client).some((email) => email.toLowerCase().includes(query)),
     );
   }, [clientQuery, clients]);
 
@@ -116,8 +116,8 @@ export default function AppointmentComposerSheet({
   const selectClient = (client: Client) => {
     setIsPlaceholder(false);
     setFullName(client.name);
-    setPhone(client.phone);
-    setEmail(client.email);
+    setPhone(getClientPhones(client)[0] ?? client.phone);
+    setEmail(getClientEmails(client)[0] ?? client.email);
   };
 
   const usePlaceholder = () => {
